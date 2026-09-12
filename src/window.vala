@@ -1,29 +1,18 @@
-/* window.vala
- *
- * Copyright 2026 Unknown
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+namespace Timbre {
+    [GtkTemplate (ui = "/io/github/fabito02/Timbre/window.ui")]
+    public class Window : Adw.ApplicationWindow {
+        private Timbre.Player player;
 
-[GtkTemplate (ui = "/io/github/fabito02/Timbre/window.ui")]
-public class Timbre.Window : Adw.ApplicationWindow {
-    [GtkChild]
-    private unowned Gtk.Label label;
+        public Window (Gtk.Application app) {
+            Object (application: app);
 
-    public Window (Gtk.Application app) {
-        Object (application: app);
+            this.player = new Timbre.Player ();
+
+            string track_id = "D-tI6qEBRMg";
+
+            if (this.player.play_track_id (track_id)) {
+                message ("Música do YouTube tocando");
+            }
+        }
     }
 }

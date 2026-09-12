@@ -4,11 +4,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
+use crate::api::MusicApi;
 use crate::audio::AudioPlayer;
+use crate::youtube::YouTubeClient;
 
 pub struct TimbrePlayerHandle {
     player: AudioPlayer,
     runtime: Arc<Runtime>,
+    yt: YouTubeClient,
 }
 
 #[unsafe(no_mangle)]
@@ -23,7 +26,13 @@ pub extern "C" fn timbre_player_new() -> *mut TimbrePlayerHandle {
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let handle = TimbrePlayerHandle { player, runtime };
+    let yt = YouTubeClient::anonymous();
+
+    let handle = TimbrePlayerHandle {
+        player,
+        runtime,
+        yt,
+    };
     Box::into_raw(Box::new(handle))
 }
 
@@ -86,6 +95,34 @@ pub unsafe extern "C" fn timbre_player_play_url(
         .runtime
         .block_on(async { handle.player.play_url(&url_str, duration).await })
         .is_ok()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_play_track_id(
+    handle: *mut TimbrePlayerHandle,
+    track_id: *const c_char,
+) -> bool {
+    if handle.is_null() || track_id.is_null() {
+        return false;
+    }
+
+    let (handle, id_str) = unsafe {
+        let h = &*handle;
+        let id = match CStr::from_ptr(track_id).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return false,
+        };
+        (h, id)
+    };
+
+    handle.runtime.block_on(async {
+        let stream = match handle.yt.get_stream(&id_str).await {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+
+        handle.player.play_url(&stream.url, None).await.is_ok()
+    })
 }
 
 #[unsafe(no_mangle)]

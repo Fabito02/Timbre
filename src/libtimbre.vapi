@@ -29,5 +29,8 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_is_finished")]
         public bool is_finished ();
+
+        [CCode (cname = "timbre_player_play_track_id")]
+        public bool play_track_id (string track_id);
     }
 }

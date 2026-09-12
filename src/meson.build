@@ -12,6 +12,7 @@ endif
 
 libtimbre_target = custom_target('cargo-build-libtimbre',
   build_by_default: true,
+  build_always_stale: true,
   output: 'libtimbre.so',
   command: [
     'sh', '-c',

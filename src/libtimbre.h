@@ -18,3 +18,5 @@ void timbre_player_stop(TimbrePlayerHandle* handle);
 bool timbre_player_seek(TimbrePlayerHandle* handle, double target_secs);
 double timbre_player_get_position(TimbrePlayerHandle* handle);
 bool timbre_player_is_finished(TimbrePlayerHandle* handle);
+
+bool timbre_player_play_track_id(TimbrePlayerHandle* handle, const char* track_id);
