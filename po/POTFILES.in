@@ -1,0 +1,8 @@
+# List of source files containing translatable strings.
+# Please keep this file sorted alphabetically.
+data/io.github.fabito02.Timbre.desktop.in
+data/io.github.fabito02.Timbre.metainfo.xml.in
+data/io.github.fabito02.Timbre.gschema.xml
+src/main.vala
+src/window.vala
+src/window.ui

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Timbre
+Exec=timbre
+Icon=io.github.fabito02.Timbre
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=GTK;
+StartupNotify=true
+DBusActivatable=true

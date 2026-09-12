@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=io.github.fabito02.Timbre
+Exec=@bindir@/timbre --gapplication-service
