@@ -6,6 +6,7 @@ project('timbre', ['c', 'vala'],
 
 i18n = import('i18n')
 gnome = import('gnome')
+fs = import('fs')
 valac = meson.get_compiler('vala')
 
 

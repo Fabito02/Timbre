@@ -1,4 +1,5 @@
 cargo = find_program('cargo', required: true)
+blueprint_compiler = find_program('blueprint-compiler', required: true)
 
 cargo_options = ['--manifest-path', meson.project_source_root() / 'subprojects/libtimbre/Cargo.toml']
 cargo_target_dir = meson.project_source_root() / 'subprojects/libtimbre/target'
@@ -33,6 +34,27 @@ libtimbre_dep = declare_dependency(
   include_directories: include_directories('.'),
 )
 
+blueprints = [
+  'window.blp',
+]
+
+compiled_ui = []
+foreach bp : blueprints
+  ui_name = fs.replace_suffix(bp, '.ui')
+  compiled_ui += custom_target(
+    'blueprint-compile-' + bp,
+    input: bp,
+    output: ui_name,
+    command: [blueprint_compiler, 'compile', '--output', '@OUTPUT@', '@INPUT@']
+  )
+endforeach
+
+timbre_resources = gnome.compile_resources('timbre-resources',
+  'timbre.gresource.xml',
+  c_name: 'timbre',
+  dependencies: compiled_ui,
+)
+
 timbre_sources = [
   'main.vala',
   'application.vala',
@@ -47,12 +69,9 @@ timbre_deps = [
   dependency('libadwaita-1', version: '>= 1.4'),
 ]
 
-timbre_sources += gnome.compile_resources('timbre-resources',
-  'timbre.gresource.xml',
-  c_name: 'timbre'
-)
-
-executable('timbre', timbre_sources,
+executable('timbre',
+  timbre_sources,
+  timbre_resources,
   dependencies: timbre_deps,
   include_directories: config_inc,
   install: true,
