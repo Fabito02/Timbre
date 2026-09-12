@@ -9,7 +9,7 @@ use crate::audio::AudioPlayer;
 use crate::youtube::YouTubeClient;
 
 pub struct TimbrePlayerHandle {
-    player: AudioPlayer,
+    player: Arc<AudioPlayer>,
     runtime: Arc<Runtime>,
     yt: YouTubeClient,
 }
@@ -22,7 +22,7 @@ pub extern "C" fn timbre_player_new() -> *mut TimbrePlayerHandle {
     };
 
     let player = match AudioPlayer::new() {
-        Ok(p) => p,
+        Ok(p) => Arc::new(p),
         Err(_) => return std::ptr::null_mut(),
     };
 
@@ -157,11 +157,13 @@ pub unsafe extern "C" fn timbre_player_seek(
 
     let handle = unsafe { &*handle };
     let target = Duration::from_secs_f64(target_secs);
+    let player = Arc::clone(&handle.player);
 
-    handle
-        .runtime
-        .block_on(async { handle.player.seek(target).await })
-        .is_ok()
+    handle.runtime.spawn(async move {
+        let _ = player.seek(target).await;
+    });
+
+    true
 }
 
 #[unsafe(no_mangle)]
