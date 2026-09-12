@@ -9,3 +9,5 @@ pub use audio::AudioPlayer;
 pub use model::*;
 pub use youtube::YouTubeClient;
 pub use ytmusic::YtMusic;
+
+pub mod ffi;
