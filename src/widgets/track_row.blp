@@ -1,0 +1,46 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreTrackRow : ListBoxRow {
+  activatable: true;
+  Box {
+    orientation: horizontal;
+    spacing: 6;
+    margin-top: 6;
+    margin-bottom: 6;
+    margin-start: 6;
+    margin-end: 6;
+
+    Picture image_cover {
+      can-shrink: true;
+      content-fit: cover;
+      width-request: 48;
+      height-request: 48;
+      valign: center;
+      halign: center;
+      styles ["row-cover-img"]
+    }
+
+    Box {
+      orientation: vertical;
+      spacing: 2;
+      hexpand: true;
+      valign: center;
+
+      Label label_title {
+        xalign: 0.0;
+        ellipsize: end;
+        styles ["heading"]
+      }
+      Label label_artist {
+        xalign: 0.0;
+        ellipsize: end;
+        styles ["caption", "dim-label"]
+      }
+    }
+    Label label_duration {
+      valign: center;
+      styles ["numeric", "caption", "dim-label"]
+    }
+  }
+}

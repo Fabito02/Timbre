@@ -1,3 +1,6 @@
+fs = import('fs')
+gnome = import('gnome')
+
 cargo = find_program('cargo', required: true)
 blueprint_compiler = find_program('blueprint-compiler', required: true)
 
@@ -34,17 +37,23 @@ libtimbre_dep = declare_dependency(
   include_directories: include_directories('.'),
 )
 
+subdir('widgets')
+subdir('utils')
+subdir('pages')
+subdir('models')
+subdir('services')
+
 blueprints = [
   'window.blp',
-]
+] + widgets_blueprints + pages_blueprints
 
 compiled_ui = []
 foreach bp : blueprints
-  ui_name = fs.replace_suffix(bp, '.ui')
+  ui_filename = fs.name(fs.replace_suffix(bp, '.ui'))
   compiled_ui += custom_target(
-    'blueprint-compile-' + bp,
+    'blueprint-compile-' + ui_filename,
     input: bp,
-    output: ui_name,
+    output: ui_filename,
     command: [blueprint_compiler, 'compile', '--output', '@OUTPUT@', '@INPUT@']
   )
 endforeach
@@ -59,7 +68,7 @@ timbre_sources = [
   'main.vala',
   'application.vala',
   'window.vala',
-]
+] + widgets_sources + utils_sources + pages_sources + models_sources + services_sources
 
 timbre_deps = [
   config_dep,
@@ -67,6 +76,9 @@ timbre_deps = [
   libtimbre_dep,
   dependency('gtk4'),
   dependency('libadwaita-1', version: '>= 1.4'),
+  dependency('gio-2.0'),
+  dependency('libsoup-3.0'),
+  dependency('json-glib-1.0'),
 ]
 
 executable('timbre',

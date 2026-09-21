@@ -2,78 +2,273 @@ using Gtk 4.0;
 using Adw 1;
 
 template $TimbreWindow : Adw.ApplicationWindow {
-  default-width: 800;
-  default-height: 600;
+  default-width: 1100;
+  default-height: 720;
   title: "Timbre";
 
-  content: Box {
-    orientation: vertical;
+  content: Adw.OverlaySplitView split_view {
+    sidebar-position: start;
+    min-sidebar-width: 320;
+    max-sidebar-width: 400;
+    sidebar-width-fraction: 0.28;
+    show-sidebar: bind button_toggle_queue.active bidirectional;
 
-    Adw.HeaderBar {
-      [title]
-      Adw.WindowTitle {
-        title: "Timbre";
-        subtitle: "Music Player";
-      }
-    }
-
-    Box {
-      vexpand: true;
-      hexpand: true;
-      halign: center;
-      valign: center;
-
-      Label {
-        label: "Nenhuma música selecionada";
-        styles ["title-2"]
-      }
-    }
-
-    Box {
+    sidebar: Box {
       orientation: vertical;
-      spacing: 6;
-      margin-top: 12;
-      margin-bottom: 12;
-      margin-start: 18;
-      margin-end: 18;
-      styles ["toolbar"]
-
-      Scale scale_progress {
-        hexpand: true;
-        orientation: horizontal;
-        value-changed => $on_seek_changed();
-        adjustment: Adjustment adjustment_progress {
-          lower: 0.0;
-          upper: 0.0;
-          step-increment: 1.0;
-        };
-      }
+      styles ["sidebar"]
 
       CenterBox {
+        margin-top: 10;
+        margin-bottom: 10;
+        margin-start: 12;
+        margin-end: 12;
+
         [start]
-        Label label_time_current {
-          label: "0:00";
-          styles ["numeric", "caption"]
+        Box {
+          spacing: 4;
+          valign: center;
+
+          ToggleButton button_shuffle {
+            icon-name: "media-playlist-shuffle-symbolic";
+            tooltip-text: _("Shuffle");
+            styles ["flat", "circular"]
+          }
+
+          Button button_repeat {
+            icon-name: "media-playlist-repeat-symbolic";
+            tooltip-text: _("Repeat");
+            styles ["flat", "circular"]
+          }
         }
 
         [center]
         Box {
-          spacing: 12;
-          halign: center;
+          orientation: vertical;
+          valign: center;
 
-          Button button_play_pause {
-            icon-name: "media-playback-start-symbolic";
-            styles ["suggested-action", "circular"]
-            clicked => $on_play_pause_clicked();
+          Label {
+            label: _("Queue");
+            styles ["heading"]
+          }
+
+          Label label_queue_count {
+            label: _("0 tracks");
+            styles ["caption", "dim-label"]
           }
         }
 
         [end]
-        Label label_time_total {
-          label: "0:00";
-          styles ["numeric", "caption"]
+        Box {
+          spacing: 8;
+          valign: center;
+
+          MenuButton {
+            icon-name: "view-more-symbolic";
+            styles ["flat", "circular"]
+          }
+
+          Button button_clear_queue {
+            label: _("Clear");
+          }
         }
       }
-    }
+
+      Separator {}
+
+      ScrolledWindow {
+        vexpand: true;
+        hscrollbar-policy: never;
+        overlay-scrolling: true;
+
+        ListView queue_list {
+          styles ["navigation-sidebar"]
+        }
+      }
+    };
+
+    content: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {
+
+        [start]
+        Button button_back {
+          icon-name: "go-previous-symbolic";
+          tooltip-text: _("Back");
+          visible: false;
+        }
+
+        [start]
+        ToggleButton button_search {
+          icon-name: "edit-find-symbolic";
+          tooltip-text: _("Search");
+          active: bind searchbar.search-mode-enabled bidirectional;
+        }
+
+        [title]
+        Adw.WindowTitle {
+          title: "Timbre";
+        }
+      }
+
+      [top]
+      SearchBar searchbar {
+        SearchEntry searchentry {
+          styles ["search-bar"]
+          placeholder-text: _("Search for songs, albums, artists...");
+        }
+      }
+
+      content: Adw.ViewStack main_stack {
+        enable-transitions: true;
+
+        Adw.ViewStackPage {
+          name: "home";
+          child: Adw.NavigationView navigation_view {
+            $TimbreHomePage home_page {
+              title: "Início";
+            }
+          };
+        }
+
+        Adw.ViewStackPage {
+          name: "search";
+          child: $TimbreSearchPage search_page {};
+        }
+      };
+
+      [bottom]
+      Box {
+        orientation: vertical;
+
+        Scale scale_progress {
+          hexpand: true;
+          orientation: horizontal;
+          styles ["playback-bar"]
+          value-changed => $on_seek_changed();
+          adjustment: Adjustment adjustment_progress {
+            lower: 0.0;
+            upper: 0.1;
+            value: 0.0;
+          };
+        }
+
+        Box {
+          orientation: horizontal;
+          margin-top: 10;
+          margin-bottom: 10;
+          margin-start: 10;
+          margin-end: 10;
+
+          Box {
+            orientation: horizontal;
+            spacing: 12;
+            valign: center;
+
+            Picture image_cover {
+              content-fit: cover;
+              width-request: 48;
+              height-request: 48;
+              valign: center;
+              halign: center;
+              styles ["cover-bar-img"]
+            }
+
+            Box {
+              orientation: vertical;
+              valign: center;
+              spacing: 2;
+
+              Label label_current_title {
+                label: "Nenhuma faixa selecionada";
+                xalign: 0.0;
+                ellipsize: end;
+                styles ["heading"]
+              }
+
+              Label label_current_artist {
+                label: "Artista";
+                xalign: 0.0;
+                ellipsize: end;
+                styles ["caption", "dim-label"]
+              }
+            }
+          }
+
+          Box { hexpand: true; }
+
+          Box {
+            orientation: horizontal;
+            spacing: 16;
+            valign: center;
+
+            Box {
+              orientation: horizontal;
+              valign: center;
+
+              Label label_time_current {
+                label: "0:00";
+                styles ["numeric", "caption"]
+              }
+
+              Label {
+                label: " / ";
+                styles ["caption", "dim-label"]
+              }
+
+              Label label_time_total {
+                label: "0:00";
+                styles ["numeric", "caption", "dim-label"]
+              }
+            }
+
+            Box {
+              orientation: horizontal;
+              spacing: 8;
+              valign: center;
+
+              Button button_prev {
+                icon-name: "media-skip-backward-symbolic";
+                styles ["circular", "flat"]
+                clicked => $on_prev_clicked();
+              }
+
+              Button button_play_pause {
+                icon-name: "media-playback-start-symbolic";
+                styles ["suggested-action", "pill", "play-btn"]
+                clicked => $on_play_pause_clicked();
+              }
+
+              Button button_next {
+                icon-name: "media-skip-forward-symbolic";
+                styles ["circular", "flat"]
+                clicked => $on_next_clicked();
+              }
+            }
+
+            Box {
+              orientation: horizontal;
+              spacing: 4;
+              valign: center;
+
+              Button {
+                icon-name: "audio-volume-high-symbolic";
+                styles ["flat", "circular"]
+              }
+
+              ToggleButton button_toggle_queue {
+                icon-name: "view-list-symbolic";
+                tooltip-text: "Fila de reprodução";
+                styles ["flat", "circular"]
+              }
+
+              Button {
+                icon-name: "heart-outline-thick-symbolic";
+                styles ["flat", "circular"]
+              }
+            }
+          }
+        }
+      }
+    };
   };
 }

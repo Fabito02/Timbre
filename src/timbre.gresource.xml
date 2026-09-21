@@ -2,6 +2,20 @@
 <gresources>
   <gresource prefix="/io/github/fabito02/Timbre">
     <file compressed="true" preprocess="xml-stripblanks">window.ui</file>
+    <file alias="style.css">style.css</file>
+    
     <file preprocess="xml-stripblanks">shortcuts-dialog.ui</file>
+    <file alias="pages/home.ui" compressed="true">home.ui</file>
+    <file alias="pages/collection.ui" compressed="true">collection.ui</file>
+    
+    <file alias="widgets/search.ui" compressed="true">search.ui</file>
+    <file alias="widgets/track_row.ui" compressed="true">track_row.ui</file>
+    <file alias="widgets/track_card.ui" compressed="true">track_card.ui</file>
+    
+    <file alias="icons/scalable/actions/heart-outline-thick-symbolic.svg" preprocess="xml-stripblanks">../data/icons/hicolor/actions/heart-outline-thick-symbolic.svg</file>
+    <file alias="icons/scalable/actions/heart-filled-symbolic.svg" preprocess="xml-stripblanks">../data/icons/hicolor/actions/heart-filled-symbolic.svg</file>
+    <file alias="icons/scalable/actions/music-queue-symbolic.svg" preprocess="xml-stripblanks">../data/icons/hicolor/actions/music-queue-symbolic.svg</file>
+    <file alias="icons/scalable/actions/compass2-symbolic.svg" preprocess="xml-stripblanks">../data/icons/hicolor/actions/compass2-symbolic.svg</file>
+    <file alias="icons/scalable/actions/triangular-antenna-symbolic.svg" preprocess="xml-stripblanks">../data/icons/hicolor/actions/triangular-antenna-symbolic.svg</file>
   </gresource>
 </gresources>

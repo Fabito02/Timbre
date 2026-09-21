@@ -1,43 +1,141 @@
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Thumbnail {
+    pub url: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtistRef {
-    pub id: Option<String>,
     pub name: String,
+    pub id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlbumRef {
+    pub name: String,
+    pub id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TrackKind {
+    #[default]
+    Song,
+    Video,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Track {
-    pub id: String,
+    pub video_id: Option<String>,
     pub title: String,
     pub artists: Vec<ArtistRef>,
-    pub album: Option<String>,
-    pub duration_secs: Option<u64>,
-    pub thumbnail_url: Option<String>,
+    pub album: Option<AlbumRef>,
+    pub duration: Option<Duration>,
+    pub thumbnails: Vec<Thumbnail>,
+    pub explicit: bool,
+    pub available: bool,
+    pub kind: TrackKind,
+    pub set_video_id: Option<String>,
+    pub liked: Option<bool>,
+    pub views: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Track {
+    pub fn is_video(&self) -> bool {
+        return matches!(self.kind, TrackKind::Video);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AlbumKind {
+    Album,
+    Single,
+    Ep,
+    Compilation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Album {
-    pub id: String,
+    pub browse_id: String,
+    pub playlist_id: Option<String>,
     pub title: String,
     pub artists: Vec<ArtistRef>,
-    pub year: Option<String>,
-    pub thumbnail_url: Option<String>,
+    pub kind: AlbumKind,
+    pub year: Option<i32>,
+    pub track_count: Option<u32>,
+    pub thumbnails: Vec<Thumbnail>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlbumDetail {
     pub album: Album,
+    pub description: Option<String>,
+    pub duration_text: Option<String>,
     pub tracks: Vec<Track>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Playlist {
     pub id: String,
     pub title: String,
     pub author: Option<String>,
-    pub track_count: Option<usize>,
-    pub thumbnail_url: Option<String>,
+    pub owned: bool,
+    pub public: Option<bool>,
+    pub track_count: Option<u32>,
+    pub thumbnails: Vec<Thumbnail>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaylistDetail {
+    pub playlist: Playlist,
+    pub public: bool,
+    pub tracks: Vec<Track>,
+    pub continuation: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaylistPage {
+    pub tracks: Vec<Track>,
+    pub continuation: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Artist {
+    pub browse_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub subscribers: Option<String>,
+    pub thumbnails: Vec<Thumbnail>,
+    pub top_tracks: Vec<Track>,
+    pub albums: Vec<Album>,
+    pub singles: Vec<Album>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Profile {
+    pub name: String,
+    pub email: Option<String>,
+    pub thumbnails: Vec<Thumbnail>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioFormat {
+    pub itag: u32,
+    pub url: String,
+    pub mime: String,
+    pub codec: String,
+    pub bitrate: u32,
+    pub duration: Option<Duration>,
+    pub content_length: Option<u64>,
+    pub loudness_db: Option<f32>,
+    pub user_agent: &'static str,
+}
+
+pub fn best_thumbnail(thumbnails: &[Thumbnail]) -> Option<&Thumbnail> {
+    thumbnails.iter().max_by_key(|t| t.width)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,4 +145,18 @@ pub struct StreamAudio {
     pub mime: String,
     pub codec: String,
     pub bitrate: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HomeSection {
+    pub title: String,
+    pub items: Vec<HomeItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum HomeItem {
+    Track(Track),
+    Album(Album),
+    Playlist(Playlist),
 }

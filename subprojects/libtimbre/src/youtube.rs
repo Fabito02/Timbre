@@ -5,7 +5,10 @@ use async_trait::async_trait;
 use ytmusic::YtMusic;
 
 use crate::api::MusicApi;
-use crate::model::{Album, AlbumDetail, ArtistRef, Playlist, StreamAudio, Track};
+use crate::model::{
+    Album, AlbumDetail, AlbumKind, AlbumRef, Artist, ArtistRef, HomeItem, HomeSection,
+    Playlist, PlaylistDetail, StreamAudio, Thumbnail, Track, TrackKind,
+};
 
 pub struct YouTubeClient {
     api: Arc<YtMusic>,
@@ -21,14 +24,75 @@ impl YouTubeClient {
             api: Arc::new(YtMusic::anonymous()),
         }
     }
+
+    pub async fn get_home(&self) -> Result<Vec<HomeSection>> {
+        use serde_json::json;
+        use ytmusic::context::Client;
+        use ytmusic::nav::Nav;
+        use ytmusic::parse;
+
+        let response = self
+            .api
+            .execute(
+                "browse",
+                Client::Music,
+                json!({ "browseId": "FEmusic_home" }),
+            )
+            .await?;
+
+        let mut sections: Vec<HomeSection> = Vec::new();
+
+        for carousel in parse::find_renderers(&response, "musicCarouselShelfRenderer") {
+            let title = carousel
+                .run_text(&["header", "musicCarouselShelfBasicHeaderRenderer", "title"])
+                .unwrap_or_default();
+
+            let mut items = Vec::new();
+
+            for item in carousel.items(&["contents"]) {
+                if let Some(yt_track) = parse::list_item_track(item) {
+                    if let Some(mapped) = map_track(yt_track) {
+                        items.push(HomeItem::Track(mapped));
+                    }
+                } else if let Some(yt_album) = parse::two_row_album(item) {
+                    items.push(HomeItem::Album(map_album(yt_album)));
+                } else if let Some(yt_playlist) = parse::two_row_playlist(item) {
+                    let mut playlist = map_playlist(yt_playlist);
+                    let real_cover = item
+                        .pointer("/musicTwoRowItemRenderer/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails")
+                        .or_else(|| item.pointer("/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails"))
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.last())
+                        .and_then(|thumb| thumb.get("url"))
+                        .and_then(|u| u.as_str())
+                        .map(|s| s.to_string());
+
+                    if let Some(cover) = real_cover {
+                        playlist.thumbnails = vec![Thumbnail {
+                            url: cover,
+                            width: 500,
+                            height: 500,
+                        }];
+                    }
+
+                    items.push(HomeItem::Playlist(playlist));
+                }
+            }
+
+            if !items.is_empty() {
+                sections.push(HomeSection { title, items });
+            }
+        }
+
+        Ok(sections)
+    }
 }
 
 fn map_track(t: ytmusic::Track) -> Option<Track> {
-    let id = t.video_id?;
-    let thumbnail_url = t.thumbnails.last().map(|thumb| thumb.url.clone());
+    let video_id = t.video_id;
 
     Some(Track {
-        id,
+        video_id,
         title: t.title,
         artists: t
             .artists
@@ -38,15 +102,33 @@ fn map_track(t: ytmusic::Track) -> Option<Track> {
                 name: a.name,
             })
             .collect(),
-        album: t.album.map(|a| a.name),
-        duration_secs: t.duration.map(|d| d.as_secs()),
-        thumbnail_url,
+        album: t.album.map(|a| AlbumRef {
+            id: a.id,
+            name: a.name,
+        }),
+        duration: t.duration,
+        thumbnails: t
+            .thumbnails
+            .into_iter()
+            .map(|th| Thumbnail {
+                url: th.url,
+                width: th.width,
+                height: th.height,
+            })
+            .collect(),
+        explicit: false,
+        available: true,
+        kind: TrackKind::Song,
+        set_video_id: None,
+        liked: None,
+        views: None,
     })
 }
 
 fn map_album(a: ytmusic::Album) -> Album {
     Album {
-        id: a.browse_id,
+        browse_id: a.browse_id,
+        playlist_id: None,
         title: a.title,
         artists: a
             .artists
@@ -56,8 +138,18 @@ fn map_album(a: ytmusic::Album) -> Album {
                 name: art.name,
             })
             .collect(),
-        year: a.year.map(|y| y.to_string()),
-        thumbnail_url: a.thumbnails.last().map(|t| t.url.clone()),
+        kind: AlbumKind::Album,
+        year: a.year,
+        track_count: None,
+        thumbnails: a
+            .thumbnails
+            .into_iter()
+            .map(|th| Thumbnail {
+                url: th.url,
+                width: th.width,
+                height: th.height,
+            })
+            .collect(),
     }
 }
 
@@ -66,8 +158,18 @@ fn map_playlist(p: ytmusic::Playlist) -> Playlist {
         id: p.id,
         title: p.title,
         author: p.author,
+        owned: false,
+        public: None,
         track_count: None,
-        thumbnail_url: p.thumbnails.last().map(|t| t.url.clone()),
+        thumbnails: p
+            .thumbnails
+            .into_iter()
+            .map(|th| Thumbnail {
+                url: th.url,
+                width: th.width,
+                height: th.height,
+            })
+            .collect(),
     }
 }
 
@@ -88,6 +190,15 @@ impl MusicApi for YouTubeClient {
         Ok(results.into_iter().map(map_playlist).collect())
     }
 
+    async fn search_artists(&self, _query: &str) -> Result<Vec<Artist>> {
+        Ok(Vec::new())
+    }
+
+    async fn search_suggestions(&self, query: &str) -> Result<Vec<String>> {
+        let suggestions = self.api.search_suggestions(query).await?;
+        Ok(suggestions)
+    }
+
     async fn get_album(&self, album_id: &str) -> Result<AlbumDetail> {
         let mut detail = self.api.album(album_id).await?;
         detail.tracks = self.api.swap_playable(detail.tracks).await;
@@ -95,14 +206,106 @@ impl MusicApi for YouTubeClient {
         let album = map_album(detail.album);
         let tracks = detail.tracks.into_iter().filter_map(map_track).collect();
 
-        Ok(AlbumDetail { album, tracks })
+        Ok(AlbumDetail {
+            album,
+            description: None,
+            duration_text: None,
+            tracks,
+        })
+    }
+
+    async fn get_playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {
+        use serde_json::json;
+        use ytmusic::context::Client;
+        use ytmusic::nav::Nav;
+        use ytmusic::parse;
+
+        let browse_id = if playlist_id.starts_with("VL") {
+            playlist_id.to_string()
+        } else {
+            format!("VL{}", playlist_id)
+        };
+
+        let response = self
+            .api
+            .execute(
+                "browse",
+                Client::Music,
+                json!({ "browseId": browse_id }),
+            )
+            .await?;
+
+        let header_renderer = response
+            .pointer("/header/musicDetailHeaderRenderer")
+            .or_else(|| response.pointer("/header/musicResponsiveHeaderRenderer"))
+            .or_else(|| {
+                response.pointer(
+                    "/header/musicEditablePlaylistDetailHeaderRenderer/header/musicResponsiveHeaderRenderer",
+                )
+            });
+
+        let title = header_renderer
+            .and_then(|h| h.run_text(&["title"]))
+            .unwrap_or_else(|| "Playlist".to_string());
+
+        let author = header_renderer.and_then(|h| {
+            h.run_text(&["subtitle"])
+                .or_else(|| h.run_text(&["straplineTextOne"]))
+        });
+
+        let thumbnail_url = header_renderer
+            .and_then(|h| {
+                h.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+                    .or_else(|| {
+                        h.pointer("/thumbnail/croppedSquareThumbnailRenderer/thumbnail/thumbnails")
+                    })
+            })
+            .and_then(|t| t.as_array())
+            .and_then(|arr| arr.last())
+            .and_then(|thumb| thumb.get("url"))
+            .and_then(|u| u.as_str())
+            .map(|s| s.to_string());
+
+        let mut tracks: Vec<Track> = Vec::new();
+
+        for item in parse::find_renderers(&response, "musicResponsiveListItemRenderer") {
+            if let Some(yt_track) = parse::list_item_track(item) {
+                if let Some(mapped) = map_track(yt_track) {
+                    tracks.push(mapped);
+                }
+            }
+        }
+
+        let thumbnails = match thumbnail_url {
+            Some(u) => vec![Thumbnail {
+                url: u,
+                width: 500,
+                height: 500,
+            }],
+            None => Vec::new(),
+        };
+
+        let playlist = Playlist {
+            id: playlist_id.to_string(),
+            title,
+            author,
+            owned: false,
+            public: Some(true),
+            track_count: Some(tracks.len() as u32),
+            thumbnails,
+        };
+
+        Ok(PlaylistDetail {
+            playlist,
+            public: true,
+            tracks,
+            continuation: None,
+        })
     }
 
     async fn get_playlist_tracks(&self, playlist_id: &str) -> Result<Vec<Track>> {
-        let mut detail = self.api.playlist(playlist_id).await?;
-        detail.tracks = self.api.swap_playable(detail.tracks).await;
-
-        Ok(detail.tracks.into_iter().filter_map(map_track).collect())
+        let detail = self.get_playlist(playlist_id).await?;
+        Ok(detail.tracks)
     }
 
     async fn get_stream(&self, track_id: &str) -> Result<StreamAudio> {

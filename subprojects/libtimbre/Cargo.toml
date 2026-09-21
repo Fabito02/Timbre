@@ -8,7 +8,7 @@ name = "timbre"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ytmusic = { path = "crates/ytmusic" }
+ytmusic = { git = "https://github.com/Fabito02/ytmusic-rs.git" }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }

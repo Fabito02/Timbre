@@ -75,10 +75,6 @@ impl AudioPlayer {
         let buffer = StreamBuffer::new();
         *self.active_buffer.lock().unwrap() = Some(buffer.clone());
 
-        let mut pos = self.position.lock().unwrap();
-        pos.reset();
-        pos.start();
-
         let client = self.client.clone();
         let url_clone = url.to_string();
         let bg_buffer = buffer.clone();
@@ -134,6 +130,10 @@ impl AudioPlayer {
         player.append(source);
         player.play();
 
+        let mut pos = self.position.lock().unwrap();
+        pos.reset();
+        pos.start();
+
         Ok(())
     }
 
@@ -172,7 +172,7 @@ impl AudioPlayer {
             .lock()
             .unwrap()
             .clone()
-            .context("No audio track loaded to seek")?;
+            .context("No audio traack loaded to seek")?;
 
         {
             let player = self.player.lock().unwrap();
@@ -249,15 +249,13 @@ impl AudioPlayer {
     }
 
     pub fn get_position(&self) -> Duration {
-        let player = self.player.lock().unwrap();
         let elapsed = self.position.lock().unwrap().elapsed();
-
-        if player.empty() {
-            let total = *self.total_duration.lock().unwrap();
-            total.unwrap_or(elapsed)
-        } else {
-            elapsed
+        if let Some(total) = *self.total_duration.lock().unwrap() {
+            if elapsed > total {
+                return total;
+            }
         }
+        elapsed
     }
 
     pub fn get_duration(&self) -> Option<Duration> {

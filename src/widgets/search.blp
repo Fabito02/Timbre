@@ -1,0 +1,99 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreSearchPage : Box {
+  orientation: vertical;
+  vexpand: true;
+
+  Stack stack {
+    transition-type: crossfade;
+    vexpand: true;
+
+    Adw.StatusPage main_page {
+      icon-name: "system-search-symbolic";
+      title: _("Search");
+      description: _("Enter the name of a song, album, or artist.");
+    }
+
+    Box loading_page {
+      orientation: vertical;
+      valign: center;
+      halign: center;
+      spacing: 12;
+      Adw.Spinner {
+        width-request: 32;
+        height-request: 32;
+      }
+      Label {
+        label: _("Searching...");
+        styles ["dim-label"]
+      }
+    }
+
+    ScrolledWindow search_page {
+      hscrollbar-policy: never;
+      Adw.Clamp {
+        margin-top: 12;
+        margin-bottom: 24;
+        margin-start: 12;
+        margin-end: 12;
+
+        Box {
+          orientation: vertical;
+          spacing: 24;
+
+          Box boxTopResults {
+            orientation: vertical;
+            spacing: 8;
+            Label { label: _("Top results"); halign: start; styles ["title-4"] }
+            ListBox listboxTopResults {
+              selection-mode: none;
+              styles ["boxed-list"]
+              row-activated => $on_row_activated();
+            }
+          }
+
+          Box boxMusics {
+            orientation: vertical;
+            spacing: 8;
+            Label { label: _("Musics"); halign: start; styles ["title-4"] }
+            ListBox listboxMusics {
+              selection-mode: none;
+              styles ["boxed-list"]
+              row-activated => $on_row_activated();
+            }
+          }
+
+          Box boxPlaylists {
+            orientation: vertical;
+            spacing: 8;
+            Label { label: _("Playlists"); halign: start; styles ["title-4"] }
+            ListBox listboxPlaylists {
+              selection-mode: none;
+              styles ["boxed-list"]
+              row-activated => $on_row_activated();
+            }
+          }
+
+          Box boxOther {
+            orientation: vertical;
+            spacing: 8;
+            Label { label: _("Other results"); halign: start; styles ["title-4"] }
+            ListBox listboxOther {
+              selection-mode: none;
+              styles ["boxed-list"]
+              row-activated => $on_row_activated();
+            }
+          }
+
+        }
+      }
+    }
+
+    Adw.StatusPage status_page {
+      icon-name: "edit-find-symbolic";
+      title: _("No results");
+      description: _("Try searching for another term.");
+    }
+  }
+}

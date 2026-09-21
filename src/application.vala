@@ -25,6 +25,9 @@ public class Timbre.Application : Adw.Application {
             flags: ApplicationFlags.DEFAULT_FLAGS,
             resource_base_path: "/io/github/fabito02/Timbre"
         );
+
+        var provider = new Gtk.CssProvider ();
+        provider.load_from_resource ("/io/github/fabito02/Timbre/style.css");
     }
 
     construct {

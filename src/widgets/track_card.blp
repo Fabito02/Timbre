@@ -1,0 +1,38 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreTrackCard : Button {
+  styles ["card-btn", "flat"]
+
+  Box {
+    orientation: vertical;
+    spacing: 12;
+    Picture image_cover {
+      can-shrink: true;
+      content-fit: cover;
+      width-request: 150;
+      height-request: 150;
+      valign: center;
+      halign: center;
+      styles ["card-cover-img"]
+    }
+
+    Box {
+      orientation: vertical;
+      spacing: 2;
+      hexpand: true;
+      valign: center;
+
+      Label label_title {
+        xalign: 0.0;
+        ellipsize: end;
+        styles ["heading"]
+      }
+      Label label_artist {
+        xalign: 0.0;
+        ellipsize: end;
+        styles ["caption", "dim-label"]
+      }
+    }
+  }
+}

@@ -1,0 +1,76 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreCollectionPage : Adw.NavigationPage {
+  title: _("Details");
+
+  ScrolledWindow {
+    hscrollbar-policy: never;
+    overlay-scrolling: true;
+
+    Adw.Clamp {
+      maximum-size: 1280;
+
+      Box {
+        orientation: vertical;
+        spacing: 24;
+        margin-top: 24;
+        margin-bottom: 32;
+        margin-start: 24;
+        margin-end: 24;
+
+        Box {
+          orientation: horizontal;
+          spacing: 20;
+
+          Picture image_cover {
+            width-request: 160;
+            height-request: 160;
+            can-shrink: false;
+            styles ["card"]
+          }
+
+          Box {
+            orientation: vertical;
+            valign: center;
+            spacing: 6;
+            hexpand: true;
+
+            Label label_title {
+              halign: start;
+              wrap: true;
+              xalign: 0;
+              styles ["title-1"]
+            }
+
+            Label label_subtitle {
+              halign: start;
+              wrap: true;
+              xalign: 0;
+              styles ["dim-label", "title-4"]
+            }
+
+            Button button_play_all {
+              halign: start;
+              margin-top: 12;
+              icon-name: "media-playback-start-symbolic";
+              label: _("Play All");
+              styles ["suggested-action", "pill"]
+            }
+          }
+        }
+
+        Gtk.Spinner spinner_loading {
+          spinning: true;
+          visible: true;
+        }
+
+        ListBox tracks_list {
+          selection-mode: none;
+          visible: false;
+          styles ["boxed-list"]
+        }
+      }
+    }
+  }
+}
