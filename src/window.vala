@@ -1,13 +1,14 @@
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/window.ui")]
     public class Window : Adw.ApplicationWindow {
-        private Timbre.Player player;
+        private unowned Timbre.Player player;
         private Timbre.QueueManager queue;
         private bool is_playing = false;
         private bool is_seeking = false;
         private uint tick_id = 0;
         private uint seek_debounce_id = 0;
         private uint search_debounce_id = 0;
+        private string cookies_path;
 
         [GtkChild] private unowned Gtk.Scale scale_progress;
         [GtkChild] private unowned Gtk.Adjustment adjustment_progress;
@@ -38,10 +39,11 @@ namespace Timbre {
 
         private Gtk.SingleSelection queue_selection;
 
-        public Window (Gtk.Application app) {
+        public Window (Timbre.Application app) {
             Object (application: app);
 
-            this.player = new Timbre.Player ();
+            this.player = app.get_player ();
+            this.cookies_path = app.cookies_path;
             this.queue = new Timbre.QueueManager ();
 
             this.search_page.set_player (this.player);
@@ -164,9 +166,9 @@ namespace Timbre {
                 page.play_collection.connect ((tracks, start_index) => {
                     this.queue.play_list (tracks, start_index);
                 });
-                
+
                 this.navigation_view.push (page);
-                
+
                 this.searchbar.search_mode_enabled = false;
             });
 
@@ -206,7 +208,7 @@ namespace Timbre {
                 var resultsAlbums = this.player.search_albums (query);
                 var resultsPlaylists = this.player.search_playlists (query);
                 var resultsArtists = this.player.search_artists (query);
-                
+
                 GLib.Idle.add (() => {
                     this.search_page.set_results (resultsSuggestions, resultsMusics, resultsAlbums, resultsPlaylists, resultsArtists);
                     return GLib.Source.REMOVE;
@@ -228,10 +230,10 @@ namespace Timbre {
         public void play_track (string track_id, uint64 duration_secs, string title, string artist, string? cover_url) {
             this.label_current_title.label = title;
             this.label_current_artist.label = artist;
-        
+
             var display = this.get_display () ?? Gdk.Display.get_default ();
             int scale = this.get_scale_factor ();
-        
+
             if (display != null && cover_url != null) {
                 Timbre.Utils.ImageLoader.get_default ().load_paintable_async.begin (
                     cover_url,
@@ -244,11 +246,11 @@ namespace Timbre {
                     }
                 );
             }
-        
+
             this.label_time_current.label = "0:00";
             this.adjustment_progress.value = 0.0;
             this.button_play_pause.sensitive = false;
-        
+
             if (duration_secs > 0) {
                 this.label_time_total.label = this.format_time ((double) duration_secs);
                 this.adjustment_progress.upper = (double) duration_secs;
@@ -256,13 +258,13 @@ namespace Timbre {
                 this.label_time_total.label = "--:--";
                 this.adjustment_progress.upper = 0.0;
             }
-        
+
             new Thread<void*> ("player-loader", () => {
                 bool success = this.player.play_track_id (track_id, duration_secs);
-            
+
                 GLib.Idle.add (() => {
                     this.button_play_pause.sensitive = true;
-            
+
                     if (success) {
                         if (duration_secs > 0) {
                             this.adjustment_progress.upper = (double) duration_secs;
@@ -270,7 +272,7 @@ namespace Timbre {
                         }
                         this.is_playing = true;
                         this.button_play_pause.icon_name = "media-playback-pause-symbolic";
-            
+
                         if (this.tick_id == 0) {
                             this.tick_id = GLib.Timeout.add (250, this.update_ui_tick);
                         }
@@ -287,11 +289,11 @@ namespace Timbre {
             if (this.player == null) {
                 return true;
             }
-        
+
             double current_pos = this.player.get_position ();
             this.adjustment_progress.value = current_pos;
             this.label_time_current.label = format_time (current_pos);
-        
+
             if (this.adjustment_progress.upper == 0.0) {
                 double duration = this.player.get_duration ();
                 if (duration > 0.0) {
@@ -299,7 +301,7 @@ namespace Timbre {
                     this.label_time_total.label = format_time (duration);
                 }
             }
-        
+
             return true;
         }
 

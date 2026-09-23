@@ -1,6 +1,43 @@
 using Gtk 4.0;
 using Adw 1;
 
+menu primary_menu {
+  section {
+    item {
+      custom: "theme_switcher";
+    }
+  }
+
+  section {
+    item {
+      label: _("Keyboard Shortcuts");
+      action: "win.show-help-overlay";
+    }
+
+    item {
+      label: _("Preferences");
+      action: "app.preferences";
+    }
+
+    item {
+      label: _("About Timbre");
+      action: "app.about";
+    }
+
+    item {
+      label: _("Quit");
+      action: "app.quit";
+    }
+  }
+}
+
+Gtk.PopoverMenu primary_popover {
+  menu-model: primary_menu;
+
+  [theme_switcher]
+  $TimbreThemeSelector {}
+}
+
 template $TimbreWindow : Adw.ApplicationWindow {
   default-width: 1100;
   default-height: 720;
@@ -107,6 +144,13 @@ template $TimbreWindow : Adw.ApplicationWindow {
         [title]
         Adw.WindowTitle {
           title: "Timbre";
+        }
+
+        [end]
+        Gtk.MenuButton primary_menu_btn {
+          icon-name: "open-menu-symbolic";
+          tooltip-text: _("Main Menu");
+          popover: primary_popover;
         }
       }
 

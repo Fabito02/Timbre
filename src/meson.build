@@ -79,6 +79,7 @@ timbre_deps = [
   dependency('gio-2.0'),
   dependency('libsoup-3.0'),
   dependency('json-glib-1.0'),
+  dependency('webkitgtk-6.0'),
 ]
 
 executable('timbre',

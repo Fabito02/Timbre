@@ -5,6 +5,7 @@ use std::os::raw::{c_char, c_int};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
+use std::path::PathBuf;
 
 use crate::api::MusicApi;
 use crate::audio::AudioPlayer;
@@ -690,4 +691,69 @@ pub unsafe extern "C" fn timbre_player_get_playlist_json(
             string_to_c_ptr("{}".to_string())
         }
     }
+}
+
+// --- LOGIN ---
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_login(
+    handle: *mut TimbrePlayerHandle,
+    cookies_ptr: *const c_char,
+    path_ptr: *const c_char,
+) -> bool {
+    if handle.is_null() || cookies_ptr.is_null() || path_ptr.is_null() {
+        return false;
+    }
+
+    let h = &mut *handle;
+    
+    let cookies_str = match c_char_to_string(cookies_ptr) {
+        Some(s) => s,
+        None => return false,
+    };
+    
+    let path_str = match c_char_to_string(path_ptr) {
+        Some(s) => s,
+        None => return false,
+    };
+
+    let path_buf = PathBuf::from(path_str);
+
+    let yt_instance = ytmusic::YtMusic::with_cookies(cookies_str)
+        .persist_cookies(path_buf);
+
+    let logged_client = YouTubeClient::new(Arc::new(yt_instance));
+
+    h.yt = logged_client;
+
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_load_cookies(
+    handle: *mut TimbrePlayerHandle,
+    path_ptr: *const c_char,
+) -> bool {
+    if handle.is_null() || path_ptr.is_null() {
+        return false;
+    }
+
+    let h = &mut *handle;
+
+    let path_str = match c_char_to_string(path_ptr) {
+        Some(s) => s,
+        None => return false,
+    };
+
+    let path_buf = PathBuf::from(path_str);
+    if !path_buf.exists() {
+        return false;
+    }
+
+    let yt_instance = ytmusic::YtMusic::anonymous()
+        .persist_cookies(path_buf);
+
+    h.yt = YouTubeClient::new(Arc::new(yt_instance));
+
+    true
 }

@@ -11,6 +11,7 @@
     <file alias="widgets/search.ui" compressed="true">search.ui</file>
     <file alias="widgets/track_row.ui" compressed="true">track_row.ui</file>
     <file alias="widgets/track_card.ui" compressed="true">track_card.ui</file>
+    <file alias="widgets/theme_selector.ui" compressed="true">theme_selector.ui</file>
     
     <file alias="icons/scalable/actions/heart-outline-thick-symbolic.svg" preprocess="xml-stripblanks">../data/icons/hicolor/actions/heart-outline-thick-symbolic.svg</file>
     <file alias="icons/scalable/actions/heart-filled-symbolic.svg" preprocess="xml-stripblanks">../data/icons/hicolor/actions/heart-filled-symbolic.svg</file>

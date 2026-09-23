@@ -97,6 +97,8 @@ bool timbre_player_seek(TimbrePlayerHandle *handle, double target_secs);
 double timbre_player_get_position(TimbrePlayerHandle *handle);
 bool timbre_player_is_finished(TimbrePlayerHandle *handle);
 double timbre_player_get_duration(TimbrePlayerHandle *handle);
+bool timbre_player_login(TimbrePlayerHandle* handle, const char* cookies, const char* path);
+bool timbre_player_load_cookies(TimbrePlayerHandle* handle, const char* path);
 
 CTrackList* timbre_player_search_tracks(TimbrePlayerHandle *handle, const char *query);
 CAlbumList* timbre_player_search_albums(TimbrePlayerHandle *handle, const char *query);

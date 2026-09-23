@@ -159,6 +159,12 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_get_duration")]
         public double get_duration ();
+
+        [CCode (cname = "timbre_player_login")]
+        public bool login (string cookies, string path);
+
+        [CCode (cname = "timbre_player_load_cookies")]
+        public bool load_cookies (string path);
     }
 
     [CCode (cname = "timbre_string_free")]

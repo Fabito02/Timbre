@@ -1,0 +1,43 @@
+using Gtk 4.0;
+
+template $TimbreThemeSelector : Widget {
+  hexpand: true;
+
+  Box box {
+    hexpand: true;
+    orientation: horizontal;
+    spacing: 12;
+
+    CheckButton follow {
+      styles ["theme-selector", "follow"]
+      hexpand: true;
+      halign: center;
+      group: light;
+      focus-on-click: false;
+      action-name: "app.color-scheme";
+      action-target: "'default'";
+      tooltip-text: _("Follow System Style");
+    }
+
+    CheckButton light {
+      styles ["theme-selector", "light"]
+      hexpand: true;
+      halign: center;
+      focus-on-click: false;
+      action-name: "app.color-scheme";
+      action-target: "'light'";
+      tooltip-text: _("Light Style");
+    }
+
+    CheckButton dark {
+      styles ["theme-selector", "dark"]
+      hexpand: true;
+      halign: center;
+      group: light;
+      focus-on-click: false;
+      action-name: "app.color-scheme";
+      action-target: "'dark'";
+      tooltip-text: _("Dark Style");
+    }
+  }
+}
