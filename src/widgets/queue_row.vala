@@ -15,8 +15,6 @@ namespace Timbre {
         public QueueRow () {
             Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 8);
 
-
-
             this.grip = new Gtk.Image.from_icon_name ("list-drag-handle-symbolic");
             this.grip.add_css_class ("dim-label");
             this.append (this.grip);
@@ -79,29 +77,27 @@ namespace Timbre {
 
                 int from_index = int.parse (str_val);
                 int to_index = this.current_item.index;
+                if (from_index == to_index) return false;
 
-                if (from_index != to_index) {
-                    this.item_moved (from_index, to_index);
-                    return true;
-                }
-                return false;
+                this.item_moved (from_index, to_index);
+                return true;
             });
 
             this.add_controller (drop_target);
         }
 
         public void unbind () {
-            if (this.current_item != null) {
-                if (this.notify_playing_id != 0) {
-                    this.current_item.disconnect (this.notify_playing_id);
-                    this.notify_playing_id = 0;
-                }
-                if (this.notify_index_id != 0) {
-                    this.current_item.disconnect (this.notify_index_id);
-                    this.notify_index_id = 0;
-                }
-                this.current_item = null;
+            if (this.current_item == null) return;
+
+            if (this.notify_playing_id != 0) {
+                this.current_item.disconnect (this.notify_playing_id);
+                this.notify_playing_id = 0;
             }
+            if (this.notify_index_id != 0) {
+                this.current_item.disconnect (this.notify_index_id);
+                this.notify_index_id = 0;
+            }
+            this.current_item = null;
         }
 
         public void bind (Timbre.QueueItem queue_item) {
@@ -116,7 +112,6 @@ namespace Timbre {
             this.notify_playing_id = queue_item.notify["is-playing"].connect (() => {
                 this.update_state ();
             });
-
             this.notify_index_id = queue_item.notify["index"].connect (() => {
                 this.update_state ();
             });

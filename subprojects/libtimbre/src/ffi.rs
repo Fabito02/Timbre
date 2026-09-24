@@ -1,38 +1,119 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_void};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::runtime::Runtime;
-use std::path::PathBuf;
 
-use crate::api::MusicApi;
-use crate::audio::AudioPlayer;
-use crate::model::best_thumbnail;
-use crate::youtube::YouTubeClient;
+use serde::Serialize;
+use tokio::runtime::Runtime;
+
+use crate::audio::store::{AudioEntry, StoreKind};
+use crate::audio::{AudioPlayer, PlayerState};
+use crate::context::TimbreContext;
+use crate::net::media::{HttpAuth, LikeStatus, StreamInfo, VideoId};
+use crate::net::stream::StreamResolver;
+use crate::net::{artist, explore, history, home, library, playlists, search};
+
+static TRACING_READY: AtomicBool = AtomicBool::new(false);
+
+fn install_tracing(level: u8) {
+    if TRACING_READY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let default = match level {
+        0 => "off",
+        1 => "timbre=info",
+        2 => "timbre=debug",
+        _ => "timbre=trace",
+    };
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_target(true)
+        .try_init();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_set_log_level(level: c_int) {
+    install_tracing(level.clamp(0, 3) as u8);
+}
+
+pub type TimbreCallback = unsafe extern "C" fn(json: *mut c_char, error: *mut c_char, ud: *mut c_void);
+pub type TimbreDoneCallback = unsafe extern "C" fn(success: bool, error: *mut c_char, ud: *mut c_void);
 
 pub struct TimbrePlayerHandle {
     player: Arc<AudioPlayer>,
     runtime: Arc<Runtime>,
-    yt: YouTubeClient,
+    ctx: Arc<TimbreContext>,
 }
 
-// --- INTERNAL HELPERS ---
+#[derive(Clone, Copy)]
+struct SendPtr(usize);
 
-fn string_to_c_ptr(s: String) -> *mut c_char {
+impl SendPtr {
+    fn new(p: *mut c_void) -> Self {
+        Self(p as usize)
+    }
+    fn raw(self) -> usize {
+        self.0
+    }
+}
+
+fn to_c(s: String) -> *mut c_char {
     let clean = s.replace('\0', "");
     match CString::new(clean) {
-        Ok(c_str) => c_str.into_raw(),
+        Ok(c) => c.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
 }
 
-fn c_char_to_string(ptr: *const c_char) -> Option<String> {
+fn from_c(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
     }
-    unsafe { CStr::from_ptr(ptr).to_str().ok().map(|s| s.to_string()) }
+    unsafe { CStr::from_ptr(ptr).to_str().ok().map(str::to_owned) }
+}
+
+fn none_if_empty(s: &str) -> Option<&str> {
+    if s.is_empty() { None } else { Some(s) }
+}
+
+fn dispatch_json<T: Serialize>(cb: Option<TimbreCallback>, ud: usize, result: Result<T, String>) {
+    let Some(cb) = cb else { return };
+    let ud = ud as *mut c_void;
+    match result {
+        Ok(value) => match serde_json::to_string(&value) {
+            Ok(s) => {
+                let json = to_c(s);
+                unsafe { cb(json, std::ptr::null_mut(), ud) };
+            }
+            Err(e) => {
+                let err = to_c(format!("serialization: {e}"));
+                unsafe { cb(std::ptr::null_mut(), err, ud) };
+            }
+        },
+        Err(msg) => {
+            let err = to_c(msg);
+            unsafe { cb(std::ptr::null_mut(), err, ud) };
+        }
+    }
+}
+
+fn dispatch_done(cb: Option<TimbreDoneCallback>, ud: usize, result: Result<(), String>) {
+    let Some(cb) = cb else { return };
+    let ud = ud as *mut c_void;
+    match result {
+        Ok(()) => unsafe { cb(true, std::ptr::null_mut(), ud) },
+        Err(msg) => {
+            let err = to_c(msg);
+            unsafe { cb(false, err, ud) };
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -42,110 +123,32 @@ pub unsafe extern "C" fn timbre_string_free(ptr: *mut c_char) {
     }
 }
 
-// --- STRUCTS C-COMPATIBLE ---
-
-#[repr(C)]
-pub struct CTrack {
-    pub id: *mut c_char,
-    pub title: *mut c_char,
-    pub artists: *mut c_char,
-    pub album: *mut c_char,
-    pub thumbnail_url: *mut c_char,
-    pub duration_secs: u64,
-    pub is_explicit: bool,
-    pub available: bool,
-    pub kind: c_int,
-    pub set_video_id: bool,
-    pub liked: bool,
-    pub views: u64,
-}
-
-impl CTrack {
-    pub unsafe fn free_fields(&mut self) {
-        timbre_string_free(self.id);
-        timbre_string_free(self.title);
-        timbre_string_free(self.artists);
-        timbre_string_free(self.album);
-        timbre_string_free(self.thumbnail_url);
-    }
-}
-
-#[repr(C)]
-pub struct CTrackList {
-    pub items: *mut CTrack,
-    pub len: usize,
-}
-
-#[repr(C)]
-pub struct CAlbum {
-    pub id: *mut c_char,
-    pub title: *mut c_char,
-    pub artists: *mut c_char,
-    pub thumbnail_url: *mut c_char,
-}
-
-#[repr(C)]
-pub struct CAlbumList {
-    pub items: *mut CAlbum,
-    pub len: usize,
-}
-
-#[repr(C)]
-pub struct CPlaylist {
-    pub id: *mut c_char,
-    pub title: *mut c_char,
-    pub author: *mut c_char,
-    pub thumbnail_url: *mut c_char,
-}
-
-#[repr(C)]
-pub struct CPlaylistList {
-    pub items: *mut CPlaylist,
-    pub len: usize,
-}
-
-#[repr(C)]
-pub struct CArtist {
-    pub id: *mut c_char,
-    pub name: *mut c_char,
-    pub thumbnail_url: *mut c_char,
-}
-
-#[repr(C)]
-pub struct CArtistList {
-    pub items: *mut CArtist,
-    pub len: usize,
-}
-
-#[repr(C)]
-pub struct CSuggestionList {
-    pub items: *mut *mut c_char,
-    pub len: usize,
-}
-
-// --- PLAYER LIFECYCLE ---
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_new() -> *mut TimbrePlayerHandle {
+    install_tracing(1);
+
     let runtime = match Runtime::new() {
         Ok(rt) => Arc::new(rt),
-        Err(_) => return std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[libtimbre] runtime: {e:?}");
+            return std::ptr::null_mut();
+        }
     };
-
-    let player = match AudioPlayer::new() {
+    let ctx = match TimbreContext::new(&runtime) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[libtimbre] context: {e:?}");
+            return std::ptr::null_mut();
+        }
+    };
+    let player = match AudioPlayer::new(&ctx.paths) {
         Ok(p) => Arc::new(p),
-        Err(_) => return std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[libtimbre] audio: {e:?}");
+            return std::ptr::null_mut();
+        }
     };
-
-    let yt = YouTubeClient::anonymous();
-
-    let handle = Box::new(TimbrePlayerHandle {
-        player,
-        runtime,
-        yt,
-    });
-
-    Box::into_raw(handle)
+    Box::into_raw(Box::new(TimbrePlayerHandle { player, runtime, ctx }))
 }
 
 #[unsafe(no_mangle)]
@@ -155,24 +158,14 @@ pub unsafe extern "C" fn timbre_player_free(handle: *mut TimbrePlayerHandle) {
     }
 }
 
-// --- PLAYBACK CONTROL ---
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_play_file(
     handle: *mut TimbrePlayerHandle,
     path: *const c_char,
 ) -> bool {
-    if handle.is_null() || path.is_null() {
-        return false;
-    }
-
-    let handle = &*handle;
-    let path_str = match c_char_to_string(path) {
-        Some(s) => s,
-        None => return false,
-    };
-
-    handle.player.play_file(&path_str).is_ok()
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(path) = from_c(path) else { return false };
+    h.player.play_file(&path).is_ok()
 }
 
 #[unsafe(no_mangle)]
@@ -180,27 +173,25 @@ pub unsafe extern "C" fn timbre_player_play_url(
     handle: *mut TimbrePlayerHandle,
     url: *const c_char,
     duration_secs: u64,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
 ) -> bool {
-    if handle.is_null() || url.is_null() {
-        return false;
-    }
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(url) = from_c(url) else { return false };
 
-    let handle = &*handle;
-    let url_str = match c_char_to_string(url) {
-        Some(s) => s,
-        None => return false,
-    };
+    let player = h.player.clone();
+    let duration = (duration_secs > 0).then(|| Duration::from_secs(duration_secs));
+    let user = SendPtr::new(ud);
 
-    let duration = if duration_secs > 0 {
-        Some(Duration::from_secs(duration_secs))
-    } else {
-        None
-    };
-
-    handle
-        .runtime
-        .block_on(async { handle.player.play_url(&url_str, duration).await })
-        .is_ok()
+    h.runtime.spawn(async move {
+        let my_gen = player.begin_play();
+        let result = player
+            .play_url(my_gen, None, &url, duration, None, None)
+            .await
+            .map_err(|e| e.to_string());
+        dispatch_done(cb, user.raw(), result);
+    });
+    true
 }
 
 #[unsafe(no_mangle)]
@@ -208,45 +199,91 @@ pub unsafe extern "C" fn timbre_player_play_track_id(
     handle: *mut TimbrePlayerHandle,
     track_id: *const c_char,
     duration_secs: u64,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
 ) -> bool {
-    if handle.is_null() || track_id.is_null() {
-        eprintln!("[libtimbre] Error: null handle or track_id in FFI.");
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(id) = from_c(track_id) else { return false };
+    if id.is_empty() {
         return false;
     }
 
-    let handle = &*handle;
-    let id_str = match c_char_to_string(track_id) {
-        Some(s) => s,
-        None => return false,
-    };
+    let player = h.player.clone();
+    let resolver = h.ctx.resolver.clone();
+    let auth = h.ctx.session.media_auth();
+    let duration = (duration_secs > 0).then(|| Duration::from_secs(duration_secs));
+    let user = SendPtr::new(ud);
 
-    if id_str.is_empty() {
-        return false;
-    }
+    h.runtime.spawn(async move {
+        let my_gen = player.begin_play();
+        let video = VideoId(id.clone());
 
-    let duration = if duration_secs > 0 {
-        Some(Duration::from_secs(duration_secs))
-    } else {
-        None
-    };
+        tracing::debug!(%video, gen = my_gen, ?duration, "play_track_id: started");
 
-    handle.runtime.block_on(async {
-        let stream = match handle.yt.get_stream(&id_str).await {
-            Ok(s) => s,
+        let outcome = play_once(&player, &resolver, auth.clone(), &video, duration, my_gen).await;
+        let outcome = match outcome {
+            Ok(()) => Ok(()),
+            Err(e) if e.contains("superseded") => Err(e),
             Err(e) => {
-                eprintln!("[libtimbre] Failed to extract YouTube URL for '{}': {:?}", id_str, e);
-                return false;
+                if player.generation() != my_gen {
+                    tracing::debug!(%video, gen = my_gen, "play_track_id: bailing before retry");
+                    dispatch_done(cb, user.raw(), Err("superseded by a newer play request".into()));
+                    return;
+                }
+                tracing::warn!(error = %e, gen = my_gen, "play failed, retrying with a fresh resolve");
+                resolver.invalidate(&video).await;
+                play_once(&player, &resolver, auth, &video, duration, my_gen).await
             }
         };
 
-        match handle.player.play_url(&stream.url, duration).await {
-            Ok(_) => true,
-            Err(e) => {
-                eprintln!("[libtimbre] Audio decoder failure: {:?}", e);
-                false
-            }
+        tracing::debug!(
+            %video,
+            gen = my_gen,
+            ok = outcome.is_ok(),
+            "play_track_id: finished"
+        );
+
+        dispatch_done(cb, user.raw(), outcome);
+    });
+    true
+}
+
+async fn play_once(
+    player: &Arc<AudioPlayer>,
+    resolver: &Arc<dyn StreamResolver>,
+    auth: Option<HttpAuth>,
+    video: &VideoId,
+    duration: Option<Duration>,
+    my_gen: u64,
+) -> Result<(), String> {
+    let work = async {
+        let info = resolver
+            .resolve(video.clone(), auth)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        tracing::debug!(
+            %video,
+            gen = my_gen,
+            uri_prefix = &info.uri[..info.uri.len().min(60)],
+            itag = ?info.format_id,
+            bitrate = ?info.bitrate,
+            ua = ?info.user_agent.as_deref().map(|s| &s[..s.len().min(30)]),
+            "play_once: resolve returned"
+        );
+
+        if player.generation() != my_gen {
+            return Err("superseded by a newer play request".to_string());
         }
-    })
+
+        player
+            .play_url(my_gen, Some(video), &info.uri, duration, info.user_agent.as_deref(), Some(&info))
+            .await
+            .map_err(|e| e.to_string())
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(25), work)
+        .await
+        .map_err(|_| "play timed out after 25s".to_string())?
 }
 
 #[unsafe(no_mangle)]
@@ -275,485 +312,690 @@ pub unsafe extern "C" fn timbre_player_seek(
     handle: *mut TimbrePlayerHandle,
     target_secs: f64,
 ) -> bool {
-    if handle.is_null() || target_secs < 0.0 {
+    if target_secs < 0.0 {
         return false;
     }
-
-    let handle = &*handle;
-    let target = Duration::from_secs_f64(target_secs);
-    let player = Arc::clone(&handle.player);
-
-    handle.runtime.spawn(async move {
-        let _ = player.seek(target).await;
+    let Some(h) = handle.as_ref() else { return false };
+    let player = h.player.clone();
+    h.runtime.spawn(async move {
+        if let Err(e) = player.seek(Duration::from_secs_f64(target_secs)).await {
+            tracing::warn!(error = %e, target_secs, "seek failed");
+        }
     });
-
     true
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_get_position(handle: *mut TimbrePlayerHandle) -> f64 {
-    if let Some(h) = handle.as_ref() {
-        h.player.get_position().as_secs_f64()
-    } else {
-        0.0
-    }
+    handle
+        .as_ref()
+        .map(|h| h.player.get_position().as_secs_f64())
+        .unwrap_or(0.0)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn timbre_player_get_duration(handle: *mut TimbrePlayerHandle) -> f64 {
-    if handle.is_null() {
-        return 0.0;
-    }
-    let wrapper = unsafe { &*handle };
-    wrapper.player.get_duration().map(|d| d.as_secs_f64()).unwrap_or(0.0)
+pub unsafe extern "C" fn timbre_player_get_duration(handle: *mut TimbrePlayerHandle) -> f64 {
+    handle
+        .as_ref()
+        .and_then(|h| h.player.get_duration())
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_is_finished(handle: *mut TimbrePlayerHandle) -> bool {
+    handle.as_ref().map(|h| h.player.is_finished()).unwrap_or(false)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_is_paused(handle: *mut TimbrePlayerHandle) -> bool {
+    handle.as_ref().map(|h| h.player.is_paused()).unwrap_or(false)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_set_volume(handle: *mut TimbrePlayerHandle, v: f32) {
     if let Some(h) = handle.as_ref() {
-        h.player.is_finished()
-    } else {
-        false
+        h.player.set_volume(v);
     }
 }
 
-// --- QUERIES AND SEARCH ---
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_get_volume(handle: *mut TimbrePlayerHandle) -> f32 {
+    handle.as_ref().map(|h| h.player.volume()).unwrap_or(1.0)
+}
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_search_tracks(
-    handle: *mut TimbrePlayerHandle,
-    query: *const c_char,
-) -> *mut CTrackList {
-    if handle.is_null() || query.is_null() {
-        return std::ptr::null_mut();
+pub unsafe extern "C" fn timbre_player_get_state(handle: *mut TimbrePlayerHandle) -> c_int {
+    let Some(h) = handle.as_ref() else { return 0 };
+    match h.player.state() {
+        PlayerState::Stopped => 0,
+        PlayerState::Playing => 1,
+        PlayerState::Paused => 2,
+        PlayerState::Buffering => 3,
+        PlayerState::Loading => 4,
+        PlayerState::Error => 5,
     }
+}
 
-    let handle = &*handle;
-    let query_str = match c_char_to_string(query) {
-        Some(s) => s,
-        None => return std::ptr::null_mut(),
-    };
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_take_last_error(handle: *mut TimbrePlayerHandle) -> *mut c_char {
+    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+    match h.player.take_error() {
+        Some(msg) => to_c(msg),
+        None => std::ptr::null_mut(),
+    }
+}
 
-    let tracks = match handle.runtime.block_on(async { handle.yt.search_tracks(&query_str).await }) {
-        Ok(t) => t,
-        Err(_) => return std::ptr::null_mut(),
-    };
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_get_stats(handle: *mut TimbrePlayerHandle) -> *mut c_char {
+    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+    to_c(serde_json::to_string(&h.player.stats()).unwrap_or_else(|_| "{}".into()))
+}
 
-    let mut c_tracks: Vec<CTrack> = tracks
-        .into_iter()
-        .map(|t| {
-            let artists_joined = t
-                .artists
-                .iter()
-                .map(|a| a.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let thumb = best_thumbnail(&t.thumbnails).map(|th| th.url.clone());
-            let album_name = t.album.map(|a| a.name);
-
-            CTrack {
-                id: string_to_c_ptr(t.video_id.unwrap_or_default()),
-                title: string_to_c_ptr(t.title),
-                artists: string_to_c_ptr(artists_joined),
-                album: album_name.map(string_to_c_ptr).unwrap_or(std::ptr::null_mut()),
-                thumbnail_url: thumb.map(string_to_c_ptr).unwrap_or(std::ptr::null_mut()),
-                duration_secs: t.duration.map(|d| d.as_secs()).unwrap_or(0),
-                is_explicit: t.explicit,
-                available: t.available,
-                kind: t.kind as c_int,
-                set_video_id: t.set_video_id.is_some(),
-                liked: t.liked.unwrap_or(false),
-                views: t.views.and_then(|v| v.parse::<u64>().ok()).unwrap_or(0),
-            }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_audio_stats(handle: *mut TimbrePlayerHandle) -> *mut c_char {
+    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+    let store = h.player.store().clone();
+    let result = h.runtime.block_on(async move {
+        let (cache_bytes, cache_count) = store.size(StoreKind::Cache).await;
+        let (dl_bytes, dl_count) = store.size(StoreKind::Download).await;
+        serde_json::json!({
+            "cache_bytes": cache_bytes,
+            "cache_count": cache_count,
+            "cache_limit_bytes": store.cache_limit(),
+            "downloads_bytes": dl_bytes,
+            "downloads_count": dl_count,
         })
-        .collect();
-
-    let len = c_tracks.len();
-    let items = c_tracks.as_mut_ptr();
-    std::mem::forget(c_tracks);
-
-    Box::into_raw(Box::new(CTrackList { items, len }))
+    });
+    to_c(result.to_string())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_search_albums(
+pub unsafe extern "C" fn timbre_audio_list(
     handle: *mut TimbrePlayerHandle,
-    query: *const c_char,
-) -> *mut CAlbumList {
-    if handle.is_null() || query.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let handle = &*handle;
-    let query_str = match c_char_to_string(query) {
-        Some(s) => s,
-        None => return std::ptr::null_mut(),
-    };
-
-    let albums = match handle.runtime.block_on(async { handle.yt.search_albums(&query_str).await }) {
-        Ok(t) => t,
-        Err(_) => return std::ptr::null_mut(),
-    };
-
-    let mut c_albums: Vec<CAlbum> = albums
-        .into_iter()
-        .map(|a| {
-            let artists_joined = a
-                .artists
-                .iter()
-                .map(|art| art.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let thumb = best_thumbnail(&a.thumbnails).map(|th| th.url.clone());
-
-            CAlbum {
-                id: string_to_c_ptr(a.browse_id),
-                title: string_to_c_ptr(a.title),
-                artists: string_to_c_ptr(artists_joined),
-                thumbnail_url: thumb.map(string_to_c_ptr).unwrap_or(std::ptr::null_mut()),
-            }
-        })
-        .collect();
-
-    let len = c_albums.len();
-    let items = c_albums.as_mut_ptr();
-    std::mem::forget(c_albums);
-
-    Box::into_raw(Box::new(CAlbumList { items, len }))
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_search_playlists(
-    handle: *mut TimbrePlayerHandle,
-    query: *const c_char,
-) -> *mut CPlaylistList {
-    if handle.is_null() || query.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let handle = &*handle;
-    let query_str = match c_char_to_string(query) {
-        Some(s) => s,
-        None => return std::ptr::null_mut(),
-    };
-
-    let playlists = match handle.runtime.block_on(async { handle.yt.search_playlists(&query_str).await }) {
-        Ok(p) => p,
-        Err(_) => return std::ptr::null_mut(),
-    };
-
-    let mut c_playlists: Vec<CPlaylist> = playlists
-        .into_iter()
-        .map(|p| {
-            let thumb = best_thumbnail(&p.thumbnails).map(|th| th.url.clone());
-
-            CPlaylist {
-                id: string_to_c_ptr(p.id),
-                title: string_to_c_ptr(p.title),
-                author: p.author.map(string_to_c_ptr).unwrap_or(std::ptr::null_mut()),
-                thumbnail_url: thumb.map(string_to_c_ptr).unwrap_or(std::ptr::null_mut()),
-            }
-        })
-        .collect();
-
-    let len = c_playlists.len();
-    let items = c_playlists.as_mut_ptr();
-    std::mem::forget(c_playlists);
-
-    Box::into_raw(Box::new(CPlaylistList { items, len }))
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_search_artists(
-    handle: *mut TimbrePlayerHandle,
-    query: *const c_char,
-) -> *mut CArtistList {
-    if handle.is_null() || query.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let handle = &*handle;
-    let query_str = match c_char_to_string(query) {
-        Some(s) => s,
-        None => return std::ptr::null_mut(),
-    };
-
-    let artists = match handle.runtime.block_on(async { handle.yt.search_artists(&query_str).await }) {
-        Ok(a) => a,
-        Err(_) => return std::ptr::null_mut(),
-    };
-
-    let mut c_artists: Vec<CArtist> = artists
-        .into_iter()
-        .map(|a| {
-            let thumb = best_thumbnail(&a.thumbnails).map(|th| th.url.clone());
-            CArtist {
-                id: string_to_c_ptr(a.browse_id),
-                name: string_to_c_ptr(a.name),
-                thumbnail_url: thumb.map(string_to_c_ptr).unwrap_or(std::ptr::null_mut()),
-            }
-        })
-        .collect();
-
-    let len = c_artists.len();
-    let items = c_artists.as_mut_ptr();
-    std::mem::forget(c_artists);
-
-    Box::into_raw(Box::new(CArtistList { items, len }))
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_search_suggestions(
-    handle: *mut TimbrePlayerHandle,
-    query: *const c_char,
-) -> *mut CSuggestionList {
-    if handle.is_null() || query.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let handle = &*handle;
-    let query_str = match c_char_to_string(query) {
-        Some(s) => s,
-        None => return std::ptr::null_mut(),
-    };
-
-    let suggestions = match handle.runtime.block_on(async { handle.yt.search_suggestions(&query_str).await }) {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
-    };
-
-    let mut c_suggestions: Vec<*mut c_char> = suggestions
-        .into_iter()
-        .map(string_to_c_ptr)
-        .collect();
-
-    let len = c_suggestions.len();
-    let items = c_suggestions.as_mut_ptr();
-    std::mem::forget(c_suggestions);
-
-    Box::into_raw(Box::new(CSuggestionList { items, len }))
-}
-
-// --- DEALLOCATION OF LISTS ---
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_track_list_free(ptr: *mut CTrackList) {
-    if ptr.is_null() {
-        return;
-    }
-    let list = Box::from_raw(ptr);
-    if !list.items.is_null() && list.len > 0 {
-        let mut tracks = Vec::from_raw_parts(list.items, list.len, list.len);
-        for track in tracks.iter_mut() {
-            track.free_fields();
-        }
-        drop(tracks);
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_album_list_free(ptr: *mut CAlbumList) {
-    if ptr.is_null() {
-        return;
-    }
-    let list = Box::from_raw(ptr);
-    if !list.items.is_null() && list.len > 0 {
-        let mut albums = Vec::from_raw_parts(list.items, list.len, list.len);
-        for album in albums.iter_mut() {
-            timbre_string_free(album.id);
-            timbre_string_free(album.title);
-            timbre_string_free(album.artists);
-            timbre_string_free(album.thumbnail_url);
-        }
-        drop(albums);
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_playlist_list_free(ptr: *mut CPlaylistList) {
-    if ptr.is_null() {
-        return;
-    }
-    let list = Box::from_raw(ptr);
-    if !list.items.is_null() && list.len > 0 {
-        let mut playlists = Vec::from_raw_parts(list.items, list.len, list.len);
-        for pl in playlists.iter_mut() {
-            timbre_string_free(pl.id);
-            timbre_string_free(pl.title);
-            timbre_string_free(pl.author);
-            timbre_string_free(pl.thumbnail_url);
-        }
-        drop(playlists);
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_suggestion_list_free(ptr: *mut CSuggestionList) {
-    if ptr.is_null() {
-        return;
-    }
-    let list = Box::from_raw(ptr);
-    if !list.items.is_null() && list.len > 0 {
-        let items = Vec::from_raw_parts(list.items, list.len, list.len);
-        for item in items {
-            timbre_string_free(item);
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_artist_list_free(ptr: *mut CArtistList) {
-    if ptr.is_null() {
-        return;
-    }
-    let list = Box::from_raw(ptr);
-    if !list.items.is_null() && list.len > 0 {
-        let mut artists = Vec::from_raw_parts(list.items, list.len, list.len);
-        for artist in artists.iter_mut() {
-            timbre_string_free(artist.id);
-            timbre_string_free(artist.name);
-            timbre_string_free(artist.thumbnail_url);
-        }
-        drop(artists);
-    }
-}
-
-// --- JSON RETRIEVAL ---
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_get_home_json(handle: *mut TimbrePlayerHandle) -> *mut c_char {
-    if handle.is_null() {
-        return std::ptr::null_mut();
-    }
-    let handle = &*handle;
-
-    match handle.runtime.block_on(async { handle.yt.get_home().await }) {
-        Ok(sections) => {
-            let json = serde_json::to_string(&sections).unwrap_or_else(|_| "[]".to_string());
-            string_to_c_ptr(json)
-        }
-        Err(e) => {
-            eprintln!("[libtimbre] Failed to fetch Home: {:?}", e);
-            string_to_c_ptr("[]".to_string())
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_get_album_json(
-    handle: *mut TimbrePlayerHandle,
-    album_id: *const c_char,
+    kind: c_int,
 ) -> *mut c_char {
-    if handle.is_null() || album_id.is_null() {
-        return std::ptr::null_mut();
-    }
-    let handle = &*handle;
-    let id = match c_char_to_string(album_id) {
-        Some(s) => s,
-        None => return std::ptr::null_mut(),
-    };
-
-    match handle.runtime.block_on(async { handle.yt.get_album(&id).await }) {
-        Ok(detail) => {
-            let json = serde_json::to_string(&detail).unwrap_or_else(|_| "{}".to_string());
-            string_to_c_ptr(json)
-        }
-        Err(e) => {
-            eprintln!("[libtimbre] Failed to fetch album {}: {:?}", id, e);
-            string_to_c_ptr("{}".to_string())
-        }
-    }
+    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+    let store = h.player.store().clone();
+    let kind = StoreKind::from_int(kind);
+    let entries = h.runtime.block_on(store.list(kind));
+    to_c(serde_json::to_string(&entries).unwrap_or_else(|_| "[]".into()))
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_get_playlist_json(
+pub unsafe extern "C" fn timbre_audio_remove(
     handle: *mut TimbrePlayerHandle,
-    playlist_id: *const c_char,
-) -> *mut c_char {
-    if handle.is_null() || playlist_id.is_null() {
-        return std::ptr::null_mut();
-    }
-    let handle = &*handle;
-    let id = match c_char_to_string(playlist_id) {
-        Some(s) => s,
-        None => return std::ptr::null_mut(),
-    };
-
-    match handle.runtime.block_on(async { handle.yt.get_playlist(&id).await }) {
-        Ok(detail) => {
-            let json = serde_json::to_string(&detail).unwrap_or_else(|_| "{}".to_string());
-            string_to_c_ptr(json)
-        }
-        Err(e) => {
-            eprintln!("[libtimbre] Failed to fetch playlist {}: {:?}", id, e);
-            string_to_c_ptr("{}".to_string())
-        }
-    }
-}
-
-// --- LOGIN ---
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_login(
-    handle: *mut TimbrePlayerHandle,
-    cookies_ptr: *const c_char,
-    path_ptr: *const c_char,
+    video_id: *const c_char,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
 ) -> bool {
-    if handle.is_null() || cookies_ptr.is_null() || path_ptr.is_null() {
-        return false;
-    }
-
-    let h = &mut *handle;
-    
-    let cookies_str = match c_char_to_string(cookies_ptr) {
-        Some(s) => s,
-        None => return false,
-    };
-    
-    let path_str = match c_char_to_string(path_ptr) {
-        Some(s) => s,
-        None => return false,
-    };
-
-    let path_buf = PathBuf::from(path_str);
-
-    let yt_instance = ytmusic::YtMusic::with_cookies(cookies_str)
-        .persist_cookies(path_buf);
-
-    let logged_client = YouTubeClient::new(Arc::new(yt_instance));
-
-    h.yt = logged_client;
-
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(video_id) = from_c(video_id) else { return false };
+    let store = h.player.store().clone();
+    let user = SendPtr::new(ud);
+    h.runtime.spawn(async move {
+        store.remove(&video_id).await;
+        dispatch_done(cb, user.raw(), Ok(()));
+    });
     true
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_load_cookies(
+pub unsafe extern "C" fn timbre_audio_clear(
     handle: *mut TimbrePlayerHandle,
-    path_ptr: *const c_char,
+    kind: c_int,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
 ) -> bool {
-    if handle.is_null() || path_ptr.is_null() {
+    let Some(h) = handle.as_ref() else { return false };
+    let store = h.player.store().clone();
+    let kind = StoreKind::from_int(kind);
+    let user = SendPtr::new(ud);
+    h.runtime.spawn(async move {
+        store.clear(kind).await;
+        dispatch_done(cb, user.raw(), Ok(()));
+    });
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_audio_set_cache_limit(
+    handle: *mut TimbrePlayerHandle,
+    bytes: u64,
+) {
+    let Some(h) = handle.as_ref() else { return };
+    h.player.store().set_cache_limit(bytes);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_audio_download(
+    handle: *mut TimbrePlayerHandle,
+    track_id: *const c_char,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(id) = from_c(track_id) else { return false };
+    if id.is_empty() {
         return false;
     }
 
-    let h = &mut *handle;
+    let player = h.player.clone();
+    let resolver = h.ctx.resolver.clone();
+    let auth = h.ctx.session.media_auth();
+    let user = SendPtr::new(ud);
 
-    let path_str = match c_char_to_string(path_ptr) {
-        Some(s) => s,
-        None => return false,
+    h.runtime.spawn(async move {
+        let video = VideoId(id.clone());
+        let info = match resolver.resolve(video.clone(), auth).await {
+            Ok(i) => i,
+            Err(e) => {
+                dispatch_done(cb, user.raw(), Err(e.to_string()));
+                return;
+            }
+        };
+
+        let result = download_to_store(&player, &info, &video).await;
+        dispatch_done(cb, user.raw(), result.map(|_| ()));
+    });
+    true
+}
+
+async fn download_to_store(
+    player: &Arc<AudioPlayer>,
+    info: &StreamInfo,
+    video: &VideoId,
+) -> Result<AudioEntry, String> {
+    use futures_util::StreamExt;
+
+    let store = player.store().clone();
+    if let Some(entry) = store.lookup_in(StoreKind::Download, video.as_str()).await {
+        if entry.complete {
+            return Ok(entry);
+        }
+    }
+
+    let meta = AudioEntry {
+        video_id: video.0.clone(),
+        title: info.title.clone(),
+        artist: info.uploader.clone(),
+        thumb: info.thumbnail.clone(),
+        ext: info.ext.clone(),
+        mime: info.acodec.clone(),
+        expected_size: None,
+        user_agent: info.user_agent.clone(),
+        uri: Some(info.uri.clone()),
+        ..Default::default()
     };
+    let mut writer = store
+        .open_writer(StoreKind::Download, video.as_str(), meta)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    let path_buf = PathBuf::from(path_str);
-    if !path_buf.exists() {
-        return false;
+    let ua = info.user_agent.as_deref().unwrap_or("Mozilla/5.0");
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(&info.uri)
+        .header("User-Agent", ua)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+    writer.set_expected_size(response.content_length());
+
+    let saved_offset = writer.downloaded_bytes();
+    let mut stream = response.bytes_stream();
+    let mut stream_pos = 0u64;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        let chunk_start = stream_pos;
+        let chunk_end = stream_pos + chunk.len() as u64;
+        if chunk_end > saved_offset {
+            let skip = saved_offset.saturating_sub(chunk_start) as usize;
+            writer.write(&chunk[skip..]).await.map_err(|e| e.to_string())?;
+        }
+        stream_pos = chunk_end;
     }
 
-    let yt_instance = ytmusic::YtMusic::anonymous()
-        .persist_cookies(path_buf);
+    writer.finish(true).await.map_err(|e| e.to_string())
+}
 
-    h.yt = YouTubeClient::new(Arc::new(yt_instance));
+macro_rules! endpoint_json {
+    ($name:ident, |$ctx:ident| $body:block) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            handle: *mut TimbrePlayerHandle,
+            cb: Option<TimbreCallback>,
+            ud: *mut c_void,
+        ) -> bool {
+            let Some(h) = handle.as_ref() else { return false };
+            let $ctx = h.ctx.clone();
+            let user = SendPtr::new(ud);
+            h.runtime.spawn(async move {
+                let result = async $body.await;
+                dispatch_json(cb, user.raw(), result.map_err(|e| e.to_string()));
+            });
+            true
+        }
+    };
+}
 
+macro_rules! endpoint_json_str {
+    ($name:ident, |$ctx:ident, $arg:ident| $body:block) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            handle: *mut TimbrePlayerHandle,
+            $arg: *const c_char,
+            cb: Option<TimbreCallback>,
+            ud: *mut c_void,
+        ) -> bool {
+            let Some(h) = handle.as_ref() else { return false };
+            let Some($arg) = from_c($arg) else { return false };
+            let $ctx = h.ctx.clone();
+            let user = SendPtr::new(ud);
+            h.runtime.spawn(async move {
+                let result = async $body.await;
+                dispatch_json(cb, user.raw(), result.map_err(|e| e.to_string()));
+            });
+            true
+        }
+    };
+}
+
+macro_rules! endpoint_json_str2 {
+    ($name:ident, |$ctx:ident, $a:ident, $b:ident| $body:block) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            handle: *mut TimbrePlayerHandle,
+            $a: *const c_char,
+            $b: *const c_char,
+            cb: Option<TimbreCallback>,
+            ud: *mut c_void,
+        ) -> bool {
+            let Some(h) = handle.as_ref() else { return false };
+            let (Some($a), Some($b)) = (from_c($a), from_c($b)) else { return false };
+            let $ctx = h.ctx.clone();
+            let user = SendPtr::new(ud);
+            h.runtime.spawn(async move {
+                let result = async $body.await;
+                dispatch_json(cb, user.raw(), result.map_err(|e| e.to_string()));
+            });
+            true
+        }
+    };
+}
+
+macro_rules! endpoint_done_str {
+    ($name:ident, |$ctx:ident, $arg:ident| $body:block) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            handle: *mut TimbrePlayerHandle,
+            $arg: *const c_char,
+            cb: Option<TimbreDoneCallback>,
+            ud: *mut c_void,
+        ) -> bool {
+            let Some(h) = handle.as_ref() else { return false };
+            let Some($arg) = from_c($arg) else { return false };
+            let $ctx = h.ctx.clone();
+            let user = SendPtr::new(ud);
+            h.runtime.spawn(async move {
+                let result = async $body.await;
+                dispatch_done(cb, user.raw(), result.map_err(|e| e.to_string()));
+            });
+            true
+        }
+    };
+}
+
+endpoint_json!(timbre_player_get_home, |ctx| {
+    let api = ctx.session.api();
+    home::get_home(api, 25).await
+});
+
+endpoint_json!(timbre_player_get_explore, |ctx| {
+    let api = ctx.session.api();
+    explore::load_explore(api, "ZZ".into()).await
+});
+
+endpoint_json_str!(timbre_player_get_charts, |ctx, country| {
+    let api = ctx.session.api();
+    explore::get_charts(&*api, &country).await
+});
+
+endpoint_json!(timbre_player_get_mood_categories, |ctx| {
+    let api = ctx.session.api();
+    explore::get_mood_categories(&*api).await
+});
+
+endpoint_json_str!(timbre_player_get_category_page, |ctx, params| {
+    let api = ctx.session.api();
+    explore::get_category_page(&*api, &params).await
+});
+
+endpoint_json_str!(timbre_player_get_album, |ctx, album_id| {
+    let api = ctx.session.api();
+    playlists::get_album(&*api, &album_id).await
+});
+
+endpoint_json_str!(timbre_player_get_playlist, |ctx, playlist_id| {
+    let api = ctx.session.api();
+    playlists::get_playlist(&*api, &playlist_id, None).await
+});
+
+endpoint_json_str!(timbre_player_get_artist, |ctx, channel_id| {
+    let api = ctx.session.api();
+    artist::get_artist(api, &channel_id).await
+});
+
+endpoint_json_str!(timbre_player_get_radio, |ctx, track_id| {
+    let api = ctx.session.api();
+    playlists::radio_tracks(&*api, Some(&track_id), None).await
+});
+
+endpoint_json_str2!(timbre_player_get_watch_playlist, |ctx, video_id, playlist_id| {
+    let api = ctx.session.api();
+    let vid = if video_id.is_empty() { None } else { Some(video_id.as_str()) };
+    let pid = if playlist_id.is_empty() { None } else { Some(playlist_id.as_str()) };
+    playlists::get_watch_playlist(&*api, vid, pid, 50, false).await
+});
+
+endpoint_json!(timbre_player_get_library_playlists, |ctx| {
+    let api = ctx.session.api();
+    library::library_playlists(api).await
+});
+
+endpoint_json!(timbre_player_get_library_albums, |ctx| {
+    let api = ctx.session.api();
+    library::library_albums(api).await
+});
+
+endpoint_json!(timbre_player_get_library_subscriptions, |ctx| {
+    let api = ctx.session.api();
+    library::library_subscriptions(api).await
+});
+
+endpoint_json!(timbre_player_get_uploads_songs, |ctx| {
+    let api = ctx.session.api();
+    playlists::get_upload_songs(&*api).await
+});
+
+endpoint_json!(timbre_player_get_uploads_albums, |ctx| {
+    let api = ctx.session.api();
+    library::upload_albums(api).await
+});
+
+endpoint_json!(timbre_player_get_uploads_artists, |ctx| {
+    let api = ctx.session.api();
+    library::upload_artists(api).await
+});
+
+endpoint_json!(timbre_player_get_history, |ctx| {
+    let api = ctx.session.api();
+    history::get_history(api).await
+});
+
+endpoint_json_str!(timbre_player_search, |ctx, query| {
+    let api = ctx.session.api();
+    search::search_all(api, query).await
+});
+
+endpoint_json_str!(timbre_player_search_suggestions, |ctx, query| {
+    let api = ctx.session.api();
+    let results = search::search(&*api, &query, None).await?;
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    if let Some(top) = results.top_result {
+        if seen.insert(top.title.clone()) {
+            out.push(top.title);
+        }
+    }
+    for item in results.items {
+        if out.len() >= 10 {
+            break;
+        }
+        if seen.insert(item.title.clone()) {
+            out.push(item.title);
+        }
+    }
+    Ok::<_, crate::net::NetError>(out)
+});
+
+endpoint_json!(timbre_player_get_account, |ctx| {
+    ctx.session.account_info().await
+});
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_is_authenticated(handle: *mut TimbrePlayerHandle) -> bool {
+    handle
+        .as_ref()
+        .map(|h| h.ctx.session.is_authenticated())
+        .unwrap_or(false)
+}
+
+endpoint_done_str!(timbre_player_login, |ctx, input| {
+    ctx.session.login(&input).await.map(|_| ())
+});
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_logout(
+    handle: *mut TimbrePlayerHandle,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+    h.runtime.spawn(async move {
+        ctx.session.logout().await;
+        dispatch_done(cb, user.raw(), Ok(()));
+    });
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_rate_track(
+    handle: *mut TimbrePlayerHandle,
+    track_id: *const c_char,
+    like: bool,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(track_id) = from_c(track_id) else { return false };
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+
+    h.runtime.spawn(async move {
+        let status = if like { LikeStatus::Like } else { LikeStatus::Indifferent };
+        let result = ctx
+            .session
+            .rate_song(&track_id, status)
+            .await
+            .map_err(|e| e.to_string());
+        dispatch_done(cb, user.raw(), result);
+    });
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_subscribe_artist(
+    handle: *mut TimbrePlayerHandle,
+    channel_id: *const c_char,
+    subscribe: bool,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(channel_id) = from_c(channel_id) else { return false };
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+
+    h.runtime.spawn(async move {
+        let api = ctx.session.api();
+        let result = if subscribe {
+            artist::subscribe(&*api, &channel_id).await
+        } else {
+            artist::unsubscribe(&*api, &channel_id).await
+        }
+        .map_err(|e| e.to_string());
+        dispatch_done(cb, user.raw(), result);
+    });
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_remove_history(
+    handle: *mut TimbrePlayerHandle,
+    tokens_json: *const c_char,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(tokens_json) = from_c(tokens_json) else { return false };
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+
+    h.runtime.spawn(async move {
+        let tokens: Vec<String> = match serde_json::from_str(&tokens_json) {
+            Ok(t) => t,
+            Err(e) => {
+                dispatch_done(cb, user.raw(), Err(format!("invalid tokens: {e}")));
+                return;
+            }
+        };
+        let api = ctx.session.api();
+        let result = history::remove_history_items(&*api, tokens)
+            .await
+            .map_err(|e| e.to_string());
+        dispatch_done(cb, user.raw(), result);
+    });
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_add_to_playlist(
+    handle: *mut TimbrePlayerHandle,
+    playlist_id: *const c_char,
+    track_ids_json: *const c_char,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(playlist_id) = from_c(playlist_id) else { return false };
+    let Some(track_ids_json) = from_c(track_ids_json) else { return false };
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+
+    h.runtime.spawn(async move {
+        let ids: Vec<String> = match serde_json::from_str(&track_ids_json) {
+            Ok(v) => v,
+            Err(e) => {
+                dispatch_done(cb, user.raw(), Err(format!("invalid ids: {e}")));
+                return;
+            }
+        };
+        let api = ctx.session.api();
+        let result = playlists::add_playlist_items(&*api, &playlist_id, ids, None)
+            .await
+            .map_err(|e| e.to_string());
+        dispatch_done(cb, user.raw(), result);
+    });
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_create_playlist(
+    handle: *mut TimbrePlayerHandle,
+    title: *const c_char,
+    description: *const c_char,
+    privacy: *const c_char,
+    cb: Option<TimbreCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let (Some(title), Some(desc), Some(privacy)) = (from_c(title), from_c(description), from_c(privacy)) else {
+        return false;
+    };
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+
+    h.runtime.spawn(async move {
+        let api = ctx.session.api();
+        let result = playlists::create_playlist(&*api, &title, &desc, &privacy)
+            .await
+            .map(|id| serde_json::json!({ "id": id }))
+            .map_err(|e| e.to_string());
+        dispatch_json(cb, user.raw(), result);
+    });
+    true
+}
+
+endpoint_done_str!(timbre_player_delete_playlist, |ctx, playlist_id| {
+    let api = ctx.session.api();
+    playlists::delete_playlist(&*api, &playlist_id).await
+});
+
+/// Empty strings in title/description/privacy mean "leave the field alone".
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_edit_playlist(
+    handle: *mut TimbrePlayerHandle,
+    playlist_id: *const c_char,
+    title: *const c_char,
+    description: *const c_char,
+    privacy: *const c_char,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(playlist_id) = from_c(playlist_id) else { return false };
+    let title = from_c(title).unwrap_or_default();
+    let description = from_c(description).unwrap_or_default();
+    let privacy = from_c(privacy).unwrap_or_default();
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+
+    h.runtime.spawn(async move {
+        let api = ctx.session.api();
+        let result = playlists::edit_playlist(
+            &*api,
+            &playlist_id,
+            none_if_empty(&title),
+            none_if_empty(&description),
+            none_if_empty(&privacy),
+        )
+        .await
+        .map_err(|e| e.to_string());
+        dispatch_done(cb, user.raw(), result);
+    });
+    true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_record_play(
+    handle: *mut TimbrePlayerHandle,
+    track_id: *const c_char,
+    cb: Option<TimbreDoneCallback>,
+    ud: *mut c_void,
+) -> bool {
+    let Some(h) = handle.as_ref() else { return false };
+    let Some(track_id) = from_c(track_id) else { return false };
+    let ctx = h.ctx.clone();
+    let user = SendPtr::new(ud);
+
+    h.runtime.spawn(async move {
+        let api = ctx.session.api();
+        let auth = ctx.session.media_auth();
+        let result = history::record_play(&*api, &ctx.http, auth.as_ref(), &track_id)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+        dispatch_done(cb, user.raw(), result);
+    });
     true
 }

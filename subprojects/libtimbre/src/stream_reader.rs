@@ -3,16 +3,17 @@ use std::sync::{Arc, Condvar, Mutex};
 
 const DEFAULT_BUFFER_CAPACITY: usize = 4 * 1024 * 1024;
 
-struct StreamBufferInner {
-    data: Vec<u8>,
-    is_finished: bool,
-    error: Option<String>,
+pub(crate) struct StreamBufferInner {
+    pub(crate) data: Vec<u8>,
+    pub(crate) is_finished: bool,
+    pub(crate) error: Option<String>,
+    pub(crate) cancelled: bool,
 }
 
 #[derive(Clone)]
 pub struct StreamBuffer {
-    inner: Arc<Mutex<StreamBufferInner>>,
-    cvar: Arc<Condvar>,
+    pub(crate) inner: Arc<Mutex<StreamBufferInner>>,
+    pub(crate) cvar: Arc<Condvar>,
 }
 
 impl Default for StreamBuffer {
@@ -28,6 +29,7 @@ impl StreamBuffer {
                 data: Vec::with_capacity(DEFAULT_BUFFER_CAPACITY),
                 is_finished: false,
                 error: None,
+                cancelled: false,
             })),
             cvar: Arc::new(Condvar::new()),
         }
@@ -35,6 +37,9 @@ impl StreamBuffer {
 
     pub fn append(&self, chunk: &[u8]) {
         let mut inner = self.inner.lock().unwrap();
+        if inner.cancelled {
+            return;
+        }
         inner.data.extend_from_slice(chunk);
         self.cvar.notify_all();
     }
@@ -52,9 +57,24 @@ impl StreamBuffer {
         self.cvar.notify_all();
     }
 
+    pub fn cancel(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.cancelled = true;
+        inner.is_finished = true;
+        inner.data.clear();
+        self.cvar.notify_all();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.inner.lock().unwrap().cancelled
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.inner.lock().unwrap().is_finished
+    }
+
     pub fn current_len(&self) -> usize {
-        let inner = self.inner.lock().unwrap();
-        inner.data.len()
+        self.inner.lock().unwrap().data.len()
     }
 }
 
@@ -76,25 +96,23 @@ impl Read for StreamReader {
         }
 
         let mut inner = self.buffer.inner.lock().unwrap();
-
         loop {
-            if let Some(ref err) = inner.error {
-                return Err(io::Error::new(io::ErrorKind::Other, err.clone()));
+            if inner.cancelled {
+                return Ok(0);
             }
-
+            if let Some(ref err) = inner.error {
+                return Err(io::Error::other(err.clone()));
+            }
             if self.cursor < inner.data.len() {
                 let available = inner.data.len() - self.cursor;
                 let to_copy = available.min(buf.len());
-                let (dest, _) = buf.split_at_mut(to_copy);
-                dest.copy_from_slice(&inner.data[self.cursor..self.cursor + to_copy]);
+                buf[..to_copy].copy_from_slice(&inner.data[self.cursor..self.cursor + to_copy]);
                 self.cursor += to_copy;
                 return Ok(to_copy);
             }
-
             if inner.is_finished {
                 return Ok(0);
             }
-
             inner = self.buffer.cvar.wait(inner).unwrap();
         }
     }
@@ -108,14 +126,12 @@ impl Seek for StreamReader {
             SeekFrom::Start(offset) => offset as i64,
             SeekFrom::Current(offset) => self.cursor as i64 + offset,
             SeekFrom::End(offset) => {
-                while !inner.is_finished && inner.error.is_none() {
+                while !inner.is_finished && inner.error.is_none() && !inner.cancelled {
                     inner = self.buffer.cvar.wait(inner).unwrap();
                 }
-
                 if let Some(ref err) = inner.error {
-                    return Err(io::Error::new(io::ErrorKind::Other, err.clone()));
+                    return Err(io::Error::other(err.clone()));
                 }
-
                 inner.data.len() as i64 + offset
             }
         };

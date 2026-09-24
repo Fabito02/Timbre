@@ -6,9 +6,7 @@ namespace Timbre {
         public uint64 duration_secs { get; set; default = 0; }
         public string? thumbnail_url { get; set; default = null; }
 
-        public TrackItem () {
-            Object ();
-        }
+        public TrackItem () {}
 
         public TrackItem.with_data (
             string id,

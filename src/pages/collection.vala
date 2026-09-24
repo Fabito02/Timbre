@@ -11,25 +11,25 @@ namespace Timbre {
         private unowned Timbre.Player player;
         private string collection_id;
         private string collection_type;
-        private GenericArray<TrackItem> tracks;
+        private GenericArray<Timbre.TrackItem> tracks;
 
         public signal void track_selected (string id, uint64 duration, string title, string artist, string? cover);
-        public signal void play_collection (GenericArray<TrackItem> tracks, int start_index);
+        public signal void play_collection (GenericArray<Timbre.TrackItem> tracks, int start_index);
 
         public CollectionPage (
-            Timbre.Player player, 
-            string id, 
-            string type_name, 
-            string title, 
-            string subtitle, 
+            Timbre.Player player,
+            string id,
+            string type_name,
+            string title,
+            string subtitle,
             string? cover_url
         ) {
             Object (title: title);
 
             this.player = player;
             this.collection_id = id;
-            this.collection_type = type_name;
-            this.tracks = new GenericArray<TrackItem> ();
+            this.collection_type = type_name.down ();
+            this.tracks = new GenericArray<Timbre.TrackItem> ();
 
             this.label_title.label = title;
             this.label_subtitle.label = subtitle;
@@ -38,11 +38,7 @@ namespace Timbre {
             if (display != null) {
                 int scale = this.get_scale_factor ();
                 Timbre.Utils.ImageLoader.get_default ().load_paintable_async.begin (
-                    cover_url,
-                    display,
-                    160,
-                    scale,
-                    "audio-x-generic-symbolic",
+                    cover_url, display, 160, scale, "audio-x-generic-symbolic",
                     (obj, res) => {
                         this.image_cover.paintable = Timbre.Utils.ImageLoader.get_default ().load_paintable_async.end (res);
                     }
@@ -50,7 +46,6 @@ namespace Timbre {
             }
 
             this.button_play_all.clicked.connect (this.on_play_all_clicked);
-
             this.load_collection_tracks ();
 
             this.tracks_list.row_activated.connect ((row) => {
@@ -66,142 +61,115 @@ namespace Timbre {
             this.spinner_loading.spinning = true;
             this.tracks_list.visible = false;
 
-            new Thread<void*> ("collection-worker", () => {
-                char* raw_ptr = null;
+            if (this.collection_type == "album") {
+                this.player.get_album (this.collection_id, on_collection_loaded);
+            } else {
+                this.player.get_playlist (this.collection_id, on_collection_loaded);
+            }
+        }
 
-                if (this.collection_type == "album") {
-                    raw_ptr = this.player.get_album_json (this.collection_id);
-                } else {
-                    raw_ptr = this.player.get_playlist_json (this.collection_id);
+        private void on_collection_loaded (char* json_ptr, char* error) {
+            Idle.add (() => {
+                this.spinner_loading.spinning = false;
+                this.spinner_loading.visible = false;
+
+                if (error != null) {
+                    warning ("collection: %s", (string) error);
+                    Timbre.string_free (error);
+                    return GLib.Source.REMOVE;
                 }
 
-                if (raw_ptr == null) {
-                    Idle.add (() => {
-                        this.spinner_loading.spinning = false;
-                        this.spinner_loading.visible = false;
-                        return Source.REMOVE;
-                    });
-                    return null;
-                }
-
-                string json_data = (string) raw_ptr;
-                Timbre.string_free (raw_ptr);
-
-                var parsed_tracks = this.parse_tracks_json (json_data);
-
-                Idle.add (() => {
-                    this.tracks = parsed_tracks;
-                    this.populate_tracks_list ();
-
-                    this.spinner_loading.spinning = false;
-                    this.spinner_loading.visible = false;
-                    this.tracks_list.visible = true;
-
-                    return Source.REMOVE;
-                });
-
-                return null;
+                this.tracks = this.parse_tracks_json ((string) json_ptr);
+                this.populate_tracks_list ();
+                this.tracks_list.visible = true;
+                Timbre.string_free (json_ptr);
+                return GLib.Source.REMOVE;
             });
         }
 
         private GenericArray<Timbre.TrackItem> parse_tracks_json (string json_data) {
             var list = new GenericArray<Timbre.TrackItem> ();
-        
+
             var parser = new Json.Parser ();
-            parser.load_from_data (json_data);
-    
+            try {
+                parser.load_from_data (json_data);
+            } catch (Error e) {
+                warning ("collection json: %s", e.message);
+                return list;
+            }
+
             var root = parser.get_root ();
             if (root == null || root.get_node_type () != Json.NodeType.OBJECT) {
                 return list;
             }
-    
+
             var root_obj = root.get_object ();
             if (!root_obj.has_member ("tracks")) {
                 return list;
             }
-    
+
             var tracks_node = root_obj.get_member ("tracks");
             if (tracks_node == null || tracks_node.get_node_type () != Json.NodeType.ARRAY) {
                 return list;
             }
 
-            var tracks_arr = tracks_node.get_array ();
-            foreach (unowned Json.Node node in tracks_arr.get_elements ()) {
+            foreach (unowned Json.Node node in tracks_node.get_array ().get_elements ()) {
                 if (node == null || node.get_node_type () != Json.NodeType.OBJECT) continue;
                 var obj = node.get_object ();
-    
                 var track = new Timbre.TrackItem ();
-    
-                if (obj.has_member ("video_id") && obj.get_member ("video_id").get_node_type () == Json.NodeType.VALUE && !obj.get_null_member ("video_id")) {
+
+                // `video_id` is a Rust newtype serialized as a plain string;
+                // `id` is the older key, kept for compatibility.
+                if (obj.has_member ("video_id") && !obj.get_null_member ("video_id")) {
                     track.id = obj.get_string_member ("video_id");
-                } else if (obj.has_member ("id") && obj.get_member ("id").get_node_type () == Json.NodeType.VALUE && !obj.get_null_member ("id")) {
+                } else if (obj.has_member ("id") && !obj.get_null_member ("id")) {
                     track.id = obj.get_string_member ("id");
                 }
-                
-                if (obj.has_member ("title") && obj.get_member ("title").get_node_type () == Json.NodeType.VALUE) {
+
+                if (obj.has_member ("title") && !obj.get_null_member ("title")) {
                     track.title = obj.get_string_member ("title");
                 }
-    
-                string artist_name = _("Unknown");
-                if (obj.has_member ("artists")) {
+
+                string artist_name = "";
+                if (obj.has_member ("artists") && !obj.get_null_member ("artists")) {
                     var artists_node = obj.get_member ("artists");
-                    if (artists_node != null && artists_node.get_node_type () == Json.NodeType.ARRAY) {
-                        var names = new GenericArray<string> ();
+                    if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
+                        var sb = new StringBuilder ();
                         foreach (unowned Json.Node a_node in artists_node.get_array ().get_elements ()) {
-                            if (a_node != null && a_node.get_node_type () == Json.NodeType.OBJECT) {
+                            string? name = null;
+                            if (a_node.get_node_type () == Json.NodeType.OBJECT) {
                                 var a_obj = a_node.get_object ();
-                                if (a_obj.has_member ("name") && a_obj.get_member ("name").get_node_type () == Json.NodeType.VALUE) {
-                                    names.add (a_obj.get_string_member ("name"));
+                                if (a_obj.has_member ("name")) {
+                                    name = a_obj.get_string_member ("name");
                                 }
-                            } else if (a_node != null && a_node.get_node_type () == Json.NodeType.VALUE) {
-                                names.add (a_node.get_string ());
+                            } else if (a_node.get_node_type () == Json.NodeType.VALUE) {
+                                name = a_node.get_string ();
+                            }
+                            if (name != null) {
+                                if (sb.len > 0) sb.append (", ");
+                                sb.append (name);
                             }
                         }
-                        if (names.length > 0) {
-                            string[] raw = new string[names.length];
-                            for (int j = 0; j < names.length; j++) raw[j] = names.get (j);
-                            artist_name = string.joinv (", ", raw);
-                        }
-                    } else if (artists_node != null && artists_node.get_node_type () == Json.NodeType.VALUE) {
-                        artist_name = artists_node.get_string ();
+                        artist_name = sb.str;
                     }
-                } else if (obj.has_member ("author")) {
-                    var author_node = obj.get_member ("author");
-                    if (author_node != null && author_node.get_node_type () == Json.NodeType.VALUE) {
-                        artist_name = author_node.get_string ();
-                    }
+                } else if (obj.has_member ("artist") && !obj.get_null_member ("artist")) {
+                    artist_name = obj.get_string_member ("artist");
                 }
-                track.artist = artist_name;
-    
-                if (obj.has_member ("duration") && obj.get_member ("duration").get_node_type () == Json.NodeType.OBJECT) {
-                    var dur_obj = obj.get_object_member ("duration");
-                    if (dur_obj.has_member ("secs")) {
-                        track.duration_secs = (uint64) dur_obj.get_int_member ("secs");
-                    }
-                } else if (obj.has_member ("duration_secs") && obj.get_member ("duration_secs").get_node_type () == Json.NodeType.VALUE) {
-                    track.duration_secs = (uint64) obj.get_int_member ("duration_secs");
-                } else if (obj.has_member ("duration") && obj.get_member ("duration").get_node_type () == Json.NodeType.VALUE) {
-                    track.duration_secs = (uint64) obj.get_int_member ("duration");
+                track.artist = artist_name.length > 0 ? artist_name : _("Unknown");
+
+                if (obj.has_member ("duration_seconds") && !obj.get_null_member ("duration_seconds")) {
+                    track.duration_secs = (uint64) obj.get_int_member ("duration_seconds");
                 }
-    
-                if (obj.has_member ("thumbnail_url") && obj.get_member ("thumbnail_url").get_node_type () == Json.NodeType.VALUE) {
+
+                if (obj.has_member ("thumb") && !obj.get_null_member ("thumb")) {
+                    track.thumbnail_url = obj.get_string_member ("thumb");
+                } else if (obj.has_member ("thumbnail_url") && !obj.get_null_member ("thumbnail_url")) {
                     track.thumbnail_url = obj.get_string_member ("thumbnail_url");
-                } else if (obj.has_member ("thumbnails")) {
-                    var thumbs_node = obj.get_member ("thumbnails");
-                    if (thumbs_node != null && thumbs_node.get_node_type () == Json.NodeType.ARRAY) {
-                        var thumbs_arr = thumbs_node.get_array ();
-                        if (thumbs_arr.get_length () > 0) {
-                            var thumb_obj = thumbs_arr.get_object_element (thumbs_arr.get_length () - 1);
-                            if (thumb_obj != null && thumb_obj.has_member ("url") && thumb_obj.get_member ("url").get_node_type () == Json.NodeType.VALUE) {
-                                track.thumbnail_url = thumb_obj.get_string_member ("url");
-                            }
-                        }
-                    }
                 }
-    
+
                 list.add (track);
             }
-        
+
             return list;
         }
 
@@ -212,26 +180,24 @@ namespace Timbre {
                 this.tracks_list.remove (child);
                 child = next;
             }
-        
+
+            bool is_album = this.collection_type == "album";
             for (int i = 0; i < this.tracks.length; i++) {
                 var track = this.tracks.get (i);
-                
                 string display_title = track.title;
                 string? display_cover = track.thumbnail_url;
-
-                if (this.collection_type == "album") {
+                if (is_album) {
                     display_title = "%d. %s".printf (i + 1, track.title);
                     display_cover = null;
                 }
 
-                var row = new Timbre.TrackRow (
+                this.tracks_list.append (new Timbre.TrackRow (
                     track.id,
                     display_title,
                     track.artist,
                     track.duration_secs,
                     display_cover
-                );
-                this.tracks_list.append (row);
+                ));
             }
         }
 

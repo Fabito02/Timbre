@@ -1,29 +1,13 @@
 namespace Timbre {
-
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/home.ui")]
     public class HomePage : Adw.NavigationPage {
-
-        [GtkChild]
-        private unowned Gtk.Box content_box;
+        [GtkChild] private unowned Gtk.Box content_box;
 
         private unowned Timbre.Player? player;
         private GenericArray<HomeSectionModel> sections;
 
-        public signal void track_selected (
-            string id,
-            uint64 duration,
-            string title,
-            string artist,
-            string? cover
-        );
-
-        public signal void collection_selected (
-            string id,
-            string type_name,
-            string title,
-            string subtitle,
-            string? cover
-        );
+        public signal void track_selected (string id, uint64 duration, string title, string artist, string? cover);
+        public signal void collection_selected (string id, string type_name, string title, string subtitle, string? cover);
 
         public HomePage () {
             Object ();
@@ -38,25 +22,17 @@ namespace Timbre {
         private void load_home_data () {
             if (this.player == null) return;
 
-            new Thread<void*> ("home-worker", () => {
-                char* raw_ptr = this.player.get_home_json ();
-
-                if (raw_ptr == null) {
-                    return null;
-                }
-
-                string json_data = (string) raw_ptr;
-
-                Timbre.string_free (raw_ptr);
-
-                var parsed_sections = this.parse_sections (json_data);
-
-                GLib.Idle.add (() => {
-                    this.set_results (parsed_sections);
+            this.player.get_home ((json, error) => {
+                Idle.add (() => {
+                    if (error != null) {
+                        warning ("home: %s", (string) error);
+                        Timbre.string_free (error);
+                        return GLib.Source.REMOVE;
+                    }
+                    this.set_results (this.parse_sections ((string) json));
+                    Timbre.string_free (json);
                     return GLib.Source.REMOVE;
                 });
-
-                return null;
             });
         }
 
@@ -64,76 +40,73 @@ namespace Timbre {
             var list = new GenericArray<HomeSectionModel> ();
 
             var parser = new Json.Parser ();
-            parser.load_from_data (json_data);
+            try {
+                parser.load_from_data (json_data);
+            } catch (Error e) {
+                warning ("home json: %s", e.message);
+                return list;
+            }
 
-            var root_array = parser.get_root ().get_array ();
+            var root = parser.get_root ();
+            if (root == null || root.get_node_type () != Json.NodeType.ARRAY) {
+                return list;
+            }
 
-            foreach (unowned Json.Node sec_node in root_array.get_elements ()) {
+            foreach (unowned Json.Node sec_node in root.get_array ().get_elements ()) {
+                if (sec_node.get_node_type () != Json.NodeType.OBJECT) continue;
                 var sec_obj = sec_node.get_object ();
 
-                var section = new HomeSectionModel (
-                    sec_obj.get_string_member ("title")
-                );
+                string sec_title = sec_obj.has_member ("title") && !sec_obj.get_null_member ("title")
+                    ? sec_obj.get_string_member ("title")
+                    : "";
+                var section = new HomeSectionModel (sec_title);
 
-                var items_array = sec_obj.get_array_member ("items");
+                if (!sec_obj.has_member ("items")) {
+                    list.add (section);
+                    continue;
+                }
 
-                foreach (unowned Json.Node item_node in items_array.get_elements ()) {
+                foreach (unowned Json.Node item_node in sec_obj.get_array_member ("items").get_elements ()) {
+                    if (item_node.get_node_type () != Json.NodeType.OBJECT) continue;
                     var obj = item_node.get_object ();
                     var item = new HomeItemModel ();
 
-                    item.type_name = obj.get_string_member ("type");
-
-                    if (obj.has_member ("browse_id")) {
-                        item.id = obj.get_string_member ("browse_id");
-                    } else if (obj.has_member ("video_id") && !obj.get_null_member ("video_id")) {
-                        item.id = obj.get_string_member ("video_id");
-                    } else if (obj.has_member ("id")) {
+                    if (obj.has_member ("kind")) {
+                        item.type_name = obj.get_string_member ("kind");
+                    }
+                    if (obj.has_member ("id") && !obj.get_null_member ("id")) {
                         item.id = obj.get_string_member ("id");
                     }
-
-                    item.title = obj.get_string_member ("title");
-
-                    if (obj.has_member ("duration_secs") && !obj.get_null_member ("duration_secs")) {
-                        item.duration_secs = (uint64) obj.get_int_member ("duration_secs");
-                    } else if (obj.has_member ("duration") && !obj.get_null_member ("duration")) {
-                        var dur_node = obj.get_member ("duration");
-                        if (dur_node.get_node_type () == Json.NodeType.VALUE) {
-                            item.duration_secs = (uint64) obj.get_int_member ("duration");
-                        }
+                    if (obj.has_member ("title") && !obj.get_null_member ("title")) {
+                        item.title = obj.get_string_member ("title");
+                    }
+                    if (obj.has_member ("duration_seconds") && !obj.get_null_member ("duration_seconds")) {
+                        item.duration_secs = (uint64) obj.get_int_member ("duration_seconds");
                     }
 
-                    if (obj.has_member ("author") && !obj.get_null_member ("author")) {
-                        item.subtitle = obj.get_string_member ("author");
-                    } else if (obj.has_member ("artists") && !obj.get_null_member ("artists")) {
+                    if (obj.has_member ("artists") && !obj.get_null_member ("artists")) {
                         var artists_node = obj.get_member ("artists");
                         if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
-                            var art_arr = artists_node.get_array ();
-                            var art_names = new GenericArray<string> ();
-
-                            foreach (unowned Json.Node a_node in art_arr.get_elements ()) {
+                            var sb = new StringBuilder ();
+                            foreach (unowned Json.Node a_node in artists_node.get_array ().get_elements ()) {
                                 if (a_node.get_node_type () == Json.NodeType.OBJECT) {
-                                    var a_obj = a_node.get_object ();
-                                    if (a_obj.has_member ("name")) {
-                                        art_names.add (a_obj.get_string_member ("name"));
+                                    var ao = a_node.get_object ();
+                                    if (ao.has_member ("name")) {
+                                        if (sb.len > 0) sb.append (", ");
+                                        sb.append (ao.get_string_member ("name"));
                                     }
                                 }
                             }
-                            item.subtitle = string.joinv (", ", art_names.data);
-                        } else if (artists_node.get_node_type () == Json.NodeType.VALUE) {
-                            item.subtitle = obj.get_string_member ("artists");
-                        }
-                    }
-
-                    if (obj.has_member ("thumbnails") && !obj.get_null_member ("thumbnails")) {
-                        var thumbs_arr = obj.get_array_member ("thumbnails");
-                        if (thumbs_arr.get_length () > 0) {
-                            var last_thumb = thumbs_arr.get_element (thumbs_arr.get_length () - 1).get_object ();
-                            if (last_thumb.has_member ("url")) {
-                                item.thumbnail_url = last_thumb.get_string_member ("url");
+                            if (sb.len > 0) {
+                                item.subtitle = sb.str;
                             }
                         }
-                    } else if (obj.has_member ("thumbnail_url") && !obj.get_null_member ("thumbnail_url")) {
-                        item.thumbnail_url = obj.get_string_member ("thumbnail_url");
+                    } else if (obj.has_member ("description") && !obj.get_null_member ("description")) {
+                        item.subtitle = obj.get_string_member ("description");
+                    }
+
+                    if (obj.has_member ("thumb") && !obj.get_null_member ("thumb")) {
+                        item.thumbnail_url = obj.get_string_member ("thumb");
                     }
 
                     section.items.add (item);
@@ -171,38 +144,20 @@ namespace Timbre {
                     HomeItemModel item = section.items.get (j);
 
                     var card = new Timbre.TrackCard (
-                        item.id,
-                        item.type_name,
-                        item.title,
-                        item.subtitle ?? "",
-                        item.thumbnail_url
-                    );
+                        item.id, item.type_name, item.title, item.subtitle ?? "", item.thumbnail_url);
 
-                    // Captura as variáveis no escopo local pro closure não pegar lixo
                     string item_id = item.id;
-                    uint64 item_duration = item.duration_secs; // <--- AQUI! Captura a duração
+                    uint64 item_duration = item.duration_secs;
                     string item_type = item.type_name;
                     string item_title = item.title;
                     string item_sub = item.subtitle ?? "";
                     string? item_thumb = item.thumbnail_url;
 
                     card.clicked.connect (() => {
-                        if (item_type == "Track") {
-                            this.track_selected (
-                                item_id,
-                                item_duration, // <--- AGORA PASSA A DURAÇÃO CORRETA
-                                item_title,
-                                item_sub,
-                                item_thumb
-                            );
+                        if (item_type == "Song" || item_type == "Video") {
+                            this.track_selected (item_id, item_duration, item_title, item_sub, item_thumb);
                         } else {
-                            this.collection_selected (
-                                item_id,
-                                item_type,
-                                item_title,
-                                item_sub,
-                                item_thumb
-                            );
+                            this.collection_selected (item_id, item_type, item_title, item_sub, item_thumb);
                         }
                     });
 
@@ -225,7 +180,6 @@ namespace Timbre {
 
         private void clear_list () {
             Gtk.Widget? child = this.content_box.get_first_child ();
-
             while (child != null) {
                 var next = child.get_next_sibling ();
                 this.content_box.remove (child);

@@ -13,22 +13,19 @@ namespace Timbre {
 
         public ThemeSelector () {
             var style_manager = Adw.StyleManager.get_default ();
-            
-            style_manager.notify["system-supports-color-schemes"].connect (on_supports_color_schemes_changed);
-            style_manager.notify["dark"].connect (on_dark_changed);
+            style_manager.notify["system-supports-color-schemes"].connect (this.on_supports_color_schemes_changed);
+            style_manager.notify["dark"].connect (this.on_dark_changed);
 
-            on_supports_color_schemes_changed ();
-            on_dark_changed ();
+            this.on_supports_color_schemes_changed ();
+            this.on_dark_changed ();
         }
 
         private void on_supports_color_schemes_changed () {
-            var style_manager = Adw.StyleManager.get_default ();
-            this.follow.visible = style_manager.system_supports_color_schemes;
+            this.follow.visible = Adw.StyleManager.get_default ().system_supports_color_schemes;
         }
 
         private void on_dark_changed () {
-            var style_manager = Adw.StyleManager.get_default ();
-            if (style_manager.dark) {
+            if (Adw.StyleManager.get_default ().dark) {
                 this.add_css_class ("dark");
             } else {
                 this.remove_css_class ("dark");

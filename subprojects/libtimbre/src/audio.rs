@@ -1,16 +1,68 @@
+pub mod opus_source;
+pub mod store;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use rodio::{Decoder, DeviceSinkBuilder, MixerDeviceSink, Player, Source};
+use serde::Serialize;
 
+use crate::context::Paths;
+use crate::net::media::{StreamInfo, VideoId};
 use crate::stream_reader::{StreamBuffer, StreamReader};
+use opus_source::OpusSource;
+use store::{AudioEntry, AudioStore, AudioWriter, StoreKind};
 
-const PRE_BUFFER_THRESHOLD: usize = 16 * 1024;
+const DEFAULT_UA: &str = "Mozilla/5.0";
+const PRE_BUFFER_THRESHOLD: usize = 32 * 1024;
+const PRE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
+const PRE_BUFFER_MIN: usize = 4 * 1024;
+const PRE_BUFFER_POLL: Duration = Duration::from_millis(20);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const READ_TIMEOUT: Duration = Duration::from_secs(8);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const PROBE_SLOW_WARN: Duration = Duration::from_millis(500);
+const SEEK_RANGE_MAX_BYTES: u64 = 64 * 1024 * 1024;
+const SEEK_RANGE_HEADROOM: u64 = 512 * 1024;
+const RESUME_BACKOFF_MS: [u64; 6] = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+
+fn bitrate_for_itag(itag: &str) -> Option<u64> {
+    match itag {
+        "139" => Some(48_000),
+        "140" => Some(128_000),
+        "141" => Some(256_000),
+        "249" => Some(50_000),
+        "250" => Some(70_000),
+        "251" => Some(160_000),
+        "774" => Some(256_000),
+        _ => None,
+    }
+}
+
+fn is_transient_http(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 408 | 409 | 425 | 429)
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct StreamStats {
+    pub uri: String,
+    pub format_id: Option<String>,
+    pub protocol: Option<String>,
+    pub ext: Option<String>,
+    pub acodec: Option<String>,
+    pub bitrate_kbps: Option<u64>,
+    pub sample_rate_hz: Option<u32>,
+    pub channels: Option<u16>,
+    pub duration_seconds: Option<f64>,
+    pub from_cache: bool,
+    pub is_local: bool,
+}
 
 pub struct AudioPlayer {
     _handle: MixerDeviceSink,
@@ -18,10 +70,14 @@ pub struct AudioPlayer {
     position: Arc<Mutex<PlaybackPosition>>,
     total_duration: Arc<Mutex<Option<Duration>>>,
     current_url: Arc<Mutex<Option<String>>>,
-    total_bytes: Arc<Mutex<Option<u64>>>,
+    current_user_agent: Arc<Mutex<Option<String>>>,
+    current_is_opus: Arc<Mutex<bool>>,
+    stats: Arc<Mutex<StreamStats>>,
     active_buffer: Arc<Mutex<Option<StreamBuffer>>>,
     client: reqwest::Client,
-    header_bytes: Arc<Mutex<Vec<u8>>>,
+    generation: Arc<AtomicU64>,
+    last_error: Arc<Mutex<Option<String>>>,
+    store: Arc<AudioStore>,
 }
 
 struct PlaybackPosition {
@@ -35,202 +91,1067 @@ pub enum PlayerState {
     Paused,
     Stopped,
     Buffering,
+    Loading,
+    Error,
+}
+
+enum ResumeError {
+    Cancelled,
+    Transient(String),
+    Permanent(String),
+}
+
+impl std::fmt::Display for ResumeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResumeError::Cancelled => write!(f, "cancelled"),
+            ResumeError::Transient(e) => write!(f, "transient: {e}"),
+            ResumeError::Permanent(e) => write!(f, "permanent: {e}"),
+        }
+    }
 }
 
 impl AudioPlayer {
-    pub fn new() -> Result<Self> {
+    pub fn new(paths: &Paths) -> Result<Self> {
         let handle = DeviceSinkBuilder::open_default_sink()
             .map_err(|e| anyhow::anyhow!("Failed to open default audio sink: {e:?}"))?;
-
         let player = Player::connect_new(&handle.mixer());
-
+        let client = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .read_timeout(READ_TIMEOUT)
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build audio http client: {e:?}"))?;
         Ok(Self {
             _handle: handle,
             player: Arc::new(Mutex::new(player)),
             position: Arc::new(Mutex::new(PlaybackPosition::new())),
             total_duration: Arc::new(Mutex::new(None)),
             current_url: Arc::new(Mutex::new(None)),
-            total_bytes: Arc::new(Mutex::new(None)),
+            current_user_agent: Arc::new(Mutex::new(None)),
+            current_is_opus: Arc::new(Mutex::new(false)),
+            stats: Arc::new(Mutex::new(StreamStats::default())),
             active_buffer: Arc::new(Mutex::new(None)),
-            client: reqwest::Client::new(),
-            header_bytes: Arc::new(Mutex::new(Vec::new())),
+            client,
+            generation: Arc::new(AtomicU64::new(0)),
+            last_error: Arc::new(Mutex::new(None)),
+            store: Arc::new(AudioStore::new(paths)),
         })
     }
 
-    pub async fn play_url(&self, url: &str, duration: Option<Duration>) -> Result<()> {
+    pub fn store(&self) -> &Arc<AudioStore> {
+        &self.store
+    }
+
+    pub fn begin_play(&self) -> u64 {
+        let my_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Some(old) = self.active_buffer.lock().unwrap().take() {
+            old.cancel();
+        }
+        self.player.lock().unwrap().stop();
+        self.position.lock().unwrap().reset();
+        my_gen
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    pub fn cancel_pending(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn take_error(&self) -> Option<String> {
+        self.last_error.lock().unwrap().take()
+    }
+
+    pub fn stats(&self) -> StreamStats {
+        self.stats.lock().unwrap().clone()
+    }
+
+    fn record_error(&self, msg: impl Into<String>) {
+        *self.last_error.lock().unwrap() = Some(msg.into());
+    }
+
+    fn clear_error(&self) {
+        *self.last_error.lock().unwrap() = None;
+    }
+
+    fn set_duration(&self, candidate: Option<Duration>) {
+        if candidate.is_none() {
+            return;
+        }
+        *self.total_duration.lock().unwrap() = candidate;
+    }
+
+    fn set_stats(&self, new_stats: StreamStats) {
+        *self.stats.lock().unwrap() = new_stats;
+    }
+
+    fn sync_position(&self) {
+        let (empty, paused) = {
+            let player = self.player.lock().unwrap();
+            (player.empty(), player.is_paused())
+        };
+        if paused {
+            return;
+        }
+        let mut pos = self.position.lock().unwrap();
+        if empty {
+            pos.pause_if_running();
+        } else {
+            pos.resume_if_stopped();
+        }
+    }
+
+    pub async fn play_url(
+        &self,
+        my_gen: u64,
+        video_id: Option<&VideoId>,
+        url: &str,
+        duration: Option<Duration>,
+        user_agent: Option<&str>,
+        info: Option<&StreamInfo>,
+    ) -> Result<()> {
+        let result = self
+            .play_url_inner(my_gen, video_id, url, duration, user_agent, info)
+            .await;
+        if let Err(e) = &result {
+            self.record_error(e.to_string());
+        }
+        result
+    }
+
+    async fn play_url_inner(
+        &self,
+        my_gen: u64,
+        video_id: Option<&VideoId>,
+        url: &str,
+        duration: Option<Duration>,
+        user_agent: Option<&str>,
+        info: Option<&StreamInfo>,
+    ) -> Result<()> {
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
+
+        self.clear_error();
+        let request_started = Instant::now();
+        let ua = user_agent.unwrap_or(DEFAULT_UA).to_owned();
+
+        if let Some(vid) = video_id {
+            if let Some((kind, entry)) = self.store.lookup(vid.as_str()).await {
+                if entry.is_playable() {
+                    let path = self.store.bin_path(kind, vid.as_str());
+                    tracing::debug!(
+                        %vid,
+                        ?kind,
+                        bytes = entry.downloaded_bytes,
+                        "playing from disk (complete)"
+                    );
+                    return self.play_local_file(my_gen, &path, &entry, duration, info).await;
+                }
+                if entry.is_resumable() {
+                    let current_itag = info.and_then(|i| i.format_id.as_deref());
+                    let compatible = match (entry.itag.as_deref(), current_itag) {
+                        (Some(a), Some(b)) => a == b,
+                        _ => true,
+                    };
+                    if !compatible {
+                        tracing::debug!(
+                            %vid,
+                            saved = ?entry.itag,
+                            new = current_itag,
+                            "format changed, dropping partial"
+                        );
+                        self.store.remove(vid.as_str()).await;
+                    } else {
+                        tracing::debug!(
+                            %vid,
+                            ?kind,
+                            bytes = entry.downloaded_bytes,
+                            "resuming from partial"
+                        );
+                        return self
+                            .play_partial(my_gen, &entry, kind, vid, url, user_agent, info, duration)
+                            .await;
+                    }
+                }
+            }
+        }
+
         let response = self
             .client
             .get(url)
-            .header("User-Agent", "Mozilla/5.0")
+            .header("User-Agent", &ua)
             .send()
             .await
             .context("Failed to request audio stream")?;
 
-        let total_bytes = response.content_length().unwrap_or(0);
-        
-        *self.current_url.lock().unwrap() = Some(url.to_string());
-        *self.total_bytes.lock().unwrap() = Some(total_bytes);
-        *self.total_duration.lock().unwrap() = duration;
+        let headers_elapsed = request_started.elapsed();
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("?")
+            .to_owned();
+        let content_length = response.content_length();
 
-        let buffer = StreamBuffer::new();
-        *self.active_buffer.lock().unwrap() = Some(buffer.clone());
+        tracing::debug!(
+            %status,
+            %content_type,
+            ?content_length,
+            headers_ms = headers_elapsed.as_millis() as u64,
+            gen = my_gen,
+            "audio response headers received"
+        );
 
-        let client = self.client.clone();
-        let url_clone = url.to_string();
-        let bg_buffer = buffer.clone();
-
-        tokio::spawn(async move {
-            if total_bytes > 0 {
-                let chunk_size = 512 * 1024;
-                let mut current = 0;
-                
-                while current < total_bytes {
-                    let end = (current + chunk_size - 1).min(total_bytes - 1);
-                    let req = client.get(&url_clone)
-                        .header("User-Agent", "Mozilla/5.0")
-                        .header("Range", format!("bytes={}-{}", current, end))
-                        .send().await;
-
-                    if let Ok(res) = req {
-                        if let Ok(bytes) = res.bytes().await {
-                            bg_buffer.append(&bytes);
-                            current += bytes.len() as u64;
-                            continue;
-                        }
-                    }
-                    bg_buffer.set_error("Failed to download chunk".to_string());
-                    break;
-                }
-            } else {
-                if let Ok(res) = client.get(&url_clone).header("User-Agent", "Mozilla/5.0").send().await {
-                    let mut stream = res.bytes_stream();
-                    while let Some(Ok(chunk)) = stream.next().await {
-                        bg_buffer.append(&chunk);
-                    }
-                }
-            }
-            bg_buffer.finish();
-        });
-
-        let mut retries = 0;
-        while buffer.current_len() < PRE_BUFFER_THRESHOLD && retries < 40 {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            retries += 1;
+        if !status.is_success() {
+            return Err(anyhow::anyhow!("HTTP {status} while fetching audio"));
+        }
+        if content_type.starts_with("text/html") {
+            return Err(anyhow::anyhow!(
+                "the CDN returned {content_type} instead of audio (URL likely bound to another client)"
+            ));
+        }
+        if content_type.contains("mpegurl") {
+            return Err(anyhow::anyhow!(
+                "the resolver returned an HLS manifest ({content_type}), which the audio player cannot decode"
+            ));
         }
 
-        let reader = BufReader::new(StreamReader::new(buffer));
-        let source = Decoder::try_from(reader)
-            .map_err(|e| anyhow::anyhow!("Failed to decode audio stream: {e:?}"))?;
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
+
+        let is_opus = content_type.contains("webm");
+        let bitrate_bps = info
+            .and_then(|i| i.bitrate)
+            .or_else(|| info.and_then(|i| i.format_id.as_deref()).and_then(bitrate_for_itag));
+        let estimated = duration.or_else(|| estimate_duration(content_length, bitrate_bps));
+
+        *self.current_url.lock().unwrap() = Some(url.to_string());
+        *self.current_user_agent.lock().unwrap() = Some(ua.clone());
+        *self.current_is_opus.lock().unwrap() = is_opus;
+        self.set_duration(estimated);
+
+        self.set_stats(StreamStats {
+            uri: url.to_string(),
+            format_id: info.and_then(|i| i.format_id.clone()),
+            protocol: info.and_then(|i| i.protocol.clone()),
+            ext: info.and_then(|i| i.ext.clone()),
+            acodec: info.and_then(|i| i.acodec.clone()),
+            bitrate_kbps: bitrate_bps.map(|b| b / 1000),
+            sample_rate_hz: info.and_then(|i| i.sample_rate),
+            channels: info.and_then(|i| i.channels),
+            duration_seconds: estimated.map(|d| d.as_secs_f64()),
+            from_cache: info.is_some_and(|i| i.from_cache),
+            is_local: false,
+        });
+
+        if let Some(old) = self.active_buffer.lock().unwrap().take() {
+            old.cancel();
+        }
+
+        let writer = self
+            .prepare_writer(video_id, url, &ua, info, content_length, &content_type)
+            .await;
+
+        let outcome = if is_opus {
+            self.play_opus_streaming(url, &ua, response, writer, my_gen, estimated)
+                .await
+        } else {
+            self.play_streaming(url, &ua, response, writer, my_gen, estimated)
+                .await
+        };
+
+        tracing::debug!(
+            total_ms = request_started.elapsed().as_millis() as u64,
+            ok = outcome.is_ok(),
+            gen = my_gen,
+            "play_url finished"
+        );
+
+        outcome
+    }
+
+    async fn prepare_writer(
+        &self,
+        video_id: Option<&VideoId>,
+        url: &str,
+        user_agent: &str,
+        info: Option<&StreamInfo>,
+        content_length: Option<u64>,
+        content_type: &str,
+    ) -> Option<AudioWriter> {
+        let vid = video_id?;
+        let meta = AudioEntry {
+            video_id: vid.0.clone(),
+            title: info.and_then(|i| i.title.clone()),
+            artist: info.and_then(|i| i.uploader.clone()),
+            thumb: info.and_then(|i| i.thumbnail.clone()),
+            ext: info.and_then(|i| i.ext.clone()).or_else(|| {
+                Some(if content_type.contains("webm") { "webm".into() } else { "m4a".into() })
+            }),
+            mime: Some(content_type.to_owned()),
+            itag: info.and_then(|i| i.format_id.clone()),
+            expected_size: content_length,
+            user_agent: Some(user_agent.to_owned()),
+            uri: Some(url.to_owned()),
+            ..AudioEntry::default()
+        };
+        match self.store.open_writer(StoreKind::Cache, vid.as_str(), meta).await {
+            Ok(writer) => Some(writer),
+            Err(err) => {
+                tracing::warn!(%err, %vid, "cache writer open failed, playing without cache");
+                None
+            }
+        }
+    }
+
+    async fn play_local_file(
+        &self,
+        my_gen: u64,
+        path: &Path,
+        entry: &AudioEntry,
+        duration: Option<Duration>,
+        info: Option<&StreamInfo>,
+    ) -> Result<()> {
+        let is_opus = entry
+            .ext
+            .as_deref()
+            .map(|e| e == "webm" || e == "ogg")
+            .unwrap_or(false);
+
+        *self.current_is_opus.lock().unwrap() = is_opus;
+        *self.current_url.lock().unwrap() = Some(format!("file://{}", path.display()));
+        *self.current_user_agent.lock().unwrap() = None;
+
+        let bitrate_bps = info
+            .and_then(|i| i.bitrate)
+            .or_else(|| info.and_then(|i| i.format_id.as_deref()).and_then(bitrate_for_itag));
+        let estimated = duration
+            .or_else(|| estimate_duration(Some(entry.downloaded_bytes), bitrate_bps));
+        self.set_duration(estimated);
+
+        self.set_stats(StreamStats {
+            uri: format!("file://{}", path.display()),
+            format_id: entry.itag.clone(),
+            protocol: Some("file".to_owned()),
+            ext: entry.ext.clone(),
+            acodec: Some(if is_opus { "opus" } else { "mp4a" }.to_owned()),
+            bitrate_kbps: bitrate_bps.map(|b| b / 1000),
+            sample_rate_hz: None,
+            channels: None,
+            duration_seconds: estimated.map(|d| d.as_secs_f64()),
+            from_cache: true,
+            is_local: true,
+        });
+
+        if is_opus {
+            let source = OpusSource::from_file(path)
+                .map_err(|e| anyhow::anyhow!("opus source (local): {e}"))?;
+            let total_dur = source.total_duration().or(estimated);
+            self.append_source(source, my_gen, total_dur, true)
+        } else {
+            let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
+            let source = Decoder::try_from(BufReader::new(file))
+                .map_err(|e| anyhow::anyhow!("decode local cache: {e:?}"))?;
+            let total_dur = source.total_duration().or(estimated);
+            self.append_source(source, my_gen, total_dur, true)
+        }
+    }
+
+    async fn play_partial(
+        &self,
+        my_gen: u64,
+        entry: &AudioEntry,
+        kind: StoreKind,
+        video_id: &VideoId,
+        url: &str,
+        user_agent: Option<&str>,
+        info: Option<&StreamInfo>,
+        duration: Option<Duration>,
+    ) -> Result<()> {
+        let ua = user_agent.unwrap_or(DEFAULT_UA).to_owned();
+
+        let mut meta = entry.clone();
+        if let Some(i) = info {
+            if i.title.is_some() {
+                meta.title = i.title.clone();
+            }
+            if i.uploader.is_some() {
+                meta.artist = i.uploader.clone();
+            }
+            if i.thumbnail.is_some() {
+                meta.thumb = i.thumbnail.clone();
+            }
+            if i.ext.is_some() {
+                meta.ext = i.ext.clone();
+            }
+            if i.format_id.is_some() {
+                meta.itag = i.format_id.clone();
+            }
+        }
+        meta.user_agent = Some(ua.clone());
+        meta.uri = Some(url.to_owned());
+
+        let (reader, writer, _growth) = self
+            .store
+            .open_resumable(kind, video_id.as_str(), meta)
+            .await
+            .map_err(|e| anyhow::anyhow!("open resumable: {e}"))?;
+
+        *self.current_url.lock().unwrap() = Some(url.to_string());
+        *self.current_user_agent.lock().unwrap() = Some(ua.clone());
+        let is_opus = entry
+            .ext
+            .as_deref()
+            .map(|e| e == "webm" || e == "ogg")
+            .unwrap_or(false);
+        *self.current_is_opus.lock().unwrap() = is_opus;
+
+        let bitrate_bps = info
+            .and_then(|i| i.bitrate)
+            .or_else(|| info.and_then(|i| i.format_id.as_deref()).and_then(bitrate_for_itag));
+        let estimated = duration.or_else(|| {
+            entry
+                .expected_size
+                .or(Some(writer.meta().downloaded_bytes))
+                .and_then(|size| estimate_duration(Some(size), bitrate_bps))
+        });
+        self.set_duration(estimated);
+
+        self.set_stats(StreamStats {
+            uri: url.to_string(),
+            format_id: info
+                .and_then(|i| i.format_id.clone())
+                .or_else(|| entry.itag.clone()),
+            protocol: Some("https".to_owned()),
+            ext: entry.ext.clone(),
+            acodec: Some(if is_opus { "opus" } else { "mp4a" }.to_owned()),
+            bitrate_kbps: bitrate_bps.map(|b| b / 1000),
+            sample_rate_hz: info.and_then(|i| i.sample_rate),
+            channels: info.and_then(|i| i.channels),
+            duration_seconds: estimated.map(|d| d.as_secs_f64()),
+            from_cache: false,
+            is_local: false,
+        });
+
+        self.spawn_resume_task(url, &ua, writer, my_gen);
+
+        if is_opus {
+            let probe = tokio::task::spawn_blocking(move || OpusSource::from_source(Box::new(reader)));
+            let source = match tokio::time::timeout(PROBE_TIMEOUT, probe).await {
+                Ok(Ok(Ok(s))) => s,
+                Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("opus source (partial): {e}")),
+                Ok(Err(e)) => return Err(anyhow::anyhow!("opus probe task failed: {e}")),
+                Err(_) => return Err(anyhow::anyhow!("opus probe timed out")),
+            };
+            let total_dur = source.total_duration().or(estimated);
+            self.append_source(source, my_gen, total_dur, true)
+        } else {
+            let decode = tokio::task::spawn_blocking(move || {
+                Decoder::try_from(BufReader::new(reader))
+                    .map_err(|e| anyhow::anyhow!("decode partial: {e:?}"))
+            });
+            let source = decode
+                .await
+                .map_err(|e| anyhow::anyhow!("decode task failed: {e}"))??;
+            let total_dur = source.total_duration().or(estimated);
+            self.append_source(source, my_gen, total_dur, true)
+        }
+    }
+
+    fn append_source<S: Source + Send + 'static>(
+        &self,
+        source: S,
+        my_gen: u64,
+        duration: Option<Duration>,
+        is_local: bool,
+    ) -> Result<()> {
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
 
         let total_dur = duration.or_else(|| source.total_duration());
-        *self.total_duration.lock().unwrap() = total_dur;
+        self.set_duration(total_dur);
+
+        {
+            let mut stats = self.stats.lock().unwrap();
+            stats.sample_rate_hz = Some(source.sample_rate().get());
+            stats.channels = Some(source.channels().get());
+            if total_dur.is_some() {
+                stats.duration_seconds = total_dur.map(|d| d.as_secs_f64());
+            }
+            stats.is_local = is_local;
+        }
 
         let player = self.player.lock().unwrap();
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
         player.stop();
         player.append(source);
         player.play();
+        drop(player);
 
         let mut pos = self.position.lock().unwrap();
         pos.reset();
         pos.start();
-
         Ok(())
     }
 
-    pub fn play_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let path = path.as_ref();
-        let file = File::open(path)
-            .with_context(|| format!("Failed to open file: {}", path.display()))?;
+    fn install_seeked_source<S: Source + Send + 'static>(
+        &self,
+        source: S,
+        my_gen: u64,
+        landed: Duration,
+        was_paused: bool,
+    ) -> Result<()> {
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
 
-        let file_len = file.metadata()?.len();
-        let reader = BufReader::new(file);
+        {
+            let mut stats = self.stats.lock().unwrap();
+            stats.sample_rate_hz = Some(source.sample_rate().get());
+            stats.channels = Some(source.channels().get());
+        }
 
-        let source = Decoder::try_from(reader)
-            .map_err(|e| anyhow::anyhow!("Failed to decode local file: {e:?}"))?;
-
-        let total_dur = source.total_duration();
-
-        *self.current_url.lock().unwrap() = Some(format!("file://{}", path.display()));
-        *self.total_bytes.lock().unwrap() = Some(file_len);
-        *self.total_duration.lock().unwrap() = total_dur;
+        let player = self.player.lock().unwrap();
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
+        player.stop();
+        player.append(source);
+        if was_paused {
+            player.pause();
+        } else {
+            player.play();
+        }
+        drop(player);
 
         let mut pos = self.position.lock().unwrap();
         pos.reset();
-        pos.start();
+        pos.seek(landed);
+        if !was_paused {
+            pos.start();
+        }
+        tracing::debug!(?landed, was_paused, "seek: installed source");
+        Ok(())
+    }
+
+    async fn wait_for_prebuffer(&self, buffer: &StreamBuffer, my_gen: u64) -> Result<usize> {
+        let started = Instant::now();
+        loop {
+            if self.generation.load(Ordering::SeqCst) != my_gen {
+                buffer.cancel();
+                return Err(anyhow::anyhow!("superseded by a newer play request"));
+            }
+            let len = buffer.current_len();
+            if len >= PRE_BUFFER_THRESHOLD || buffer.is_finished() {
+                tracing::debug!(
+                    bytes = len,
+                    waited_ms = started.elapsed().as_millis() as u64,
+                    gen = my_gen,
+                    "pre-buffer ready"
+                );
+                return Ok(len);
+            }
+            if started.elapsed() >= PRE_BUFFER_TIMEOUT {
+                if len < PRE_BUFFER_MIN {
+                    return Err(anyhow::anyhow!(
+                        "stream stalled: only {len} bytes in {:?}",
+                        started.elapsed()
+                    ));
+                }
+                tracing::debug!(
+                    bytes = len,
+                    waited_ms = started.elapsed().as_millis() as u64,
+                    gen = my_gen,
+                    "pre-buffer deadline reached"
+                );
+                return Ok(len);
+            }
+            tokio::time::sleep(PRE_BUFFER_POLL).await;
+        }
+    }
+
+    async fn play_opus_streaming(
+        &self,
+        url: &str,
+        user_agent: &str,
+        response: reqwest::Response,
+        writer: Option<AudioWriter>,
+        my_gen: u64,
+        known_duration: Option<Duration>,
+    ) -> Result<()> {
+        let buffer = StreamBuffer::new();
+        *self.active_buffer.lock().unwrap() = Some(buffer.clone());
+
+        spawn_download_task(
+            self.store.clone(),
+            self.client.clone(),
+            url.to_owned(),
+            user_agent.to_owned(),
+            buffer.clone(),
+            writer,
+            response,
+            my_gen,
+            self.generation.clone(),
+        );
+
+        let buffered = self.wait_for_prebuffer(&buffer, my_gen).await?;
+
+        let probe_started = Instant::now();
+        let probe_buffer = buffer.clone();
+        let probe = tokio::task::spawn_blocking(move || OpusSource::from_stream(probe_buffer));
+
+        let source = match tokio::time::timeout(PROBE_TIMEOUT, probe).await {
+            Ok(Ok(Ok(source))) => source,
+            Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("opus source: {e}")),
+            Ok(Err(join_err)) => return Err(anyhow::anyhow!("opus probe task failed: {join_err}")),
+            Err(_) => return Err(anyhow::anyhow!("opus probe timed out after {PROBE_TIMEOUT:?}")),
+        };
+        let probe_ms = probe_started.elapsed();
+
+        if probe_ms > PROBE_SLOW_WARN {
+            tracing::warn!(
+                probe_ms = probe_ms.as_millis() as u64,
+                buffered,
+                gen = my_gen,
+                "opus probe was slow"
+            );
+        } else {
+            tracing::debug!(
+                buffered_bytes = buffered,
+                probe_ms = probe_ms.as_millis() as u64,
+                gen = my_gen,
+                "opus probe done"
+            );
+        }
+
+        let total_dur = source.total_duration().or(known_duration);
+        self.append_source(source, my_gen, total_dur, false)
+    }
+
+    async fn play_streaming(
+        &self,
+        url: &str,
+        user_agent: &str,
+        response: reqwest::Response,
+        writer: Option<AudioWriter>,
+        my_gen: u64,
+        known_duration: Option<Duration>,
+    ) -> Result<()> {
+        let buffer = StreamBuffer::new();
+        *self.active_buffer.lock().unwrap() = Some(buffer.clone());
+
+        spawn_download_task(
+            self.store.clone(),
+            self.client.clone(),
+            url.to_owned(),
+            user_agent.to_owned(),
+            buffer.clone(),
+            writer,
+            response,
+            my_gen,
+            self.generation.clone(),
+        );
+
+        let buffered = self.wait_for_prebuffer(&buffer, my_gen).await?;
+
+        let decode_buffer = buffer.clone();
+        let source = tokio::task::spawn_blocking(move || {
+            let reader = BufReader::new(StreamReader::new(decode_buffer));
+            Decoder::try_from(reader)
+                .map_err(|e| anyhow::anyhow!("Failed to decode audio stream: {e:?}"))
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("decoder task failed: {e}"))??;
+
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
+
+        tracing::debug!(buffered_bytes = buffered, gen = my_gen, "decoder ready");
+
+        let total_dur = source.total_duration().or(known_duration);
+        self.append_source(source, my_gen, total_dur, false)
+    }
+
+    pub fn play_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let result = self.play_file_inner(path.as_ref());
+        if let Err(e) = &result {
+            self.record_error(e.to_string());
+        }
+        result
+    }
+
+    fn play_file_inner(&self, path: &Path) -> Result<()> {
+        let file = File::open(path)
+            .with_context(|| format!("Failed to open file: {}", path.display()))?;
+        let reader = BufReader::new(file);
+        let source = Decoder::try_from(reader)
+            .map_err(|e| anyhow::anyhow!("Failed to decode local file: {e:?}"))?;
+        let total_dur = source.total_duration();
+
+        self.cancel_pending();
+        self.clear_error();
+        if let Some(old) = self.active_buffer.lock().unwrap().take() {
+            old.cancel();
+        }
+        *self.current_url.lock().unwrap() = Some(format!("file://{}", path.display()));
+        *self.current_user_agent.lock().unwrap() = None;
+        *self.current_is_opus.lock().unwrap() = false;
+        self.set_duration(total_dur);
+
+        self.set_stats(StreamStats {
+            uri: format!("file://{}", path.display()),
+            sample_rate_hz: Some(source.sample_rate().get()),
+            channels: Some(source.channels().get()),
+            duration_seconds: total_dur.map(|d| d.as_secs_f64()),
+            is_local: true,
+            ..StreamStats::default()
+        });
 
         let player = self.player.lock().unwrap();
         player.stop();
         player.append(source);
         player.play();
+        drop(player);
 
+        let mut pos = self.position.lock().unwrap();
+        pos.reset();
+        pos.start();
         Ok(())
     }
 
     pub async fn seek(&self, target: Duration) -> Result<()> {
+        let result = self.seek_inner(target).await;
+        if let Err(e) = &result {
+            self.record_error(e.to_string());
+        }
+        result
+    }
+
+    async fn seek_inner(&self, target: Duration) -> Result<()> {
+        tracing::debug!(?target, "seek: starting");
+
         let current_url = self
             .current_url
             .lock()
             .unwrap()
             .clone()
-            .context("No audio traack loaded to seek")?;
+            .context("No audio track loaded to seek")?;
 
-        {
-            let player = self.player.lock().unwrap();
-            player.stop();
+        let is_opus = *self.current_is_opus.lock().unwrap();
+        let was_paused = self.player.lock().unwrap().is_paused();
+
+        let my_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Some(old) = self.active_buffer.lock().unwrap().take() {
+            old.cancel();
         }
+        self.player.lock().unwrap().stop();
 
         if let Some(path_str) = current_url.strip_prefix("file://") {
-            let file = File::open(path_str)
-                .with_context(|| format!("Failed to reopen file: {path_str}"))?;
-            let reader = BufReader::new(file);
-            let mut source = Decoder::try_from(reader)
-                .map_err(|e| anyhow::anyhow!("Failed to decode local file: {e:?}"))?;
-
-            let channels = source.channels().get() as u64;
-            let sample_rate = source.sample_rate().get() as u64;
-            let samples_to_skip = (target.as_secs_f64() * (sample_rate * channels) as f64) as u64;
-
-            for _ in 0..samples_to_skip {
-                if source.next().is_none() {
-                    break;
-                }
-            }
-
-            let player = self.player.lock().unwrap();
-            player.append(source);
-            player.play();
-
-            self.position.lock().unwrap().seek(target);
-            return Ok(());
+            return self.seek_local(Path::new(path_str), is_opus, target, my_gen, was_paused);
         }
 
-        let buffer = self
-            .active_buffer
+        let ua = self
+            .current_user_agent
             .lock()
             .unwrap()
             .clone()
-            .context("No active stream buffer available for seek")?;
+            .unwrap_or_else(|| DEFAULT_UA.to_owned());
+        let bitrate_bps = self.stats.lock().unwrap().bitrate_kbps.map(|k| k * 1000);
 
-        let reader = BufReader::new(StreamReader::new(buffer));
-        let mut source = Decoder::try_from(reader)
-            .map_err(|e| anyhow::anyhow!("Failed to decode stream for seek: {e:?}"))?;
-
-        let channels = source.channels().get() as u64;
-        let sample_rate = source.sample_rate().get() as u64;
-        let samples_to_skip = (target.as_secs_f64() * (sample_rate * channels) as f64) as u64;
-
-        for _ in 0..samples_to_skip {
-            if source.next().is_none() {
-                break;
+        if let Some(bps) = bitrate_bps.filter(|b| *b > 0 && target.as_secs_f64() >= 2.0) {
+            let target_offset = (target.as_secs_f64() * bps as f64 / 8.0) as u64;
+            let end = target_offset.saturating_add(SEEK_RANGE_HEADROOM);
+            if end <= SEEK_RANGE_MAX_BYTES {
+                match self
+                    .try_seek_range(&current_url, &ua, target, is_opus, my_gen, was_paused, end)
+                    .await
+                {
+                    Ok(true) => return Ok(()),
+                    Ok(false) => tracing::debug!(
+                        "seek: range path declined, falling back to streaming from 0"
+                    ),
+                    Err(e) => tracing::debug!(
+                        %e,
+                        "seek: range path failed, falling back to streaming from 0"
+                    ),
+                }
+            } else {
+                tracing::debug!(
+                    end,
+                    "seek: target too far for range path, using slow fallback"
+                );
             }
         }
 
-        let player = self.player.lock().unwrap();
-        player.append(source);
-        player.play();
+        self.seek_remote_from_zero(&current_url, &ua, target, is_opus, my_gen, was_paused)
+            .await
+    }
 
-        self.position.lock().unwrap().seek(target);
-        Ok(())
+    fn seek_local(
+        &self,
+        path: &Path,
+        is_opus: bool,
+        target: Duration,
+        my_gen: u64,
+        was_paused: bool,
+    ) -> Result<()> {
+        if is_opus {
+            let mut source = OpusSource::from_file(path)
+                .map_err(|e| anyhow::anyhow!("opus source (seek): {e}"))?;
+            let landed = demuxer_seek_or_skip(&mut source, target, "local");
+            return self.install_seeked_source(source, my_gen, landed, was_paused);
+        }
+
+        let file = File::open(path)
+            .with_context(|| format!("Failed to reopen file: {}", path.display()))?;
+        let mut source = Decoder::try_from(BufReader::new(file))
+            .map_err(|e| anyhow::anyhow!("Failed to decode local file: {e:?}"))?;
+        skip_samples(&mut source, target);
+        self.install_seeked_source(source, my_gen, target, was_paused)
+    }
+
+    async fn try_seek_range(
+        &self,
+        url: &str,
+        ua: &str,
+        target: Duration,
+        is_opus: bool,
+        my_gen: u64,
+        was_paused: bool,
+        end: u64,
+    ) -> Result<bool> {
+        let request_started = Instant::now();
+        let response = self
+            .client
+            .get(url)
+            .header("User-Agent", ua)
+            .header("Range", format!("bytes=0-{end}"))
+            .send()
+            .await
+            .context("seek range: request failed")?;
+
+        let status = response.status();
+        if status != reqwest::StatusCode::PARTIAL_CONTENT && !status.is_success() {
+            return Ok(false);
+        }
+
+        let bytes = response.bytes().await?.to_vec();
+        tracing::debug!(
+            bytes = bytes.len(),
+            elapsed_ms = request_started.elapsed().as_millis() as u64,
+            ?target,
+            "seek: range downloaded"
+        );
+
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
+
+        if is_opus {
+            let mut source = OpusSource::from_bytes(bytes)
+                .map_err(|e| anyhow::anyhow!("opus source (seek range): {e}"))?;
+            let landed = demuxer_seek_or_skip(&mut source, target, "range");
+            self.install_seeked_source(source, my_gen, landed, was_paused)?;
+            return Ok(true);
+        }
+
+        let mut source = Decoder::try_from(std::io::Cursor::new(bytes))
+            .map_err(|e| anyhow::anyhow!("decode seek range: {e:?}"))?;
+        skip_samples(&mut source, target);
+        self.install_seeked_source(source, my_gen, target, was_paused)?;
+        Ok(true)
+    }
+
+    async fn seek_remote_from_zero(
+        &self,
+        url: &str,
+        ua: &str,
+        target: Duration,
+        is_opus: bool,
+        my_gen: u64,
+        was_paused: bool,
+    ) -> Result<()> {
+        let response = self
+            .client
+            .get(url)
+            .header("User-Agent", ua)
+            .send()
+            .await
+            .context("Failed to reopen stream for seek")?;
+
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
+        let status = response.status();
+        if !status.is_success() {
+            return Err(anyhow::anyhow!("HTTP {status} while seeking"));
+        }
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("?")
+            .to_owned();
+        if content_type.starts_with("text/html") {
+            return Err(anyhow::anyhow!(
+                "the CDN returned {content_type} instead of audio (URL likely bound to another client)"
+            ));
+        }
+
+        tracing::debug!(
+            ?target,
+            is_opus,
+            was_paused,
+            "seek: reopening stream from 0, will skip by decoding"
+        );
+
+        let buffer = StreamBuffer::new();
+        *self.active_buffer.lock().unwrap() = Some(buffer.clone());
+
+        spawn_download_task(
+            self.store.clone(),
+            self.client.clone(),
+            url.to_owned(),
+            ua.to_owned(),
+            buffer.clone(),
+            None,
+            response,
+            my_gen,
+            self.generation.clone(),
+        );
+
+        let _ = self.wait_for_prebuffer(&buffer, my_gen).await?;
+        let skip_started = Instant::now();
+
+        if is_opus {
+            let probe_buffer = buffer.clone();
+            let skip = target;
+            let probe = tokio::task::spawn_blocking(move || -> Result<OpusSource, String> {
+                let mut source = OpusSource::from_stream(probe_buffer)?;
+                skip_samples(&mut source, skip);
+                Ok(source)
+            });
+            let source = match tokio::time::timeout(Duration::from_secs(120), probe).await {
+                Ok(Ok(Ok(s))) => s,
+                Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("opus source (seek): {e}")),
+                Ok(Err(e)) => return Err(anyhow::anyhow!("opus probe task failed: {e}")),
+                Err(_) => return Err(anyhow::anyhow!("seek timed out (target {target:?})")),
+            };
+            tracing::debug!(
+                elapsed_ms = skip_started.elapsed().as_millis() as u64,
+                ?target,
+                "seek: opus skip done (remote)"
+            );
+            return self.install_seeked_source(source, my_gen, target, was_paused);
+        }
+
+        let decode_buffer = buffer.clone();
+        let skip = target;
+        let decode = tokio::task::spawn_blocking(
+            move || -> Result<Decoder<BufReader<StreamReader>>, String> {
+                let reader = BufReader::new(StreamReader::new(decode_buffer));
+                let mut source =
+                    Decoder::try_from(reader).map_err(|e| format!("decode: {e:?}"))?;
+                skip_samples(&mut source, skip);
+                Ok(source)
+            },
+        );
+        let source = match tokio::time::timeout(Duration::from_secs(120), decode).await {
+            Ok(Ok(Ok(s))) => s,
+            Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("{e}")),
+            Ok(Err(e)) => return Err(anyhow::anyhow!("decode task failed: {e}")),
+            Err(_) => return Err(anyhow::anyhow!("seek timed out (target {target:?})")),
+        };
+        tracing::debug!(
+            elapsed_ms = skip_started.elapsed().as_millis() as u64,
+            ?target,
+            "seek: skip done (remote m4a)"
+        );
+        self.install_seeked_source(source, my_gen, target, was_paused)
+    }
+
+    fn spawn_resume_task(
+        &self,
+        url: &str,
+        user_agent: &str,
+        mut writer: AudioWriter,
+        my_gen: u64,
+    ) {
+        let client = self.client.clone();
+        let generation = self.generation.clone();
+        let url = url.to_owned();
+        let user_agent = user_agent.to_owned();
+
+        tokio::spawn(async move {
+            let mut attempt = 0usize;
+            loop {
+                if generation.load(Ordering::SeqCst) != my_gen {
+                    writer.cancel_growth();
+                    let _ = writer.finish(false).await;
+                    tracing::debug!(gen = my_gen, "resume: cancelled before attempt");
+                    return;
+                }
+
+                match resume_once(&client, &url, &user_agent, &mut writer, &generation, my_gen).await {
+                    Ok(true) => {
+                        match writer.finish(true).await {
+                            Ok(entry) => tracing::debug!(
+                                gen = my_gen,
+                                bytes = entry.downloaded_bytes,
+                                "resume: complete"
+                            ),
+                            Err(err) => tracing::warn!(%err, "resume finalize failed"),
+                        }
+                        return;
+                    }
+                    Ok(false) => {
+                        match writer.finish(false).await {
+                            Ok(entry) => tracing::debug!(
+                                gen = my_gen,
+                                bytes = entry.downloaded_bytes,
+                                "resume: stream ended short"
+                            ),
+                            Err(err) => tracing::warn!(%err, "resume finalize failed"),
+                        }
+                        return;
+                    }
+                    Err(ResumeError::Cancelled) => {
+                        writer.cancel_growth();
+                        let _ = writer.finish(false).await;
+                        tracing::debug!(gen = my_gen, "resume: cancelled mid-stream");
+                        return;
+                    }
+                    Err(ResumeError::Permanent(e)) => {
+                        tracing::warn!(error = %e, gen = my_gen, "resume: giving up");
+                        writer.cancel_growth();
+                        let _ = writer.finish(false).await;
+                        return;
+                    }
+                    Err(ResumeError::Transient(e)) => {
+                        let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
+                        attempt += 1;
+                        tracing::debug!(
+                            error = %e,
+                            attempt,
+                            delay_ms = delay,
+                            bytes = writer.downloaded_bytes(),
+                            gen = my_gen,
+                            "resume: retrying"
+                        );
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                    }
+                }
+            }
+        });
     }
 
     pub fn pause(&self) {
@@ -244,11 +1165,17 @@ impl AudioPlayer {
     }
 
     pub fn stop(&self) {
+        self.cancel_pending();
+        if let Some(old) = self.active_buffer.lock().unwrap().take() {
+            old.cancel();
+        }
         self.player.lock().unwrap().stop();
         self.position.lock().unwrap().reset();
+        self.clear_error();
     }
 
     pub fn get_position(&self) -> Duration {
+        self.sync_position();
         let elapsed = self.position.lock().unwrap().elapsed();
         if let Some(total) = *self.total_duration.lock().unwrap() {
             if elapsed > total {
@@ -266,8 +1193,8 @@ impl AudioPlayer {
         self.player.lock().unwrap().volume()
     }
 
-    pub fn set_volume(&self, volume: f32) {
-        self.player.lock().unwrap().set_volume(volume);
+    pub fn set_volume(&self, v: f32) {
+        self.player.lock().unwrap().set_volume(v);
     }
 
     pub fn is_paused(&self) -> bool {
@@ -279,30 +1206,325 @@ impl AudioPlayer {
     }
 
     pub fn state(&self) -> PlayerState {
+        if self.last_error.lock().unwrap().is_some() {
+            return PlayerState::Error;
+        }
         let player = self.player.lock().unwrap();
-        if player.empty() {
-            PlayerState::Stopped
-        } else if player.is_paused() {
+        if !player.empty() {
+            return if player.is_paused() {
+                PlayerState::Paused
+            } else {
+                PlayerState::Playing
+            };
+        }
+        drop(player);
+        let has_track = self.current_url.lock().unwrap().is_some();
+        let advanced = self.position.lock().unwrap().elapsed() > Duration::ZERO;
+        if has_track && !advanced {
+            PlayerState::Loading
+        } else if has_track {
             PlayerState::Paused
         } else {
-            PlayerState::Playing
+            PlayerState::Stopped
         }
     }
 
+    // A track is only finished when the position reached the end, not
+    // whenever the mixer happens to go empty (a seek near the tail can
+    // leave the mixer dry long before the song is over).
     pub fn is_finished(&self) -> bool {
-        let player = self.player.lock().unwrap();
+        if !self.player.lock().unwrap().empty() {
+            return false;
+        }
         let pos = self.position.lock().unwrap().elapsed();
+        if pos == Duration::ZERO {
+            return false;
+        }
+        match *self.total_duration.lock().unwrap() {
+            Some(total) => pos + Duration::from_millis(500) >= total,
+            None => true,
+        }
+    }
+}
 
-        player.empty() && pos > Duration::ZERO
+fn demuxer_seek_or_skip(source: &mut OpusSource, target: Duration, context: &str) -> Duration {
+    match source.try_seek_to(target) {
+        Ok(pos) => {
+            tracing::debug!(
+                context,
+                target_ms = target.as_millis() as u64,
+                landed_ms = pos.as_millis() as u64,
+                "seek: demuxer seek ok"
+            );
+            pos
+        }
+        Err(err) => {
+            tracing::debug!(
+                context,
+                %err,
+                target_ms = target.as_millis() as u64,
+                "seek: demuxer seek failed, using sample skip"
+            );
+            skip_samples(source, target);
+            target
+        }
+    }
+}
+
+async fn resume_once(
+    client: &reqwest::Client,
+    url: &str,
+    ua: &str,
+    writer: &mut AudioWriter,
+    generation: &Arc<AtomicU64>,
+    my_gen: u64,
+) -> Result<bool, ResumeError> {
+    let saved_offset = writer.downloaded_bytes();
+
+    let response = client
+        .get(url)
+        .header("User-Agent", ua)
+        .header("Range", format!("bytes={saved_offset}-"))
+        .send()
+        .await
+        .map_err(|e| ResumeError::Transient(e.to_string()))?;
+
+    let status = response.status();
+    if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        return Ok(writer.meta().expected_size.is_some_and(|s| saved_offset >= s));
+    }
+    if status.is_server_error() || is_transient_http(status) {
+        return Err(ResumeError::Transient(format!("HTTP {status}")));
+    }
+    if !status.is_success() {
+        return Err(ResumeError::Permanent(format!("HTTP {status}")));
+    }
+
+    let wire_start = if status == reqwest::StatusCode::PARTIAL_CONTENT {
+        saved_offset
+    } else {
+        0
+    };
+    if let Some(len) = response.content_length() {
+        writer.set_expected_size(Some(len + wire_start));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut pos = wire_start;
+    while let Some(chunk) = stream.next().await {
+        if generation.load(Ordering::SeqCst) != my_gen {
+            return Err(ResumeError::Cancelled);
+        }
+        match chunk {
+            Ok(bytes) => {
+                let end = pos + bytes.len() as u64;
+                if end > saved_offset {
+                    let skip = saved_offset.saturating_sub(pos) as usize;
+                    writer
+                        .write(&bytes[skip..])
+                        .await
+                        .map_err(|e| ResumeError::Permanent(format!("write: {e}")))?;
+                }
+                pos = end;
+            }
+            Err(e) => return Err(ResumeError::Transient(e.to_string())),
+        }
+    }
+
+    Ok(writer
+        .meta()
+        .expected_size
+        .is_some_and(|expected| writer.downloaded_bytes() >= expected))
+}
+
+fn spawn_download_task(
+    store: Arc<AudioStore>,
+    client: reqwest::Client,
+    url: String,
+    user_agent: String,
+    buffer: StreamBuffer,
+    writer: Option<AudioWriter>,
+    initial_response: reqwest::Response,
+    my_gen: u64,
+    generation: Arc<AtomicU64>,
+) {
+    tokio::spawn(async move {
+        let mut writer = writer;
+        let mut attempt = 0usize;
+        let mut next_response = Some(initial_response);
+
+        loop {
+            if generation.load(Ordering::SeqCst) != my_gen {
+                buffer.cancel();
+                if let Some(w) = writer.as_ref() {
+                    w.cancel_growth();
+                }
+                if let Some(mut w) = writer.take() {
+                    let _ = w.finish(false).await;
+                }
+                return;
+            }
+
+            let response = if let Some(r) = next_response.take() {
+                r
+            } else {
+                let saved_offset = writer.as_ref().map(|w| w.downloaded_bytes()).unwrap_or(0);
+                let req = client
+                    .get(&url)
+                    .header("User-Agent", &user_agent)
+                    .header("Range", format!("bytes={saved_offset}-"));
+                match req.send().await {
+                    Ok(r) => {
+                        let status = r.status();
+                        if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+                            buffer.finish();
+                            if let Some(mut w) = writer.take() {
+                                let _ = w.finish(true).await;
+                            }
+                            store.evict_cache_to_limit().await;
+                            return;
+                        }
+                        if status.is_server_error() || is_transient_http(status) {
+                            attempt += 1;
+                            let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
+                            tracing::debug!(
+                                %status,
+                                attempt,
+                                delay_ms = delay,
+                                "download: transient http, retrying"
+                            );
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            continue;
+                        }
+                        if !status.is_success() {
+                            tracing::warn!(%status, "download: fatal http, giving up");
+                            buffer.set_error(format!("HTTP {status}"));
+                            if let Some(mut w) = writer.take() {
+                                let _ = w.finish(false).await;
+                            }
+                            return;
+                        }
+                        r
+                    }
+                    Err(e) => {
+                        attempt += 1;
+                        let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
+                        tracing::debug!(
+                            %e,
+                            attempt,
+                            delay_ms = delay,
+                            "download: fetch failed, retrying"
+                        );
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        continue;
+                    }
+                }
+            };
+
+            let saved_offset = writer.as_ref().map(|w| w.downloaded_bytes()).unwrap_or(0);
+            let status = response.status();
+            let wire_start = if status == reqwest::StatusCode::PARTIAL_CONTENT {
+                saved_offset
+            } else {
+                0
+            };
+            if let Some(w) = writer.as_mut() {
+                if let Some(len) = response.content_length() {
+                    w.set_expected_size(Some(len + wire_start));
+                }
+            }
+
+            let mut stream = response.bytes_stream();
+            let mut pos = wire_start;
+            let mut err: Option<String> = None;
+            while let Some(chunk) = stream.next().await {
+                if generation.load(Ordering::SeqCst) != my_gen || buffer.is_cancelled() {
+                    buffer.cancel();
+                    if let Some(w) = writer.as_ref() {
+                        w.cancel_growth();
+                    }
+                    if let Some(mut w) = writer.take() {
+                        let _ = w.finish(false).await;
+                    }
+                    return;
+                }
+                match chunk {
+                    Ok(bytes) => {
+                        buffer.append(&bytes);
+                        if let Some(w) = writer.as_mut() {
+                            let end = pos + bytes.len() as u64;
+                            if end > saved_offset {
+                                let skip = saved_offset.saturating_sub(pos) as usize;
+                                if let Err(e) = w.write(&bytes[skip..]).await {
+                                    tracing::warn!(%e, "download: write failed, dropping writer");
+                                    writer = None;
+                                }
+                            }
+                        }
+                        pos += bytes.len() as u64;
+                    }
+                    Err(e) => {
+                        err = Some(e.to_string());
+                        break;
+                    }
+                }
+            }
+
+            if let Some(e) = err {
+                attempt += 1;
+                let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
+                tracing::debug!(
+                    error = %e,
+                    attempt,
+                    delay_ms = delay,
+                    bytes = pos,
+                    "download: mid-stream error, retrying"
+                );
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+                continue;
+            }
+
+            let expected = writer.as_ref().and_then(|w| w.meta().expected_size);
+            let downloaded = writer.as_ref().map(|w| w.downloaded_bytes()).unwrap_or(0);
+            let is_complete = expected.is_some_and(|e| downloaded >= e);
+            buffer.finish();
+            if let Some(mut w) = writer.take() {
+                let _ = w.finish(is_complete).await;
+            }
+            store.evict_cache_to_limit().await;
+            return;
+        }
+    });
+}
+
+pub fn is_live_uri(uri: &str) -> bool {
+    uri.contains(".m3u8") || uri.contains("/hls_playlist/")
+}
+
+fn estimate_duration(content_length: Option<u64>, bitrate_bps: Option<u64>) -> Option<Duration> {
+    let bytes = content_length?;
+    let bps = bitrate_bps?;
+    if bps == 0 || bytes == 0 {
+        return None;
+    }
+    let seconds = (bytes as f64 * 8.0) / bps as f64;
+    (seconds > 5.0).then(|| Duration::from_secs_f64(seconds))
+}
+
+fn skip_samples<S: Source>(source: &mut S, target: Duration) {
+    let channels = source.channels().get() as u64;
+    let sample_rate = source.sample_rate().get() as u64;
+    let to_skip = (target.as_secs_f64() * (sample_rate * channels) as f64) as u64;
+    for _ in 0..to_skip {
+        if source.next().is_none() {
+            break;
+        }
     }
 }
 
 impl PlaybackPosition {
     fn new() -> Self {
-        Self {
-            start_instant: None,
-            accumulated: Duration::ZERO,
-        }
+        Self { start_instant: None, accumulated: Duration::ZERO }
     }
 
     fn reset(&mut self) {
@@ -320,16 +1542,27 @@ impl PlaybackPosition {
         }
     }
 
+    fn pause_if_running(&mut self) {
+        if self.start_instant.is_some() {
+            self.pause();
+        }
+    }
+
+    fn resume_if_stopped(&mut self) {
+        if self.start_instant.is_none() {
+            self.start();
+        }
+    }
+
     fn elapsed(&self) -> Duration {
         match self.start_instant {
             Some(start) => self.accumulated + start.elapsed(),
-            Option::None => self.accumulated,
+            None => self.accumulated,
         }
     }
 
     fn seek(&mut self, target: Duration) {
         self.accumulated = target;
-
         if self.start_instant.is_some() {
             self.start_instant = Some(Instant::now());
         }

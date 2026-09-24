@@ -1,5 +1,3 @@
-using GLib;
-
 namespace Timbre {
     public class QueueManager : Object {
         public GLib.ListStore store { get; private set; }
@@ -17,19 +15,15 @@ namespace Timbre {
         }
 
         public TrackItem? get_track_at (int index) {
-            if (index >= 0 && index < this.length) {
-                var item = (QueueItem) this.store.get_item (index);
-                return item.track;
-            }
-            return null;
+            if (index < 0 || index >= this.length) return null;
+            return ((QueueItem) this.store.get_item (index)).track;
         }
 
         public void play_list (GenericArray<TrackItem> new_tracks, int start_index = 0) {
             this.store.remove_all ();
 
             for (int i = 0; i < new_tracks.length; i++) {
-                bool is_playing = (i == start_index);
-                this.store.append (new QueueItem (new_tracks.get (i), i, is_playing));
+                this.store.append (new QueueItem (new_tracks.get (i), i, i == start_index));
             }
 
             this.current_index = int.max (0, int.min (start_index, this.length - 1));
@@ -47,11 +41,9 @@ namespace Timbre {
         }
 
         public void play_index (int index) {
-            if (index >= 0 && index < this.length) {
-                this.current_index = index;
-                this.update_playing_state ();
-                this.track_changed (this.get_track_at (this.current_index));
-            }
+            if (index < 0 || index >= this.length) return;
+            this.current_index = index;
+            this.emit_current ();
         }
 
         public void clear () {
@@ -61,14 +53,13 @@ namespace Timbre {
         }
 
         public bool move_item (int from_index, int to_index) {
-            if (from_index == to_index ||
-                from_index < 0 || from_index >= this.length ||
-                to_index < 0 || to_index >= this.length) {
+            if (from_index == to_index
+                || from_index < 0 || from_index >= this.length
+                || to_index < 0 || to_index >= this.length) {
                 return false;
             }
 
             var item = (QueueItem) this.store.get_item (from_index);
-
             this.store.remove (from_index);
             this.store.insert (to_index, item);
 
@@ -83,18 +74,11 @@ namespace Timbre {
             for (uint i = 0; i < this.store.get_n_items (); i++) {
                 var cur = (QueueItem) this.store.get_item (i);
                 cur.index = (int) i;
+                cur.is_playing = (int) i == this.current_index;
             }
 
-            this.update_playing_state ();
             this.queue_updated ();
             return true;
-        }
-
-        private void update_playing_state () {
-            for (uint i = 0; i < this.store.get_n_items (); i++) {
-                var item = (QueueItem) this.store.get_item (i);
-                item.is_playing = ((int) i == this.current_index);
-            }
         }
 
         public bool has_next () {
@@ -106,18 +90,25 @@ namespace Timbre {
         }
 
         public void next () {
-            if (this.has_next ()) {
-                this.current_index++;
-                this.update_playing_state ();
-                this.track_changed (this.get_track_at (this.current_index));
-            }
+            if (!this.has_next ()) return;
+            this.current_index++;
+            this.emit_current ();
         }
 
         public void prev () {
-            if (this.has_prev ()) {
-                this.current_index--;
-                this.update_playing_state ();
-                this.track_changed (this.get_track_at (this.current_index));
+            if (!this.has_prev ()) return;
+            this.current_index--;
+            this.emit_current ();
+        }
+
+        private void emit_current () {
+            this.update_playing_state ();
+            this.track_changed (this.get_track_at (this.current_index));
+        }
+
+        private void update_playing_state () {
+            for (uint i = 0; i < this.store.get_n_items (); i++) {
+                ((QueueItem) this.store.get_item (i)).is_playing = (int) i == this.current_index;
             }
         }
     }

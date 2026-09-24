@@ -6,43 +6,37 @@ namespace Timbre {
         public SettingsWindow (Timbre.Player player, string cookies_path) {
             this.player = player;
             this.cookies_path = cookies_path;
-            build_ui ();
+            this.build_ui ();
         }
 
         private void build_ui () {
+            bool connected = GLib.FileUtils.test (this.cookies_path, GLib.FileTest.EXISTS);
+
             var page = new Adw.PreferencesPage ();
-            
+
             var account_group = new Adw.PreferencesGroup () {
                 title = "YouTube Music",
-                description = "Connect your account to access your library and history.."
+                description = "Connect your account to access your library and history."
             };
 
             var login_row = new Adw.ActionRow () {
                 title = "Authentication",
-                subtitle = GLib.FileUtils.test (cookies_path, GLib.FileTest.EXISTS) 
-                           ? "Connected" 
-                           : "Log in to access your account."
+                subtitle = connected ? "Connected" : "Log in to access your account."
             };
 
-            var login_btn = new Gtk.Button.with_label ("Entrar") {
+            var login_btn = new Gtk.Button.with_label (connected ? "Connected" : "Entrar") {
                 valign = Gtk.Align.CENTER,
                 css_classes = { "suggested-action", "pill" },
-                sensitive = !GLib.FileUtils.test (cookies_path, GLib.FileTest.EXISTS)
+                sensitive = !connected
             };
-            
-            if (!login_btn.sensitive) {
-                login_btn.label = "Connected";
-            }
 
             login_btn.clicked.connect (() => {
                 var login_win = new Timbre.LoginWindow (this.player, this.cookies_path);
-                
                 login_win.login_completed.connect (() => {
                     login_row.subtitle = "Account connected.";
                     login_btn.label = "Connected";
                     login_btn.sensitive = false;
                 });
-                
                 login_win.present (this);
             });
 

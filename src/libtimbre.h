@@ -3,118 +3,125 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct TimbrePlayerHandle TimbrePlayerHandle;
 
-typedef struct CTrack {
-    char *id;
-    char *title;
-    char *artists;
-    char *album;
-    char *thumbnail_url;
-    uint64_t duration_secs;
-    bool is_explicit;
-    bool available;
-    int kind;
-    bool set_video_id;
-    bool liked;
-    uint64_t views;
-} CTrack;
+typedef void (*TimbreCallback)(void* ud, char* json, char* error);
+typedef void (*TimbreDoneCallback)(void* ud, bool success, char* error);
 
-typedef struct CTrackList {
-    CTrack *items;
-    size_t len;
-} CTrackList;
+TimbrePlayerHandle* timbre_player_new (void);
+void timbre_player_free (TimbrePlayerHandle* handle);
 
-typedef struct CAlbum {
-    char *id;
-    char *title;
-    char *artists;
-    char *thumbnail_url;
-} CAlbum;
+void timbre_string_free (char* ptr);
 
-typedef struct CAlbumList {
-    CAlbum *items;
-    size_t len;
-} CAlbumList;
+void timbre_set_log_level (int level);
 
-typedef struct CPlaylist {
-    char *id;
-    char *title;
-    char *author;
-    char *thumbnail_url;
-} CPlaylist;
+bool timbre_player_play_file (TimbrePlayerHandle* h, const char* path);
 
-typedef struct CPlaylistList {
-    CPlaylist *items;
-    size_t len;
-} CPlaylistList;
+bool timbre_player_play_url (TimbrePlayerHandle* h, const char* url,
+                             uint64_t duration_secs,
+                             TimbreDoneCallback cb, void* ud);
 
-typedef struct CSuggestionList {
-    char **items;
-    size_t len;
-} CSuggestionList;
+bool timbre_player_play_track_id (TimbrePlayerHandle* h, const char* track_id,
+                                  uint64_t duration_secs,
+                                  TimbreDoneCallback cb, void* ud);
 
-typedef struct CHomeItem {
-    int item_type;
-    CTrack *track;
-    CAlbum *album;
-    CPlaylist *playlist;
-} CHomeItem;
+void   timbre_player_pause  (TimbrePlayerHandle* h);
+void   timbre_player_resume (TimbrePlayerHandle* h);
+void   timbre_player_stop   (TimbrePlayerHandle* h);
+bool   timbre_player_seek   (TimbrePlayerHandle* h, double target_secs);
 
-typedef struct CHomeSection {
-    char *title;
-    CHomeItem *items;
-    size_t len;
-} CHomeSection;
+double timbre_player_get_position (TimbrePlayerHandle* h);
+double timbre_player_get_duration (TimbrePlayerHandle* h);
+bool   timbre_player_is_finished  (TimbrePlayerHandle* h);
+bool   timbre_player_is_paused    (TimbrePlayerHandle* h);
 
-typedef struct CHomeSectionList {
-    CHomeSection *sections;
-    size_t len;
-} CHomeSectionList;
+void  timbre_player_set_volume (TimbrePlayerHandle* h, float v);
+float timbre_player_get_volume (TimbrePlayerHandle* h);
 
-typedef struct CArtist {
-    char *id;
-    char *name;
-    char *thumbnail_url;
-} CArtist;
+int timbre_player_get_state (TimbrePlayerHandle* h);
 
-typedef struct CArtistList {
-    CArtist *items;
-    size_t len;
-} CArtistList;
+char* timbre_player_take_last_error (TimbrePlayerHandle* h);
 
-TimbrePlayerHandle* timbre_player_new(void);
-void timbre_player_free(TimbrePlayerHandle *handle);
-bool timbre_player_play_file(TimbrePlayerHandle *handle, const char *path);
-bool timbre_player_play_url(TimbrePlayerHandle *handle, const char *url, uint64_t duration_secs);
-bool timbre_player_play_track_id(TimbrePlayerHandle *handle, const char *track_id, uint64_t duration_secs);
-void timbre_player_pause(TimbrePlayerHandle *handle);
-void timbre_player_resume(TimbrePlayerHandle *handle);
-void timbre_player_stop(TimbrePlayerHandle *handle);
-bool timbre_player_seek(TimbrePlayerHandle *handle, double target_secs);
-double timbre_player_get_position(TimbrePlayerHandle *handle);
-bool timbre_player_is_finished(TimbrePlayerHandle *handle);
-double timbre_player_get_duration(TimbrePlayerHandle *handle);
-bool timbre_player_login(TimbrePlayerHandle* handle, const char* cookies, const char* path);
-bool timbre_player_load_cookies(TimbrePlayerHandle* handle, const char* path);
+char* timbre_player_get_stats (TimbrePlayerHandle* h);
 
-CTrackList* timbre_player_search_tracks(TimbrePlayerHandle *handle, const char *query);
-CAlbumList* timbre_player_search_albums(TimbrePlayerHandle *handle, const char *query);
-CPlaylistList* timbre_player_search_playlists(TimbrePlayerHandle *handle, const char *query);
-CSuggestionList* timbre_player_search_suggestions(TimbrePlayerHandle *handle, const char *query);
-CArtistList* timbre_player_search_artists(TimbrePlayerHandle *handle, const char *query);
+char* timbre_audio_stats (TimbrePlayerHandle* h);
+char* timbre_audio_list  (TimbrePlayerHandle* h, int kind);
 
-void timbre_track_list_free(CTrackList *list);
-void timbre_album_list_free(CAlbumList *list);
-void timbre_playlist_list_free(CPlaylistList *list);
-void timbre_suggestion_list_free(CSuggestionList *list);
-void timbre_artist_list_free(CArtistList *list);
+bool timbre_audio_remove (TimbrePlayerHandle* h, const char* video_id,
+                          TimbreDoneCallback cb, void* ud);
+bool timbre_audio_clear  (TimbrePlayerHandle* h, int kind,
+                          TimbreDoneCallback cb, void* ud);
+void timbre_audio_set_cache_limit (TimbrePlayerHandle* h, uint64_t bytes);
 
-void timbre_string_free(char *s);
-char* timbre_player_get_home_json(TimbrePlayerHandle *handle);
-char* timbre_player_get_album_json(TimbrePlayerHandle *handle, const char *album_id);
-char* timbre_player_get_playlist_json(TimbrePlayerHandle *handle, const char *playlist_id);
+bool timbre_audio_download (TimbrePlayerHandle* h, const char* track_id,
+                            TimbreDoneCallback cb, void* ud);
 
+bool timbre_player_get_home            (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_explore         (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_charts          (TimbrePlayerHandle* h, const char* country, TimbreCallback cb, void* ud);
+bool timbre_player_get_mood_categories (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_category_page   (TimbrePlayerHandle* h, const char* params, TimbreCallback cb, void* ud);
+
+bool timbre_player_get_album    (TimbrePlayerHandle* h, const char* album_id,    TimbreCallback cb, void* ud);
+bool timbre_player_get_playlist (TimbrePlayerHandle* h, const char* playlist_id, TimbreCallback cb, void* ud);
+bool timbre_player_get_artist   (TimbrePlayerHandle* h, const char* channel_id,  TimbreCallback cb, void* ud);
+bool timbre_player_get_radio    (TimbrePlayerHandle* h, const char* track_id,    TimbreCallback cb, void* ud);
+bool timbre_player_get_watch_playlist (TimbrePlayerHandle* h,
+                                       const char* video_id,
+                                       const char* playlist_id,
+                                       TimbreCallback cb, void* ud);
+
+bool timbre_player_get_library_playlists     (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_library_albums        (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_library_subscriptions (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_uploads_songs         (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_uploads_albums        (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_uploads_artists       (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_get_history               (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+
+bool timbre_player_search            (TimbrePlayerHandle* h, const char* query, TimbreCallback cb, void* ud);
+bool timbre_player_search_suggestions(TimbrePlayerHandle* h, const char* query, TimbreCallback cb, void* ud);
+
+bool timbre_player_get_account      (TimbrePlayerHandle* h, TimbreCallback cb, void* ud);
+bool timbre_player_is_authenticated (TimbrePlayerHandle* h);
+
+bool timbre_player_login  (TimbrePlayerHandle* h, const char* input, TimbreDoneCallback cb, void* ud);
+bool timbre_player_logout (TimbrePlayerHandle* h, TimbreDoneCallback cb, void* ud);
+
+bool timbre_player_rate_track (TimbrePlayerHandle* h, const char* track_id, bool like,
+                               TimbreDoneCallback cb, void* ud);
+
+bool timbre_player_subscribe_artist (TimbrePlayerHandle* h, const char* channel_id, bool subscribe,
+                                     TimbreDoneCallback cb, void* ud);
+
+bool timbre_player_remove_history (TimbrePlayerHandle* h, const char* tokens_json,
+                                   TimbreDoneCallback cb, void* ud);
+
+bool timbre_player_add_to_playlist (TimbrePlayerHandle* h, const char* playlist_id,
+                                    const char* track_ids_json,
+                                    TimbreDoneCallback cb, void* ud);
+
+bool timbre_player_create_playlist (TimbrePlayerHandle* h,
+                                    const char* title, const char* description, const char* privacy,
+                                    TimbreCallback cb, void* ud);
+
+bool timbre_player_delete_playlist (TimbrePlayerHandle* h, const char* playlist_id,
+                                    TimbreDoneCallback cb, void* ud);
+
+bool timbre_player_edit_playlist (TimbrePlayerHandle* h, const char* playlist_id,
+                                  const char* title, const char* description, const char* privacy,
+                                  TimbreDoneCallback cb, void* ud);
+
+bool timbre_player_record_play (TimbrePlayerHandle* h, const char* track_id,
+                                TimbreDoneCallback cb, void* ud);
+
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* LIBTIMBRE_H */

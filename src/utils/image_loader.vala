@@ -1,12 +1,11 @@
 namespace Timbre.Utils {
-
     public class ScaledPaintable : GLib.Object, Gdk.Paintable {
         private Gdk.Texture texture;
         private int scale_factor;
 
         public ScaledPaintable (Gdk.Texture texture, int scale_factor) {
             this.texture = texture;
-            this.scale_factor = scale_factor > 0 ? scale_factor : 1;
+            this.scale_factor = int.max (scale_factor, 1);
         }
 
         public int get_intrinsic_width () {
@@ -48,13 +47,13 @@ namespace Timbre.Utils {
         }
 
         public async Gdk.Paintable? load_paintable_async (
-            string? url, 
-            Gdk.Display display, 
+            string? url,
+            Gdk.Display display,
             int target_size,
             int scale_factor = 1,
             string fallback_icon = "audio-x-generic-symbolic"
         ) {
-            int scale = scale_factor > 0 ? scale_factor : 1;
+            int scale = int.max (scale_factor, 1);
 
             if (url != null && url.strip ().length > 0) {
                 var cache_key = "%s@%dx%d".printf (url, target_size, scale);
@@ -69,24 +68,16 @@ namespace Timbre.Utils {
 
                     if (message.status_code == 200) {
                         var stream = new MemoryInputStream.from_bytes (bytes);
-                        var original_pixbuf = yield new Gdk.Pixbuf.from_stream_async (stream, null);
+                        var original = yield new Gdk.Pixbuf.from_stream_async (stream, null);
 
-                        if (original_pixbuf != null) {
+                        if (original != null) {
                             int render_size = target_size * scale;
-                            var scaled_pixbuf = original_pixbuf.scale_simple (
-                                render_size,
-                                render_size,
-                                Gdk.InterpType.BILINEAR
-                            );
+                            var scaled = original.scale_simple (render_size, render_size, Gdk.InterpType.BILINEAR);
+                            var texture = Gdk.Texture.for_pixbuf (scaled);
 
-                            var texture = Gdk.Texture.for_pixbuf (scaled_pixbuf);
-                            
-                            Gdk.Paintable paintable;
-                            if (scale > 1) {
-                                paintable = new ScaledPaintable (texture, scale);
-                            } else {
-                                paintable = texture;
-                            }
+                            Gdk.Paintable paintable = scale > 1
+                                ? (Gdk.Paintable) new ScaledPaintable (texture, scale)
+                                : texture;
 
                             this.memory_cache.insert (cache_key, paintable);
                             return paintable;
@@ -101,9 +92,9 @@ namespace Timbre.Utils {
         }
 
         public Gdk.Paintable? get_fallback_icon (
-            Gdk.Display display, 
-            int size, 
-            int scale_factor = 1, 
+            Gdk.Display display,
+            int size,
+            int scale_factor = 1,
             string icon_name = "audio-x-generic-symbolic"
         ) {
             var theme = Gtk.IconTheme.get_for_display (display);
@@ -117,7 +108,7 @@ namespace Timbre.Utils {
                 icon_name,
                 fallbacks,
                 size,
-                scale_factor > 0 ? scale_factor : 1,
+                int.max (scale_factor, 1),
                 Gtk.TextDirection.NONE,
                 Gtk.IconLookupFlags.FORCE_SYMBOLIC
             );

@@ -1,108 +1,13 @@
 [CCode (cprefix = "Timbre", lower_case_cprefix = "timbre_", cheader_filename = "libtimbre.h")]
 namespace Timbre {
-    [CCode (cname = "CTrack", has_type_id = false)]
-    public struct Track {
-        public unowned string id;
-        public unowned string title;
-        public unowned string artists;
-        public unowned string? album;
-        public unowned string? thumbnail_url;
-        public uint64 duration_secs;
-        public bool explicit;
-        public bool available;
-        public int kind;
-        public bool set_video_id;
-        public bool liked;
-        public uint64 views;
-    }
 
-    [Compact]
-    [CCode (cname = "CTrackList", free_function = "timbre_track_list_free")]
-    public class TrackList {
-        [CCode (array_length_cname = "len")]
-        public unowned Track[] items;
-        public size_t len;
-    }
-
-    [CCode (cname = "CAlbum", has_type_id = false)]
-    public struct AlbumItem {
-        public unowned string id;
-        public unowned string title;
-        public unowned string artists;
-        public unowned string? thumbnail_url;
-    }
-
-    [Compact]
-    [CCode (cname = "CAlbumList", free_function = "timbre_album_list_free")]
-    public class AlbumList {
-        [CCode (array_length_cname = "len")]
-        public unowned AlbumItem[] items;
-        public size_t len;
-    }
-
-    [CCode (cname = "CPlaylist", has_type_id = false)]
-    public struct PlaylistItem {
-        public unowned string id;
-        public unowned string title;
-        public unowned string? author;
-        public unowned string? thumbnail_url;
-    }
-
-    [Compact]
-    [CCode (cname = "CPlaylistList", free_function = "timbre_playlist_list_free")]
-    public class PlaylistList {
-        [CCode (array_length_cname = "len")]
-        public unowned PlaylistItem[] items;
-        public size_t len;
-    }
-
-    [Compact]
-    [CCode (cname = "CSuggestionList", free_function = "timbre_suggestion_list_free")]
-    public class SuggestionList {
-        [CCode (array_length_cname = "len")]
-        public unowned string[] items;
-        public size_t len;
-    }
-
-    [CCode (cname = "CHomeItem", has_type_id = false)]
-    public struct CHomeItem {
-        public int item_type;
-        public Track* track;
-        public AlbumItem* album;
-        public PlaylistItem* playlist;
-    }
-
-    [CCode (cname = "CHomeSection", has_type_id = false)]
-    public struct CHomeSection {
-        public unowned string title;
-        public CHomeItem* items;
-        public size_t len;
-    }
-
-    [CCode (cname = "CHomeSectionList", has_type_id = false)]
-    public struct CHomeSectionList {
-        public CHomeSection* sections;
-        public size_t len;
-    }
-
-    [CCode (cname = "CArtist", has_type_id = false)]
-    public struct ArtistItem {
-        public unowned string id;
-        public unowned string name;
-        public unowned string? thumbnail_url;
-    }
-
-    [Compact]
-    [CCode (cname = "CArtistList", free_function = "timbre_artist_list_free")]
-    public class ArtistList {
-        [CCode (array_length_cname = "len")]
-        public unowned ArtistItem[] items;
-        public size_t len;
-    }
+    public delegate void JsonCallback (char* json, char* error);
+    public delegate void DoneCallback (bool success, char* error);
 
     [Compact]
     [CCode (cname = "TimbrePlayerHandle", free_function = "timbre_player_free")]
     public class Player {
+
         [CCode (cname = "timbre_player_new")]
         public Player ();
 
@@ -110,63 +15,160 @@ namespace Timbre {
         public bool play_file (string path);
 
         [CCode (cname = "timbre_player_play_url")]
-        public bool play_url (string url, uint64 duration_secs = 0);
+        public bool play_url (string url, uint64 duration_secs,
+                              [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_play_track_id")]
-        public bool play_track_id (string track_id, uint64 duration_secs = 0);
+        public bool play_track_id (string track_id, uint64 duration_secs,
+                                   [CCode (scope = "async")] DoneCallback cb);
 
-        [CCode (cname = "timbre_player_pause")]
-        public void pause ();
-
-        [CCode (cname = "timbre_player_resume")]
-        public void resume ();
-
-        [CCode (cname = "timbre_player_stop")]
-        public void stop ();
+        [CCode (cname = "timbre_player_pause")]  public void pause ();
+        [CCode (cname = "timbre_player_resume")] public void resume ();
+        [CCode (cname = "timbre_player_stop")]   public void stop ();
 
         [CCode (cname = "timbre_player_seek")]
         public bool seek (double target_secs);
 
-        [CCode (cname = "timbre_player_get_position")]
-        public double get_position ();
+        [CCode (cname = "timbre_player_get_position")] public double get_position ();
+        [CCode (cname = "timbre_player_get_duration")] public double get_duration ();
+        [CCode (cname = "timbre_player_is_finished")]  public bool   is_finished ();
+        [CCode (cname = "timbre_player_is_paused")]    public bool   is_paused ();
 
-        [CCode (cname = "timbre_player_is_finished")]
-        public bool is_finished ();
+        [CCode (cname = "timbre_player_set_volume")] public void  set_volume (float v);
+        [CCode (cname = "timbre_player_get_volume")] public float get_volume ();
 
-        [CCode (cname = "timbre_player_search_tracks")]
-        public TrackList? search_tracks (string query);
+        [CCode (cname = "timbre_player_get_state")]       public int   get_state ();
+        [CCode (cname = "timbre_player_take_last_error")] public char* take_last_error ();
+        [CCode (cname = "timbre_player_get_stats")]       public char* get_stats ();
 
-        [CCode (cname = "timbre_player_search_albums")]
-        public AlbumList? search_albums (string query);
+        [CCode (cname = "timbre_audio_stats")]
+        public char* audio_stats ();
 
-        [CCode (cname = "timbre_player_search_playlists")]
-        public PlaylistList? search_playlists (string query);
+        [CCode (cname = "timbre_audio_list")]
+        public char* audio_list (int kind);
+
+        [CCode (cname = "timbre_audio_remove")]
+        public bool audio_remove (string video_id,
+                                  [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_audio_clear")]
+        public bool audio_clear (int kind,
+                                 [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_audio_set_cache_limit")]
+        public void audio_set_cache_limit (uint64 bytes);
+
+        [CCode (cname = "timbre_audio_download")]
+        public bool audio_download (string track_id,
+                                    [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_get_home")]
+        public bool get_home ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_explore")]
+        public bool get_explore ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_charts")]
+        public bool get_charts (string country, [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_mood_categories")]
+        public bool get_mood_categories ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_category_page")]
+        public bool get_category_page (string params, [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_album")]
+        public bool get_album (string album_id, [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_playlist")]
+        public bool get_playlist (string playlist_id, [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_artist")]
+        public bool get_artist (string channel_id, [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_radio")]
+        public bool get_radio (string track_id, [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_watch_playlist")]
+        public bool get_watch_playlist (string video_id, string playlist_id,
+                                        [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_library_playlists")]
+        public bool get_library_playlists ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_library_albums")]
+        public bool get_library_albums ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_library_subscriptions")]
+        public bool get_library_subscriptions ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_uploads_songs")]
+        public bool get_uploads_songs ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_uploads_albums")]
+        public bool get_uploads_albums ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_uploads_artists")]
+        public bool get_uploads_artists ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_get_history")]
+        public bool get_history ([CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_search")]
+        public bool search (string query, [CCode (scope = "async")] JsonCallback cb);
 
         [CCode (cname = "timbre_player_search_suggestions")]
-        public SuggestionList? search_suggestions (string query);
+        public bool search_suggestions (string query, [CCode (scope = "async")] JsonCallback cb);
 
-        [CCode (cname = "timbre_player_search_artists")]
-        public ArtistList? search_artists (string query);
+        [CCode (cname = "timbre_player_get_account")]
+        public bool get_account ([CCode (scope = "async")] JsonCallback cb);
 
-        [CCode (cname = "timbre_player_get_home_json")]
-        public char* get_home_json ();
-
-        [CCode (cname = "timbre_player_get_album_json")]
-        public char* get_album_json (string album_id);
-
-        [CCode (cname = "timbre_player_get_playlist_json")]
-        public char* get_playlist_json (string playlist_id);
-
-        [CCode (cname = "timbre_player_get_duration")]
-        public double get_duration ();
+        [CCode (cname = "timbre_player_is_authenticated")]
+        public bool is_authenticated ();
 
         [CCode (cname = "timbre_player_login")]
-        public bool login (string cookies, string path);
+        public bool login (string input, [CCode (scope = "async")] DoneCallback cb);
 
-        [CCode (cname = "timbre_player_load_cookies")]
-        public bool load_cookies (string path);
+        [CCode (cname = "timbre_player_logout")]
+        public bool logout ([CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_rate_track")]
+        public bool rate_track (string track_id, bool like,
+                                [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_subscribe_artist")]
+        public bool subscribe_artist (string channel_id, bool subscribe,
+                                      [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_remove_history")]
+        public bool remove_history (string tokens_json,
+                                    [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_add_to_playlist")]
+        public bool add_to_playlist (string playlist_id, string track_ids_json,
+                                     [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_create_playlist")]
+        public bool create_playlist (string title, string description, string privacy,
+                                     [CCode (scope = "async")] JsonCallback cb);
+
+        [CCode (cname = "timbre_player_delete_playlist")]
+        public bool delete_playlist (string playlist_id,
+                                     [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_edit_playlist")]
+        public bool edit_playlist (string playlist_id, string title, string description,
+                                   string privacy,
+                                   [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_record_play")]
+        public bool record_play (string track_id,
+                                 [CCode (scope = "async")] DoneCallback cb);
     }
 
     [CCode (cname = "timbre_string_free")]
     public static void string_free (char* s);
+
+    [CCode (cname = "timbre_set_log_level")]
+    public static void set_log_level (int level);
 }

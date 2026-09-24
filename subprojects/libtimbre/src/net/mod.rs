@@ -1,0 +1,20 @@
+pub mod artist;
+pub mod browse;
+pub mod cache;
+pub mod covers;
+pub mod error;
+pub mod explore;
+pub mod history;
+pub mod home;
+pub mod items;
+pub mod library;
+pub mod media;
+pub mod player_endpoint;
+pub mod playlists;
+pub mod potoken;
+pub mod search;
+pub mod session;
+pub mod stream;
+pub mod uploads;
+
+pub use error::NetError;

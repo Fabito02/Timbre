@@ -10,6 +10,15 @@ namespace Timbre {
         private uint search_debounce_id = 0;
         private string cookies_path;
 
+        // True while the user drags the slider or a seek is in flight.
+        // Writing to adjustment_progress fires value-changed, which
+        // schedules another seek; the lock prevents that feedback loop.
+        // Released by settle_pending_seek as soon as the backend reports
+        // the target position, so the bar tracks the audio 1:1.
+        private bool slider_locked = false;
+        private uint slider_unlock_id = 0;
+        private double pending_seek_target = -1.0;
+
         [GtkChild] private unowned Gtk.Scale scale_progress;
         [GtkChild] private unowned Gtk.Adjustment adjustment_progress;
         [GtkChild] private unowned Gtk.Label label_time_current;
@@ -96,7 +105,6 @@ namespace Timbre {
             this.queue_selection = new Gtk.SingleSelection (this.queue.store);
             this.queue_selection.autoselect = false;
             this.queue_list.model = this.queue_selection;
-
             this.queue_list.single_click_activate = true;
 
             this.queue_list.activate.connect ((position) => {
@@ -146,6 +154,12 @@ namespace Timbre {
                     this.queue.clear ();
                     this.player.stop ();
                     this.is_playing = false;
+                    this.slider_locked = false;
+                    this.pending_seek_target = -1.0;
+                    if (this.slider_unlock_id != 0) {
+                        GLib.Source.remove (this.slider_unlock_id);
+                        this.slider_unlock_id = 0;
+                    }
                     this.button_play_pause.icon_name = "media-playback-start-symbolic";
                     this.label_current_title.label = "No track selected";
                     this.label_current_artist.label = "Artist";
@@ -168,16 +182,11 @@ namespace Timbre {
                 });
 
                 this.navigation_view.push (page);
-
                 this.searchbar.search_mode_enabled = false;
             });
 
             this.searchbar.notify["search-mode-enabled"].connect (() => {
-                if (this.searchbar.search_mode_enabled) {
-                    this.main_stack.visible_child_name = "search";
-                } else {
-                    this.main_stack.visible_child_name = "home";
-                }
+                this.main_stack.visible_child_name = this.searchbar.search_mode_enabled ? "search" : "home";
             });
 
             this.searchentry.search_changed.connect (() => {
@@ -202,18 +211,19 @@ namespace Timbre {
 
         private void execute_search (string query) {
             this.search_page.show_loading ();
-            new Thread<void*> ("search-thread", () => {
-                var resultsSuggestions = this.player.search_suggestions (query);
-                var resultsMusics = this.player.search_tracks (query);
-                var resultsAlbums = this.player.search_albums (query);
-                var resultsPlaylists = this.player.search_playlists (query);
-                var resultsArtists = this.player.search_artists (query);
 
-                GLib.Idle.add (() => {
-                    this.search_page.set_results (resultsSuggestions, resultsMusics, resultsAlbums, resultsPlaylists, resultsArtists);
+            this.player.search (query, (json, error) => {
+                Idle.add (() => {
+                    if (error != null) {
+                        warning ("search: %s", (string) error);
+                        Timbre.string_free (error);
+                        this.search_page.clear ();
+                        return GLib.Source.REMOVE;
+                    }
+                    this.search_page.set_results_json ((string) json);
+                    Timbre.string_free (json);
                     return GLib.Source.REMOVE;
                 });
-                return null;
             });
         }
 
@@ -227,7 +237,24 @@ namespace Timbre {
             return "%d:%02d".printf (s / 60, s % 60);
         }
 
+        // Every programmatic write to adjustment_progress must go through
+        // here, otherwise on_seek_changed mistakes it for a user drag.
+        private void set_slider_silently (double value) {
+            this.slider_locked = true;
+            this.adjustment_progress.value = value;
+            this.slider_locked = false;
+        }
+
         public void play_track (string track_id, uint64 duration_secs, string title, string artist, string? cover_url) {
+            message ("play_track: id=%s dur=%lu title=%s".printf (track_id, (ulong) duration_secs, title));
+
+            if (this.slider_unlock_id != 0) {
+                GLib.Source.remove (this.slider_unlock_id);
+                this.slider_unlock_id = 0;
+            }
+            this.slider_locked = false;
+            this.pending_seek_target = -1.0;
+
             this.label_current_title.label = title;
             this.label_current_artist.label = artist;
 
@@ -236,21 +263,15 @@ namespace Timbre {
 
             if (display != null && cover_url != null) {
                 Timbre.Utils.ImageLoader.get_default ().load_paintable_async.begin (
-                    cover_url,
-                    display,
-                    50,
-                    scale,
-                    "audio-x-generic-symbolic",
+                    cover_url, display, 50, scale, "audio-x-generic-symbolic",
                     (obj, res) => {
                         this.image_cover.paintable = Timbre.Utils.ImageLoader.get_default ().load_paintable_async.end (res);
                     }
                 );
             }
 
+            this.set_slider_silently (0.0);
             this.label_time_current.label = "0:00";
-            this.adjustment_progress.value = 0.0;
-            this.button_play_pause.sensitive = false;
-
             if (duration_secs > 0) {
                 this.label_time_total.label = this.format_time ((double) duration_secs);
                 this.adjustment_progress.upper = (double) duration_secs;
@@ -259,30 +280,98 @@ namespace Timbre {
                 this.adjustment_progress.upper = 0.0;
             }
 
-            new Thread<void*> ("player-loader", () => {
-                bool success = this.player.play_track_id (track_id, duration_secs);
+            this.button_play_pause.sensitive = false;
+            this.is_playing = false;
+            this.button_play_pause.icon_name = "media-playback-start-symbolic";
 
-                GLib.Idle.add (() => {
+            this.player.play_track_id (track_id, duration_secs, (success, error) => {
+                Idle.add (() => {
+                    var err_msg = error != null ? (string) error : "(none)";
+                    message ("play callback: id=%s success=%s error=%s".printf (track_id, success.to_string (), err_msg));
+
                     this.button_play_pause.sensitive = true;
 
-                    if (success) {
-                        if (duration_secs > 0) {
-                            this.adjustment_progress.upper = (double) duration_secs;
-                            this.label_time_total.label = this.format_time ((double) duration_secs);
+                    if (!success) {
+                        if (error != null) {
+                            Timbre.string_free (error);
                         }
-                        this.is_playing = true;
-                        this.button_play_pause.icon_name = "media-playback-pause-symbolic";
+                        return GLib.Source.REMOVE;
+                    }
 
-                        if (this.tick_id == 0) {
-                            this.tick_id = GLib.Timeout.add (250, this.update_ui_tick);
-                        }
-                    } else {
-                        this.label_time_total.label = "0:00";
+                    this.log_player_stats ();
+
+                    if (this.tick_id == 0) {
+                        this.tick_id = GLib.Timeout.add (100, this.update_ui_tick);
                     }
                     return GLib.Source.REMOVE;
                 });
-                return null;
             });
+        }
+
+        private void log_player_stats () {
+            var raw = this.player.get_stats ();
+            if (raw == null) {
+                return;
+            }
+
+            var json_str = (string) raw;
+            Timbre.string_free (raw);
+
+            try {
+                var parser = new Json.Parser ();
+                parser.load_from_data (json_str);
+                var root = parser.get_root ();
+                if (root == null || root.get_node_type () != Json.NodeType.OBJECT) {
+                    return;
+                }
+
+                var obj = root.get_object ();
+                string codec = obj.has_member ("acodec") && !obj.get_null_member ("acodec")
+                    ? obj.get_string_member ("acodec") : "unknown";
+                string container = obj.has_member ("ext") && !obj.get_null_member ("ext")
+                    ? obj.get_string_member ("ext") : "unknown";
+                string itag = obj.has_member ("format_id") && !obj.get_null_member ("format_id")
+                    ? obj.get_string_member ("format_id") : "?";
+                string protocol = obj.has_member ("protocol") && !obj.get_null_member ("protocol")
+                    ? obj.get_string_member ("protocol") : "?";
+                int bitrate = obj.has_member ("bitrate_kbps") && !obj.get_null_member ("bitrate_kbps")
+                    ? (int) obj.get_int_member ("bitrate_kbps") : 0;
+                int rate = obj.has_member ("sample_rate_hz") && !obj.get_null_member ("sample_rate_hz")
+                    ? (int) obj.get_int_member ("sample_rate_hz") : 0;
+                int channels = obj.has_member ("channels") && !obj.get_null_member ("channels")
+                    ? (int) obj.get_int_member ("channels") : 0;
+                bool cached = obj.has_member ("from_cache") && !obj.get_null_member ("from_cache")
+                    ? obj.get_boolean_member ("from_cache") : false;
+
+                var line = "codec=%s container=%s itag=%s bitrate=%d kbps rate=%.1f kHz channels=%d protocol=%s cached=%s".printf (
+                    codec, container, itag, bitrate, rate / 1000.0, channels, protocol,
+                    cached ? "yes" : "no"
+                );
+                message ("player stats: %s", line);
+            } catch (Error e) {
+                warning ("player stats parse: %s", e.message);
+            }
+        }
+
+        // Releases the slider lock once the backend's reported position
+        // is close to the pending seek target. The fallback timer in
+        // on_seek_changed is only for a silently failed seek.
+        private void settle_pending_seek () {
+            if (!this.slider_locked || this.pending_seek_target < 0.0) {
+                return;
+            }
+
+            double pos = this.player.get_position ();
+            if (Math.fabs (pos - this.pending_seek_target) > 0.5) {
+                return;
+            }
+
+            if (this.slider_unlock_id != 0) {
+                GLib.Source.remove (this.slider_unlock_id);
+                this.slider_unlock_id = 0;
+            }
+            this.pending_seek_target = -1.0;
+            this.slider_locked = false;
         }
 
         private bool update_ui_tick () {
@@ -290,23 +379,39 @@ namespace Timbre {
                 return true;
             }
 
+            int state = this.player.get_state ();
+            bool backend_playing = (state == 1);
+            if (backend_playing != this.is_playing) {
+                this.is_playing = backend_playing;
+                this.button_play_pause.icon_name = this.is_playing
+                    ? "media-playback-pause-symbolic"
+                    : "media-playback-start-symbolic";
+            }
+
+            this.settle_pending_seek ();
+
+            if (this.slider_locked) {
+                return true;
+            }
+
             double current_pos = this.player.get_position ();
-            this.adjustment_progress.value = current_pos;
+            this.set_slider_silently (current_pos);
             this.label_time_current.label = format_time (current_pos);
 
-            if (this.adjustment_progress.upper == 0.0) {
-                double duration = this.player.get_duration ();
-                if (duration > 0.0) {
-                    this.adjustment_progress.upper = duration;
-                    this.label_time_total.label = format_time (duration);
-                }
+            double known = this.player.get_duration ();
+            if (known > 0.0 && Math.fabs (this.adjustment_progress.upper - known) > 0.5) {
+                this.set_slider_silently (this.adjustment_progress.value);
+                this.adjustment_progress.upper = known;
+                this.label_time_total.label = format_time (known);
             }
 
             return true;
         }
 
+        // Reached only on a real drag; programmatic writes set slider_locked.
         [GtkCallback]
         private void on_seek_changed () {
+            if (this.slider_locked) return;
             if (this.is_seeking) return;
 
             double target_pos = this.adjustment_progress.value;
@@ -314,24 +419,42 @@ namespace Timbre {
             this.label_time_current.label = "%d:%02d".printf (total_secs / 60, total_secs % 60);
 
             if (this.seek_debounce_id != 0) GLib.Source.remove (this.seek_debounce_id);
-
             this.seek_debounce_id = GLib.Timeout.add (250, () => {
-                this.player.seek (target_pos);
                 this.seek_debounce_id = 0;
+
+                this.slider_locked = true;
+                this.pending_seek_target = target_pos;
+
+                // Safety net: if the seek silently fails and the backend
+                // position never reaches the target, drop the lock anyway.
+                if (this.slider_unlock_id != 0) {
+                    GLib.Source.remove (this.slider_unlock_id);
+                }
+                this.slider_unlock_id = GLib.Timeout.add (3000, () => {
+                    this.slider_unlock_id = 0;
+                    this.slider_locked = false;
+                    this.pending_seek_target = -1.0;
+                    return GLib.Source.REMOVE;
+                });
+
+                this.player.seek (target_pos);
                 return GLib.Source.REMOVE;
             });
         }
 
         [GtkCallback]
         private void on_play_pause_clicked () {
-            if (this.is_playing) {
+            // Trust the backend state, not a local flag: it can change on
+            // its own (stall, ended file, seek in flight).
+            int state = this.player.get_state ();
+            if (state == 1) {
                 this.player.pause ();
-                this.button_play_pause.icon_name = "media-playback-start-symbolic";
                 this.is_playing = false;
+                this.button_play_pause.icon_name = "media-playback-start-symbolic";
             } else {
                 this.player.resume ();
-                this.button_play_pause.icon_name = "media-playback-pause-symbolic";
                 this.is_playing = true;
+                this.button_play_pause.icon_name = "media-playback-pause-symbolic";
             }
         }
 

@@ -1,6 +1,8 @@
 namespace Timbre {
-
     public class LoginWindow : Adw.Dialog {
+        private const string USER_AGENT =
+            "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0";
+
         private Gtk.Box webview_container;
         private WebKit.WebView webview;
         private unowned Timbre.Player player;
@@ -12,73 +14,84 @@ namespace Timbre {
             this.title = "Sign in to YouTube Music";
             this.content_width = 500;
             this.content_height = 650;
-            
             this.player = player;
             this.cookies_path = cookies_path;
 
-            build_ui ();
-            setup_webview ();
+            this.build_ui ();
+            this.setup_webview ();
         }
 
         private void build_ui () {
             var main_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            var header_bar = new Adw.HeaderBar ();
+            main_box.append (new Adw.HeaderBar ());
 
-            webview_container = new Gtk.Box (Gtk.Orientation.VERTICAL, 0) {
+            this.webview_container = new Gtk.Box (Gtk.Orientation.VERTICAL, 0) {
                 hexpand = true,
                 vexpand = true
             };
-
-            main_box.append (header_bar);
-            main_box.append (webview_container);
+            main_box.append (this.webview_container);
 
             this.child = main_box;
         }
 
         private void setup_webview () {
-            webview = new WebKit.WebView ();
-            var settings = webview.get_settings ();
-            settings.user_agent = "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0";
-
-            webview.hexpand = true;
-            webview.vexpand = true;
-            webview.load_changed.connect (on_load_changed);
-
-            webview_container.append (webview);
-            webview.load_uri ("https://accounts.google.com/ServiceLogin?continue=https://music.youtube.com");
+            this.webview = new WebKit.WebView ();
+            this.webview.get_settings ().user_agent = USER_AGENT;
+            this.webview.hexpand = true;
+            this.webview.vexpand = true;
+            this.webview.load_changed.connect (this.on_load_changed);
+            this.webview_container.append (this.webview);
+            this.webview.load_uri ("https://accounts.google.com/ServiceLogin?continue=https://music.youtube.com");
         }
 
-        private void on_load_changed (WebKit.LoadEvent load_event) {
-            if (load_event != WebKit.LoadEvent.FINISHED) return;
-            string uri = webview.get_uri ();
-
+        private void on_load_changed (WebKit.LoadEvent event) {
+            if (event != WebKit.LoadEvent.FINISHED) return;
+            string uri = this.webview.get_uri ();
             if ("music.youtube.com" in uri && !("accounts.google.com" in uri)) {
-                extract_cookies_and_finish ();
+                this.extract_cookies_and_finish ();
             }
         }
 
         private void extract_cookies_and_finish () {
-            var network_session = webview.get_network_session ();
-            var cookie_manager = network_session.get_cookie_manager ();
+            var cookies = this.webview.get_network_session ().get_cookie_manager ();
 
-            cookie_manager.get_cookies.begin ("https://music.youtube.com", null, (obj, res) => {
+            cookies.get_cookies.begin ("https://music.youtube.com", null, (obj, res) => {
                 try {
-                    GLib.List<Soup.Cookie> cookies = cookie_manager.get_cookies.end (res);
-                    var builder = new StringBuilder ();
-
-                    foreach (unowned Soup.Cookie cookie in cookies) {
-                        builder.append_printf ("%s=%s; ", cookie.get_name (), cookie.get_value ());
+                    GLib.List<Soup.Cookie> list = cookies.get_cookies.end (res);
+                    var sb = new StringBuilder ();
+                    foreach (unowned Soup.Cookie c in list) {
+                        sb.append_printf ("%s=%s; ", c.get_name (), c.get_value ());
                     }
 
-                    string cookie_header = builder.str;
+                    string header = sb.str.strip ();
+                    if (header.length == 0) return;
 
-                    if (cookie_header.length > 0) {
-                        GLib.FileUtils.set_contents (this.cookies_path, cookie_header);
+                    var jb = new Json.Builder ();
+                    jb.begin_object ();
+                    jb.set_member_name ("Cookie");
+                    jb.add_string_value (header);
+                    jb.set_member_name ("User-Agent");
+                    jb.add_string_value (USER_AGENT);
+                    jb.end_object ();
 
-                        this.player.login (cookie_header, this.cookies_path);
-                        login_completed ();
-                        this.close ();
-                    }
+                    var gen = new Json.Generator ();
+                    gen.set_root (jb.get_root ());
+                    GLib.FileUtils.set_contents (this.cookies_path, gen.to_data (null));
+
+                    this.player.login (this.cookies_path, (success, error) => {
+                        Idle.add (() => {
+                            if (!success) {
+                                if (error != null) {
+                                    warning ("login: %s", (string) error);
+                                    Timbre.string_free (error);
+                                }
+                                return GLib.Source.REMOVE;
+                            }
+                            this.login_completed ();
+                            this.close ();
+                            return GLib.Source.REMOVE;
+                        });
+                    });
                 } catch (Error e) {
                     warning ("Failed to extract cookies: %s", e.message);
                 }

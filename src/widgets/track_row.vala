@@ -27,15 +27,9 @@ namespace Timbre {
             this.label_duration.label = "%d:%02d".printf (s / 60, s % 60);
 
             var display = Gdk.Display.get_default ();
-            int scale = this.get_scale_factor ();
-            
             if (display != null) {
                 Timbre.Utils.ImageLoader.get_default ().load_paintable_async.begin (
-                    cover_url,
-                    display,
-                    48,
-                    scale,
-                    "audio-x-generic-symbolic",
+                    cover_url, display, 48, this.get_scale_factor (), "audio-x-generic-symbolic",
                     (obj, res) => {
                         this.image_cover.paintable = Timbre.Utils.ImageLoader.get_default ().load_paintable_async.end (res);
                     }

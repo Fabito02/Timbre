@@ -2,7 +2,7 @@ namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/search.ui")]
     public class SearchPage : Gtk.Box {
         [GtkChild] private unowned Gtk.Stack stack;
-        
+
         [GtkChild] private unowned Gtk.Box boxTopResults;
         [GtkChild] private unowned Gtk.Box boxMusics;
         [GtkChild] private unowned Gtk.Box boxPlaylists;
@@ -20,7 +20,7 @@ namespace Timbre {
 
         public signal void track_selected (string track_id, uint64 duration_secs, string title, string artist, string? cover_url);
         public signal void collection_selected (string id, string type_name, string title, string subtitle, string? cover_url);
-        
+
         private unowned Timbre.Player? player;
 
         public SearchPage () {
@@ -34,17 +34,22 @@ namespace Timbre {
             if (track_row == null) return;
 
             var parent = row.get_parent ();
-
             if (parent == this.listboxMusics || parent == this.listboxTopResults) {
-                this.track_selected (track_row.track_id, track_row.duration_secs, track_row.track_title, track_row.track_artist, track_row.track_cover);
+                this.track_selected (track_row.track_id, track_row.duration_secs,
+                                     track_row.track_title, track_row.track_artist,
+                                     track_row.track_cover);
             } else if (parent == this.listboxPlaylists) {
-                this.collection_selected (track_row.track_id, "playlist", track_row.track_title, track_row.track_artist, track_row.track_cover);
+                this.collection_selected (track_row.track_id, "playlist",
+                                          track_row.track_title, track_row.track_artist,
+                                          track_row.track_cover);
             } else if (parent == this.listboxOther) {
-                if (track_row.track_artist.contains (_("Artist"))) {
-                    this.collection_selected (track_row.track_id, "album", track_row.track_title, track_row.track_artist, track_row.track_cover);
-                } else {
-                    this.collection_selected (track_row.track_id, "album", track_row.track_title, track_row.track_artist, track_row.track_cover);
-                }
+                // The subtitle prefix tells albums from artists; it is set
+                // when the row is populated in set_results_json.
+                bool is_artist = track_row.track_artist.has_prefix ("Artista");
+                this.collection_selected (track_row.track_id,
+                                          is_artist ? "artist" : "album",
+                                          track_row.track_title, track_row.track_artist,
+                                          track_row.track_cover);
             }
         }
 
@@ -61,102 +66,104 @@ namespace Timbre {
             this.stack.visible_child = this.loading_page;
         }
 
-        public void set_results (
-            Timbre.SuggestionList? resultsSuggestions, 
-            Timbre.TrackList? resultsMusics, 
-            Timbre.AlbumList? resultsAlbums, 
-            Timbre.PlaylistList? resultsPlaylists, 
-            Timbre.ArtistList? resultsArtists
-        ) {
+        public void set_results_json (string json_data) {
             this.clear_list ();
-            bool has_results = false;
+            this.boxTopResults.visible = false;
 
-            // 1. Top Results (Oculto por padrão até implementarmos um endpoint genérico no Rust)
-            this.boxTopResults.visible = false; 
-
-            // 2. Musics
-            if (resultsMusics != null && resultsMusics.len > 0) {
-                has_results = true;
-                this.boxMusics.visible = true;
-                for (int i = 0; i < resultsMusics.len; i++) {
-                    var item = resultsMusics.items[i];
-                    var row = new Timbre.TrackRow (item.id, item.title, item.artists, item.duration_secs, item.thumbnail_url);
-                    this.listboxMusics.append (row);
-                }
-            } else {
-                this.boxMusics.visible = false;
+            var parser = new Json.Parser ();
+            try {
+                parser.load_from_data (json_data);
+            } catch (Error e) {
+                warning ("search json: %s", e.message);
+                this.stack.visible_child = this.status_page;
+                return;
             }
 
-            // 3. Playlists
-            if (resultsPlaylists != null && resultsPlaylists.len > 0) {
-                has_results = true;
-                this.boxPlaylists.visible = true;
-                for (int i = 0; i < resultsPlaylists.len; i++) {
-                    var item = resultsPlaylists.items[i];
-                    var row = new Timbre.TrackRow (item.id, item.title, item.author ?? "Playlist", 0, item.thumbnail_url);
-                    this.listboxPlaylists.append (row);
-                }
-            } else {
-                this.boxPlaylists.visible = false;
+            var root = parser.get_root ();
+            if (root == null || root.get_node_type () != Json.NodeType.OBJECT) {
+                this.stack.visible_child = this.status_page;
+                return;
             }
 
-            // 4. Other Results (Agrupando Sugestões, Álbuns e Artistas)
+            var obj = root.get_object ();
+            if (!obj.has_member ("items")) {
+                this.stack.visible_child = this.status_page;
+                return;
+            }
+
+            bool has_music = false;
+            bool has_playlist = false;
             bool has_other = false;
-            
-            if (resultsSuggestions != null && resultsSuggestions.len > 0) {
-                has_results = true;
-                has_other = true;
-                for (int i = 0; i < resultsSuggestions.len; i++) {
-                    string item = resultsSuggestions.items[i];
-                    var row = new Timbre.TrackRow ("", item, "Sugestão", 0, null);
-                    this.listboxOther.append (row);
+
+            foreach (unowned Json.Node node in obj.get_array_member ("items").get_elements ()) {
+                if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                var it = node.get_object ();
+
+                string kind = it.has_member ("kind") ? it.get_string_member ("kind") : "";
+                string id = it.has_member ("id") && !it.get_null_member ("id")
+                    ? it.get_string_member ("id")
+                    : "";
+                string title = it.has_member ("title") ? it.get_string_member ("title") : "";
+
+                var sb = new StringBuilder ();
+                if (it.has_member ("artists") && !it.get_null_member ("artists")) {
+                    foreach (unowned Json.Node a in it.get_array_member ("artists").get_elements ()) {
+                        if (a.get_node_type () != Json.NodeType.OBJECT) continue;
+                        var ao = a.get_object ();
+                        if (!ao.has_member ("name")) continue;
+                        if (sb.len > 0) sb.append (", ");
+                        sb.append (ao.get_string_member ("name"));
+                    }
+                }
+                string artists = sb.str;
+
+                string? thumb = it.has_member ("thumb") && !it.get_null_member ("thumb")
+                    ? it.get_string_member ("thumb")
+                    : null;
+
+                uint64 duration = it.has_member ("duration_seconds") && !it.get_null_member ("duration_seconds")
+                    ? (uint64) it.get_int_member ("duration_seconds")
+                    : 0;
+
+                if (kind == "Song" || kind == "Video") {
+                    has_music = true;
+                    this.listboxMusics.append (new Timbre.TrackRow (id, title, artists, duration, thumb));
+                } else if (kind == "Playlist") {
+                    has_playlist = true;
+                    this.listboxPlaylists.append (new Timbre.TrackRow (
+                        id, title, artists.length > 0 ? artists : "Playlist", 0, thumb));
+                } else if (kind == "Album") {
+                    has_other = true;
+                    this.listboxOther.append (new Timbre.TrackRow (id, title, "Álbum • " + artists, 0, thumb));
+                } else if (kind == "Artist") {
+                    has_other = true;
+                    this.listboxOther.append (new Timbre.TrackRow (id, title, "Artista", 0, thumb));
                 }
             }
-            
-            if (resultsAlbums != null && resultsAlbums.len > 0) {
-                has_results = true;
-                has_other = true;
-                for (int i = 0; i < resultsAlbums.len; i++) {
-                    var item = resultsAlbums.items[i];
-                    var row = new Timbre.TrackRow (item.id, item.title, "Álbum • " + item.artists, 0, item.thumbnail_url);
-                    this.listboxOther.append (row);
-                }
-            }
-            
-            if (resultsArtists != null && resultsArtists.len > 0) {
-                has_results = true;
-                has_other = true;
-                for (int i = 0; i < resultsArtists.len; i++) {
-                    var item = resultsArtists.items[i];
-                    var row = new Timbre.TrackRow (item.id, item.name, "Artista", 0, item.thumbnail_url);
-                    this.listboxOther.append (row);
-                }
-            }
-            
+
+            this.boxMusics.visible = has_music;
+            this.boxPlaylists.visible = has_playlist;
             this.boxOther.visible = has_other;
 
-            // Controle da interface final
-            if (has_results) {
-                this.stack.visible_child = this.search_page;
-            } else {
-                this.stack.visible_child = this.status_page;
-            }
+            bool found = has_music || has_playlist || has_other;
+            this.stack.visible_child = found ? this.search_page : this.status_page;
         }
 
         private void clear_list () {
-            Gtk.Widget? child;
-            
-            child = this.listboxTopResults.get_first_child ();
-            while (child != null) { var next = child.get_next_sibling (); this.listboxTopResults.remove (child); child = next; }
-
-            child = this.listboxMusics.get_first_child ();
-            while (child != null) { var next = child.get_next_sibling (); this.listboxMusics.remove (child); child = next; }
-
-            child = this.listboxPlaylists.get_first_child ();
-            while (child != null) { var next = child.get_next_sibling (); this.listboxPlaylists.remove (child); child = next; }
-
-            child = this.listboxOther.get_first_child ();
-            while (child != null) { var next = child.get_next_sibling (); this.listboxOther.remove (child); child = next; }
+            Gtk.ListBox[] boxes = {
+                this.listboxTopResults,
+                this.listboxMusics,
+                this.listboxPlaylists,
+                this.listboxOther,
+            };
+            foreach (var box in boxes) {
+                Gtk.Widget? child = box.get_first_child ();
+                while (child != null) {
+                    var next = child.get_next_sibling ();
+                    box.remove (child);
+                    child = next;
+                }
+            }
         }
     }
 }
