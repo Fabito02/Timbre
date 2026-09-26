@@ -1,3 +1,5 @@
+using Timbre.Utils;
+
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/window.ui")]
     public class Window : Adw.ApplicationWindow {
@@ -10,11 +12,6 @@ namespace Timbre {
         private uint search_debounce_id = 0;
         private string cookies_path;
 
-        // True while the user drags the slider or a seek is in flight.
-        // Writing to adjustment_progress fires value-changed, which
-        // schedules another seek; the lock prevents that feedback loop.
-        // Released by settle_pending_seek as soon as the backend reports
-        // the target position, so the bar tracks the audio 1:1.
         private bool slider_locked = false;
         private uint slider_unlock_id = 0;
         private double pending_seek_target = -1.0;
@@ -47,6 +44,7 @@ namespace Timbre {
         [GtkChild] private unowned Timbre.HomePage home_page;
 
         private Gtk.SingleSelection queue_selection;
+        private Timbre.Utils.ImageBinding cover_binding;
 
         public Window (Timbre.Application app) {
             Object (application: app);
@@ -60,6 +58,8 @@ namespace Timbre {
             this.main_stack.visible_child_name = "home";
 
             this.searchbar.key_capture_widget = this;
+
+            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 50);
 
             this.setup_navigation ();
             this.setup_queue_view ();
@@ -79,6 +79,11 @@ namespace Timbre {
             this.navigation_view.popped.connect (() => {
                 var stack = this.navigation_view.navigation_stack;
                 this.button_back.visible = (stack.get_n_items () > 1);
+
+                if (stack.get_n_items () <= 1) {
+                    Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
+                }
+                Timbre.Utils.trim_memory ();
             });
 
             this.button_toggle_queue.toggled.connect (() => {
@@ -136,6 +141,15 @@ namespace Timbre {
                 }
             });
 
+            factory.teardown.connect ((item) => {
+                var list_item = (Gtk.ListItem) item;
+                var row = (Timbre.QueueRow) list_item.get_child ();
+                if (row != null) {
+                    row.unbind ();
+                    list_item.set_child (null);
+                }
+            });
+
             this.queue_list.factory = factory;
 
             this.queue.track_changed.connect ((track) => {
@@ -166,6 +180,7 @@ namespace Timbre {
                     this.label_time_current.label = "0:00";
                     this.label_time_total.label = "0:00";
                     this.adjustment_progress.value = 0.0;
+                    this.cover_binding.load (null);
                 });
             }
         }
@@ -180,7 +195,6 @@ namespace Timbre {
                 page.play_collection.connect ((tracks, start_index) => {
                     this.queue.play_list (tracks, start_index);
                 });
-
                 this.navigation_view.push (page);
                 this.searchbar.search_mode_enabled = false;
             });
@@ -237,15 +251,14 @@ namespace Timbre {
             return "%d:%02d".printf (s / 60, s % 60);
         }
 
-        // Every programmatic write to adjustment_progress must go through
-        // here, otherwise on_seek_changed mistakes it for a user drag.
         private void set_slider_silently (double value) {
             this.slider_locked = true;
             this.adjustment_progress.value = value;
             this.slider_locked = false;
         }
 
-        public void play_track (string track_id, uint64 duration_secs, string title, string artist, string? cover_url) {
+        public void play_track (string track_id, uint64 duration_secs, string title,
+                                string artist, string? cover_url) {
             message ("play_track: id=%s dur=%lu title=%s".printf (track_id, (ulong) duration_secs, title));
 
             if (this.slider_unlock_id != 0) {
@@ -258,17 +271,7 @@ namespace Timbre {
             this.label_current_title.label = title;
             this.label_current_artist.label = artist;
 
-            var display = this.get_display () ?? Gdk.Display.get_default ();
-            int scale = this.get_scale_factor ();
-
-            if (display != null && cover_url != null) {
-                Timbre.Utils.ImageLoader.get_default ().load_paintable_async.begin (
-                    cover_url, display, 50, scale, "audio-x-generic-symbolic",
-                    (obj, res) => {
-                        this.image_cover.paintable = Timbre.Utils.ImageLoader.get_default ().load_paintable_async.end (res);
-                    }
-                );
-            }
+            this.cover_binding.load (cover_url);
 
             this.set_slider_silently (0.0);
             this.label_time_current.label = "0:00";
@@ -310,9 +313,7 @@ namespace Timbre {
 
         private void log_player_stats () {
             var raw = this.player.get_stats ();
-            if (raw == null) {
-                return;
-            }
+            if (raw == null) return;
 
             var json_str = (string) raw;
             Timbre.string_free (raw);
@@ -321,9 +322,7 @@ namespace Timbre {
                 var parser = new Json.Parser ();
                 parser.load_from_data (json_str);
                 var root = parser.get_root ();
-                if (root == null || root.get_node_type () != Json.NodeType.OBJECT) {
-                    return;
-                }
+                if (root == null || root.get_node_type () != Json.NodeType.OBJECT) return;
 
                 var obj = root.get_object ();
                 string codec = obj.has_member ("acodec") && !obj.get_null_member ("acodec")
@@ -353,18 +352,11 @@ namespace Timbre {
             }
         }
 
-        // Releases the slider lock once the backend's reported position
-        // is close to the pending seek target. The fallback timer in
-        // on_seek_changed is only for a silently failed seek.
         private void settle_pending_seek () {
-            if (!this.slider_locked || this.pending_seek_target < 0.0) {
-                return;
-            }
+            if (!this.slider_locked || this.pending_seek_target < 0.0) return;
 
             double pos = this.player.get_position ();
-            if (Math.fabs (pos - this.pending_seek_target) > 0.5) {
-                return;
-            }
+            if (Math.fabs (pos - this.pending_seek_target) > 0.5) return;
 
             if (this.slider_unlock_id != 0) {
                 GLib.Source.remove (this.slider_unlock_id);
@@ -375,9 +367,7 @@ namespace Timbre {
         }
 
         private bool update_ui_tick () {
-            if (this.player == null) {
-                return true;
-            }
+            if (this.player == null) return true;
 
             int state = this.player.get_state ();
             bool backend_playing = (state == 1);
@@ -390,9 +380,7 @@ namespace Timbre {
 
             this.settle_pending_seek ();
 
-            if (this.slider_locked) {
-                return true;
-            }
+            if (this.slider_locked) return true;
 
             double current_pos = this.player.get_position ();
             this.set_slider_silently (current_pos);
@@ -408,7 +396,6 @@ namespace Timbre {
             return true;
         }
 
-        // Reached only on a real drag; programmatic writes set slider_locked.
         [GtkCallback]
         private void on_seek_changed () {
             if (this.slider_locked) return;
@@ -425,8 +412,6 @@ namespace Timbre {
                 this.slider_locked = true;
                 this.pending_seek_target = target_pos;
 
-                // Safety net: if the seek silently fails and the backend
-                // position never reaches the target, drop the lock anyway.
                 if (this.slider_unlock_id != 0) {
                     GLib.Source.remove (this.slider_unlock_id);
                 }
@@ -444,8 +429,6 @@ namespace Timbre {
 
         [GtkCallback]
         private void on_play_pause_clicked () {
-            // Trust the backend state, not a local flag: it can change on
-            // its own (stall, ended file, seek in flight).
             int state = this.player.get_state ();
             if (state == 1) {
                 this.player.pause ();

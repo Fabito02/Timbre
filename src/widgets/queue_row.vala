@@ -6,9 +6,10 @@ namespace Timbre {
         private Gtk.Label label_title;
         private Gtk.Label label_artist;
 
-        private weak Timbre.QueueItem? current_item = null;
+        private Timbre.QueueItem? current_item = null;
         private ulong notify_playing_id = 0;
         private ulong notify_index_id = 0;
+        private bool torn_down = false;
 
         public signal void item_moved (int from_index, int to_index);
 
@@ -50,6 +51,11 @@ namespace Timbre {
             this.append (txt_box);
 
             this.setup_dnd ();
+
+            this.destroy.connect (() => {
+                this.torn_down = true;
+                this.unbind ();
+            });
         }
 
         private void setup_dnd () {
@@ -87,20 +93,24 @@ namespace Timbre {
         }
 
         public void unbind () {
-            if (this.current_item == null) return;
+            if (this.torn_down && this.current_item == null) return;
 
-            if (this.notify_playing_id != 0) {
-                this.current_item.disconnect (this.notify_playing_id);
-                this.notify_playing_id = 0;
+            var item = this.current_item;
+            if (item != null) {
+                if (this.notify_playing_id != 0) {
+                    item.disconnect (this.notify_playing_id);
+                }
+                if (this.notify_index_id != 0) {
+                    item.disconnect (this.notify_index_id);
+                }
             }
-            if (this.notify_index_id != 0) {
-                this.current_item.disconnect (this.notify_index_id);
-                this.notify_index_id = 0;
-            }
+            this.notify_playing_id = 0;
+            this.notify_index_id = 0;
             this.current_item = null;
         }
 
         public void bind (Timbre.QueueItem queue_item) {
+            if (this.torn_down) return;
             this.unbind ();
 
             this.current_item = queue_item;
@@ -110,24 +120,34 @@ namespace Timbre {
             this.update_state ();
 
             this.notify_playing_id = queue_item.notify["is-playing"].connect (() => {
+                if (this.torn_down) return;
                 this.update_state ();
             });
             this.notify_index_id = queue_item.notify["index"].connect (() => {
+                if (this.torn_down) return;
                 this.update_state ();
             });
         }
 
         private void update_state () {
-            if (this.current_item == null) return;
+            if (this.torn_down) return;
+            var item = this.current_item;
+            if (item == null) return;
 
-            if (this.current_item.is_playing) {
+            if (item.is_playing) {
                 this.stack.visible_child_name = "playing";
                 this.label_title.add_css_class ("heading");
             } else {
                 this.stack.visible_child_name = "index";
-                this.label_idx.label = "%d".printf (this.current_item.index + 1);
+                this.label_idx.label = "%d".printf (item.index + 1);
                 this.label_title.remove_css_class ("heading");
             }
+        }
+
+        public override void dispose () {
+            this.torn_down = true;
+            this.unbind ();
+            base.dispose ();
         }
     }
 }

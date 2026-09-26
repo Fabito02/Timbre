@@ -13,9 +13,6 @@ public class Timbre.Application : Adw.Application {
             resource_base_path: "/io/github/fabito02/Timbre"
         );
 
-        // Registered here, not in startup: the command line is parsed
-        // between the constructor and startup, so --debug would be
-        // rejected before handle_local_options ever ran.
         this.add_main_option (
             "debug",
             'd',
@@ -48,7 +45,37 @@ public class Timbre.Application : Adw.Application {
         GLib.DirUtils.create_with_parents (config_dir, 0755);
         this.cookies_path = GLib.Path.build_filename (config_dir, "headers_auth.json");
 
+        this.restore_image_auth ();
+
         setup_actions ();
+    }
+
+    private void restore_image_auth () {
+        if (!GLib.FileUtils.test (this.cookies_path, GLib.FileTest.EXISTS)) return;
+
+        try {
+            var file = GLib.File.new_for_path (this.cookies_path);
+            uint8[] raw;
+            string etag;
+            if (!file.load_contents (null, out raw, out etag)) return;
+            if (raw.length == 0) return;
+
+            string json_str = (string) raw;
+
+            var parser = new Json.Parser ();
+            parser.load_from_data (json_str);
+
+            var root = parser.get_root ();
+            if (root == null || root.get_node_type () != Json.NodeType.OBJECT) return;
+
+            var obj = root.get_object ();
+            if (obj.has_member ("Cookie") && !obj.get_null_member ("Cookie")) {
+                Timbre.Utils.ImageLoader.get_default ().set_auth_cookie (
+                    obj.get_string_member ("Cookie"));
+            }
+        } catch (Error e) {
+            debug ("restore_image_auth: %s", e.message);
+        }
     }
 
     private void setup_actions () {

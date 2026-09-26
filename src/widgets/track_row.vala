@@ -12,7 +12,10 @@ namespace Timbre {
         public string track_artist { get; private set; }
         public string? track_cover { get; private set; }
 
-        public TrackRow (string id, string title, string artists, uint64 duration_secs, string? cover_url = null) {
+        private Timbre.Utils.ImageBinding cover_binding;
+
+        public TrackRow (string id, string title, string artists,
+                         uint64 duration_secs, string? cover_url = null) {
             Object ();
             this.track_id = id;
             this.duration_secs = duration_secs;
@@ -26,15 +29,8 @@ namespace Timbre {
             int s = (int) duration_secs;
             this.label_duration.label = "%d:%02d".printf (s / 60, s % 60);
 
-            var display = Gdk.Display.get_default ();
-            if (display != null) {
-                Timbre.Utils.ImageLoader.get_default ().load_paintable_async.begin (
-                    cover_url, display, 48, this.get_scale_factor (), "audio-x-generic-symbolic",
-                    (obj, res) => {
-                        this.image_cover.paintable = Timbre.Utils.ImageLoader.get_default ().load_paintable_async.end (res);
-                    }
-                );
-            }
+            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
+            this.cover_binding.load (cover_url);
         }
     }
 }

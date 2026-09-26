@@ -78,6 +78,8 @@ namespace Timbre {
                     gen.set_root (jb.get_root ());
                     GLib.FileUtils.set_contents (this.cookies_path, gen.to_data (null));
 
+                    Timbre.Utils.ImageLoader.get_default ().set_auth_cookie (header);
+
                     this.player.login (this.cookies_path, (success, error) => {
                         Idle.add (() => {
                             if (!success) {

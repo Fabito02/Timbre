@@ -11,7 +11,10 @@ namespace Timbre {
         public string track_artist { get; private set; }
         public string? track_cover { get; private set; }
 
-        public TrackCard (string id, string type_name, string title, string artists, string? cover_url = null) {
+        private Timbre.Utils.ImageBinding cover_binding;
+
+        public TrackCard (string id, string type_name, string title,
+                          string artists, string? cover_url = null) {
             Object ();
             this.track_id = id;
             this.item_type = type_name;
@@ -22,15 +25,8 @@ namespace Timbre {
             this.label_title.label = title;
             this.label_artist.label = artists;
 
-            var display = Gdk.Display.get_default ();
-            if (display != null) {
-                Timbre.Utils.ImageLoader.get_default ().load_paintable_async.begin (
-                    cover_url, display, 150, this.get_scale_factor (), "audio-x-generic-symbolic",
-                    (obj, res) => {
-                        this.image_cover.paintable = Timbre.Utils.ImageLoader.get_default ().load_paintable_async.end (res);
-                    }
-                );
-            }
+            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 150);
+            this.cover_binding.load (cover_url);
         }
     }
 }

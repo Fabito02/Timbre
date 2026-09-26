@@ -60,20 +60,18 @@ scale.playback-bar highlight {
   padding: 0;
 }
 
-scale.playback-bar slider {
-  min-width: 0px;
-  min-height: 0px;
-  opacity: 0;
-  transition: opacity 200ms ease, min-width 200ms ease, min-height 200ms ease;
-}
-
 scale.playback-bar trough {
   min-height: 4px;
 }
 
-scale.playback-bar:hover slider {
+scale.playback-bar slider {
   min-width: 14px;
   min-height: 14px;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+scale.playback-bar:hover slider {
   opacity: 1;
 }
 
