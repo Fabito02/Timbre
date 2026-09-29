@@ -372,10 +372,17 @@ namespace Timbre {
             int state = this.player.get_state ();
             bool backend_playing = (state == 1);
             if (backend_playing != this.is_playing) {
+                bool was_playing = this.is_playing;
                 this.is_playing = backend_playing;
                 this.button_play_pause.icon_name = this.is_playing
                     ? "media-playback-pause-symbolic"
                     : "media-playback-start-symbolic";
+
+                if (was_playing && !this.is_playing
+                    && this.pending_seek_target < 0.0
+                    && this.queue.has_next ()) {
+                    this.queue.next ();
+                }
             }
 
             this.settle_pending_seek ();
