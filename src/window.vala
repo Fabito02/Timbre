@@ -65,6 +65,15 @@ namespace Timbre {
             this.setup_queue_view ();
             this.setup_search ();
             this.update_nav_buttons ();
+
+            // Foco: quando a janela perde o foco e o player está pausado,
+            // libera o dispositivo de áudio (evita o loop de POLLERR do
+            // cpal quando o ALSA suspende o dispositivo). Quando volta,
+            // reabre. Play/pause com a janela focada não passa por aqui,
+            // continua instantâneo.
+            this.notify["is-active"].connect (() => {
+                this.player.set_active (this.is_active);
+            });
         }
 
         private void setup_navigation () {

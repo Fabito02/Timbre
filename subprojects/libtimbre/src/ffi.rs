@@ -296,7 +296,10 @@ pub unsafe extern "C" fn timbre_player_pause(handle: *mut TimbrePlayerHandle) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_resume(handle: *mut TimbrePlayerHandle) {
     if let Some(h) = handle.as_ref() {
-        h.player.resume();
+        let player = h.player.clone();
+        h.runtime.spawn(async move {
+            player.resume_async().await;
+        });
     }
 }
 
@@ -998,4 +1001,29 @@ pub unsafe extern "C" fn timbre_player_record_play(
         dispatch_done(cb, user.raw(), result);
     });
     true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_audio_release_sink(handle: *mut TimbrePlayerHandle) {
+    if let Some(h) = handle.as_ref() {
+        h.player.release_sink();
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_audio_rebuild_sink(handle: *mut TimbrePlayerHandle) -> bool {
+    handle
+        .as_ref()
+        .map(|h| h.player.rebuild_sink().is_ok())
+        .unwrap_or(false)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_set_active(
+    handle: *mut TimbrePlayerHandle,
+    active: bool,
+) {
+    if let Some(h) = handle.as_ref() {
+        h.player.set_active(active);
+    }
 }

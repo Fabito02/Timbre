@@ -40,6 +40,10 @@ double timbre_player_get_duration (TimbrePlayerHandle* h);
 bool   timbre_player_is_finished  (TimbrePlayerHandle* h);
 bool   timbre_player_is_paused    (TimbrePlayerHandle* h);
 
+void timbre_audio_release_sink (TimbrePlayerHandle* h);
+bool timbre_audio_rebuild_sink (TimbrePlayerHandle* h);
+void timbre_player_set_active (TimbrePlayerHandle* h, bool active);
+
 void  timbre_player_set_volume (TimbrePlayerHandle* h, float v);
 float timbre_player_get_volume (TimbrePlayerHandle* h);
 

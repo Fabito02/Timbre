@@ -64,9 +64,13 @@ pub struct StreamStats {
     pub is_local: bool,
 }
 
+struct AudioRig {
+    _sink: MixerDeviceSink,
+    player: Player,
+}
+
 pub struct AudioPlayer {
-    _handle: MixerDeviceSink,
-    player: Arc<Mutex<Player>>,
+    rig: Arc<Mutex<Option<AudioRig>>>,
     position: Arc<Mutex<PlaybackPosition>>,
     total_duration: Arc<Mutex<Option<Duration>>>,
     current_url: Arc<Mutex<Option<String>>>,
@@ -74,6 +78,7 @@ pub struct AudioPlayer {
     current_is_opus: Arc<Mutex<bool>>,
     stats: Arc<Mutex<StreamStats>>,
     active_buffer: Arc<Mutex<Option<StreamBuffer>>>,
+    released_position: Arc<Mutex<Option<Duration>>>,
     client: reqwest::Client,
     generation: Arc<AtomicU64>,
     last_error: Arc<Mutex<Option<String>>>,
@@ -113,17 +118,14 @@ impl std::fmt::Display for ResumeError {
 
 impl AudioPlayer {
     pub fn new(paths: &Paths) -> Result<Self> {
-        let handle = DeviceSinkBuilder::open_default_sink()
-            .map_err(|e| anyhow::anyhow!("Failed to open default audio sink: {e:?}"))?;
-        let player = Player::connect_new(&handle.mixer());
+        let rig = Self::build_rig()?;
         let client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
             .read_timeout(READ_TIMEOUT)
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to build audio http client: {e:?}"))?;
         Ok(Self {
-            _handle: handle,
-            player: Arc::new(Mutex::new(player)),
+            rig: Arc::new(Mutex::new(Some(rig))),
             position: Arc::new(Mutex::new(PlaybackPosition::new())),
             total_duration: Arc::new(Mutex::new(None)),
             current_url: Arc::new(Mutex::new(None)),
@@ -131,6 +133,7 @@ impl AudioPlayer {
             current_is_opus: Arc::new(Mutex::new(false)),
             stats: Arc::new(Mutex::new(StreamStats::default())),
             active_buffer: Arc::new(Mutex::new(None)),
+            released_position: Arc::new(Mutex::new(None)),
             client,
             generation: Arc::new(AtomicU64::new(0)),
             last_error: Arc::new(Mutex::new(None)),
@@ -138,8 +141,62 @@ impl AudioPlayer {
         })
     }
 
+    fn build_rig() -> Result<AudioRig> {
+        let mut sink = DeviceSinkBuilder::open_default_sink()
+            .map_err(|e| anyhow::anyhow!("Failed to open default audio sink: {e:?}"))?;
+        sink.log_on_drop(false);
+        let player = Player::connect_new(&sink.mixer());
+        Ok(AudioRig { _sink: sink, player })
+    }
+
     pub fn store(&self) -> &Arc<AudioStore> {
         &self.store
+    }
+
+    fn with_player<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&Player) -> R,
+    {
+        self.rig.lock().unwrap().as_ref().map(|r| f(&r.player))
+    }
+
+    pub fn has_sink(&self) -> bool {
+        self.rig.lock().unwrap().is_some()
+    }
+
+    pub fn rebuild_sink(&self) -> Result<()> {
+        let rig = Self::build_rig()?;
+        *self.rig.lock().unwrap() = Some(rig);
+        Ok(())
+    }
+
+    pub fn release_sink(&self) {
+        *self.rig.lock().unwrap() = None;
+    }
+
+    pub fn set_active(&self, active: bool) {
+        if active {
+            if !self.has_sink() {
+                if let Err(e) = self.rebuild_sink() {
+                    tracing::warn!(%e, "set_active: rebuild failed");
+                }
+            }
+            return;
+        }
+
+        let should_release = match self.with_player(|p| (p.empty(), p.is_paused())) {
+            Some((empty, paused)) => empty || paused,
+            None => false,
+        };
+        if !should_release {
+            return;
+        }
+
+        let pos = self.position.lock().unwrap().elapsed();
+        if pos > Duration::ZERO {
+            *self.released_position.lock().unwrap() = Some(pos);
+        }
+        self.release_sink();
     }
 
     pub fn begin_play(&self) -> u64 {
@@ -147,7 +204,7 @@ impl AudioPlayer {
         if let Some(old) = self.active_buffer.lock().unwrap().take() {
             old.cancel();
         }
-        self.player.lock().unwrap().stop();
+        self.with_player(|p| p.stop());
         self.position.lock().unwrap().reset();
         my_gen
     }
@@ -188,9 +245,8 @@ impl AudioPlayer {
     }
 
     fn sync_position(&self) {
-        let (empty, paused) = {
-            let player = self.player.lock().unwrap();
-            (player.empty(), player.is_paused())
+        let Some((empty, paused)) = self.with_player(|p| (p.empty(), p.is_paused())) else {
+            return;
         };
         if paused {
             return;
@@ -587,18 +643,26 @@ impl AudioPlayer {
             stats.is_local = is_local;
         }
 
-        let player = self.player.lock().unwrap();
+        if let Err(e) = self.rebuild_sink() {
+            tracing::warn!(%e, "append_source: rebuild failed, using existing rig");
+        }
+
         if self.generation.load(Ordering::SeqCst) != my_gen {
             return Err(anyhow::anyhow!("superseded by a newer play request"));
         }
-        player.stop();
-        player.append(source);
-        player.play();
-        drop(player);
+
+        let played = self.with_player(|p| {
+            p.append(source);
+            p.play();
+        });
+        if played.is_none() {
+            return Err(anyhow::anyhow!("no audio sink available"));
+        }
 
         let mut pos = self.position.lock().unwrap();
         pos.reset();
         pos.start();
+        *self.released_position.lock().unwrap() = None;
         Ok(())
     }
 
@@ -619,18 +683,18 @@ impl AudioPlayer {
             stats.channels = Some(source.channels().get());
         }
 
-        let player = self.player.lock().unwrap();
-        if self.generation.load(Ordering::SeqCst) != my_gen {
-            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        let installed = self.with_player(|p| {
+            p.stop();
+            p.append(source);
+            if was_paused {
+                p.pause();
+            } else {
+                p.play();
+            }
+        });
+        if installed.is_none() {
+            return Err(anyhow::anyhow!("no audio sink available"));
         }
-        player.stop();
-        player.append(source);
-        if was_paused {
-            player.pause();
-        } else {
-            player.play();
-        }
-        drop(player);
 
         let mut pos = self.position.lock().unwrap();
         pos.reset();
@@ -816,15 +880,22 @@ impl AudioPlayer {
             ..StreamStats::default()
         });
 
-        let player = self.player.lock().unwrap();
-        player.stop();
-        player.append(source);
-        player.play();
-        drop(player);
+        if let Err(e) = self.rebuild_sink() {
+            tracing::warn!(%e, "play_file: rebuild failed, using existing rig");
+        }
+
+        let played = self.with_player(|p| {
+            p.append(source);
+            p.play();
+        });
+        if played.is_none() {
+            return Err(anyhow::anyhow!("no audio sink available"));
+        }
 
         let mut pos = self.position.lock().unwrap();
         pos.reset();
         pos.start();
+        *self.released_position.lock().unwrap() = None;
         Ok(())
     }
 
@@ -847,13 +918,13 @@ impl AudioPlayer {
             .context("No audio track loaded to seek")?;
 
         let is_opus = *self.current_is_opus.lock().unwrap();
-        let was_paused = self.player.lock().unwrap().is_paused();
+        let was_paused = self.with_player(|p| p.is_paused()).unwrap_or(true);
 
         let my_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         if let Some(old) = self.active_buffer.lock().unwrap().take() {
             old.cancel();
         }
-        self.player.lock().unwrap().stop();
+        self.with_player(|p| p.stop());
 
         if let Some(path_str) = current_url.strip_prefix("file://") {
             return self.seek_local(Path::new(path_str), is_opus, target, my_gen, was_paused);
@@ -1155,12 +1226,35 @@ impl AudioPlayer {
     }
 
     pub fn pause(&self) {
-        self.player.lock().unwrap().pause();
+        self.with_player(|p| p.pause());
         self.position.lock().unwrap().pause();
     }
 
-    pub fn resume(&self) {
-        self.player.lock().unwrap().play();
+    pub async fn resume_async(&self) {
+        let empty = self.with_player(|p| p.empty()).unwrap_or(true);
+        if !empty {
+            self.with_player(|p| p.play());
+            self.position.lock().unwrap().start();
+            return;
+        }
+
+        if !self.has_sink() {
+            if let Err(e) = self.rebuild_sink() {
+                tracing::warn!(%e, "resume: rebuild failed");
+                return;
+            }
+        }
+
+        let Some(pos) = *self.released_position.lock().unwrap() else {
+            return;
+        };
+
+        tracing::debug!(?pos, "resume: reopening at saved position");
+        if let Err(e) = self.seek_inner(pos).await {
+            tracing::warn!(%e, "resume: reopen failed");
+        }
+        *self.released_position.lock().unwrap() = None;
+        self.with_player(|p| p.play());
         self.position.lock().unwrap().start();
     }
 
@@ -1169,7 +1263,7 @@ impl AudioPlayer {
         if let Some(old) = self.active_buffer.lock().unwrap().take() {
             old.cancel();
         }
-        self.player.lock().unwrap().stop();
+        self.with_player(|p| p.stop());
         self.position.lock().unwrap().reset();
         self.clear_error();
     }
@@ -1190,34 +1284,42 @@ impl AudioPlayer {
     }
 
     pub fn volume(&self) -> f32 {
-        self.player.lock().unwrap().volume()
+        self.with_player(|p| p.volume()).unwrap_or(1.0)
     }
 
     pub fn set_volume(&self, v: f32) {
-        self.player.lock().unwrap().set_volume(v);
+        self.with_player(|p| p.set_volume(v));
     }
 
     pub fn is_paused(&self) -> bool {
-        self.player.lock().unwrap().is_paused()
+        if !self.has_sink() {
+            return self.released_position.lock().unwrap().is_some();
+        }
+        self.with_player(|p| p.is_paused()).unwrap_or(false)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.player.lock().unwrap().empty()
+        if !self.has_sink() {
+            return true;
+        }
+        self.with_player(|p| p.empty()).unwrap_or(true)
     }
 
     pub fn state(&self) -> PlayerState {
         if self.last_error.lock().unwrap().is_some() {
             return PlayerState::Error;
         }
-        let player = self.player.lock().unwrap();
-        if !player.empty() {
-            return if player.is_paused() {
-                PlayerState::Paused
-            } else {
-                PlayerState::Playing
-            };
+
+        match self.with_player(|p| (p.empty(), p.is_paused())) {
+            Some((false, true)) => return PlayerState::Paused,
+            Some((false, false)) => return PlayerState::Playing,
+            _ => {}
         }
-        drop(player);
+
+        if self.released_position.lock().unwrap().is_some() {
+            return PlayerState::Paused;
+        }
+
         let has_track = self.current_url.lock().unwrap().is_some();
         let advanced = self.position.lock().unwrap().elapsed() > Duration::ZERO;
         if has_track && !advanced {
@@ -1229,11 +1331,8 @@ impl AudioPlayer {
         }
     }
 
-    // A track is only finished when the position reached the end, not
-    // whenever the mixer happens to go empty (a seek near the tail can
-    // leave the mixer dry long before the song is over).
     pub fn is_finished(&self) -> bool {
-        if !self.player.lock().unwrap().empty() {
+        if let Some(false) = self.with_player(|p| p.empty()) {
             return false;
         }
         let pos = self.position.lock().unwrap().elapsed();

@@ -163,7 +163,16 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_record_play")]
         public bool record_play (string track_id,
-                                 [CCode (scope = "async")] DoneCallback cb);
+        [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_audio_release_sink")]
+        public void audio_release_sink ();
+
+        [CCode (cname = "timbre_audio_rebuild_sink")]
+        public bool audio_rebuild_sink ();
+
+        [CCode (cname = "timbre_player_set_active")]
+        public void set_active (bool active);
     }
 
     [CCode (cname = "timbre_string_free")]
