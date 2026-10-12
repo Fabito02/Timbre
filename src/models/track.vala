@@ -6,6 +6,8 @@ namespace Timbre {
         public uint64 duration_secs { get; set; default = 0; }
         public string? thumbnail_url { get; set; default = null; }
 
+        public LikeStatus? like_status = null;
+
         public TrackItem () {}
 
         public TrackItem.with_data (
@@ -13,7 +15,8 @@ namespace Timbre {
             string title,
             string artist,
             uint64 duration_secs = 0,
-            string? thumbnail_url = null
+            string? thumbnail_url = null,
+            LikeStatus? like_status = null
         ) {
             Object (
                 id: id,
@@ -22,6 +25,7 @@ namespace Timbre {
                 duration_secs: duration_secs,
                 thumbnail_url: thumbnail_url
             );
+            this.like_status = like_status;
         }
     }
 }

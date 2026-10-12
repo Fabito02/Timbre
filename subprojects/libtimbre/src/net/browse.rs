@@ -3,11 +3,11 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use ytmusicapi::YTMusicClient;
 
-use super::items::{array_at, item_continuation_token, next_continuation, owned_at};
 use super::NetError;
+use super::items::{array_at, item_continuation_token, next_continuation, owned_at};
 
 pub type Response<'a> = Pin<Box<dyn Future<Output = Result<Value, NetError>> + Send + 'a>>;
 
@@ -68,14 +68,29 @@ pub struct Continuation<'a> {
 
 impl<'a> Continuation<'a> {
     pub fn browse(api: &'a dyn Browse, token: Option<String>) -> Self {
-        Self { api, carrier: Carrier::Body, token, limit: usize::MAX, pages: MAX_PAGES }
+        Self {
+            api,
+            carrier: Carrier::Body,
+            token,
+            limit: usize::MAX,
+            pages: MAX_PAGES,
+        }
     }
 
     // The crate appends "?alt=json" to whatever endpoint it is given, so the
     // token rides in front of a throwaway parameter that swallows that suffix.
     pub fn query(api: &'a dyn Browse, endpoint: &str, body: Value, token: Option<String>) -> Self {
-        let carrier = Carrier::Query { endpoint: endpoint.to_owned(), body };
-        Self { api, carrier, token, limit: usize::MAX, pages: MAX_PAGES }
+        let carrier = Carrier::Query {
+            endpoint: endpoint.to_owned(),
+            body,
+        };
+        Self {
+            api,
+            carrier,
+            token,
+            limit: usize::MAX,
+            pages: MAX_PAGES,
+        }
     }
 
     pub fn limit(mut self, rows: usize) -> Self {
@@ -98,7 +113,12 @@ impl<'a> Continuation<'a> {
             requests += 1;
             let response = match self.request(&token).await {
                 Ok(response) => response,
-                Err(error) => return Paged { items, error: Some(error) },
+                Err(error) => {
+                    return Paged {
+                        items,
+                        error: Some(error),
+                    };
+                }
             };
             let (entries, next) = page(&response);
             let parsed = parse(&entries);
@@ -113,7 +133,11 @@ impl<'a> Continuation<'a> {
 
     async fn request(&self, token: &str) -> Result<Value, NetError> {
         match &self.carrier {
-            Carrier::Body => self.api.post("browse", json!({ "continuation": token })).await,
+            Carrier::Body => {
+                self.api
+                    .post("browse", json!({ "continuation": token }))
+                    .await
+            }
             Carrier::Query { endpoint, body } => {
                 let endpoint = format!("{endpoint}?ctoken={token}&continuation={token}&_=");
                 self.api.post(&endpoint, body.clone()).await
@@ -133,7 +157,9 @@ fn page(response: &Value) -> (Vec<&Value>, Option<String>) {
         );
     }
     for key in LEGACY_KEYS {
-        let Some(node) = response.pointer(&format!("/continuationContents/{key}")) else { continue };
+        let Some(node) = response.pointer(&format!("/continuationContents/{key}")) else {
+            continue;
+        };
         take(array_at(node, "/contents"), &mut entries, &mut token);
         take(array_at(node, "/items"), &mut entries, &mut token);
         token = token.or_else(|| legacy_token(node));
@@ -151,8 +177,12 @@ fn take<'v>(raws: &'v [Value], entries: &mut Vec<&'v Value>, token: &mut Option<
 }
 
 fn legacy_token(node: &Value) -> Option<String> {
-    next_continuation(node)
-        .or_else(|| owned_at(node, "/continuations/0/nextRadioContinuationData/continuation"))
+    next_continuation(node).or_else(|| {
+        owned_at(
+            node,
+            "/continuations/0/nextRadioContinuationData/continuation",
+        )
+    })
 }
 
 #[cfg(test)]
@@ -193,8 +223,9 @@ impl Browse for Fixtures {
     fn post<'a>(&'a self, endpoint: &'a str, body: Value) -> Response<'a> {
         let path = self.dir.join(Self::key(endpoint, &body));
         Box::pin(async move {
-            let text = std::fs::read_to_string(&path)
-                .map_err(|_| NetError::Message(format!("no fixture for {endpoint} at {}", path.display())))?;
+            let text = std::fs::read_to_string(&path).map_err(|_| {
+                NetError::Message(format!("no fixture for {endpoint} at {}", path.display()))
+            })?;
             Ok(serde_json::from_str(&text)?)
         })
     }
@@ -209,7 +240,10 @@ pub struct Recorder {
 #[cfg(test)]
 impl Recorder {
     pub fn new(inner: std::sync::Arc<dyn Browse>) -> Self {
-        Self { inner, dir: Fixtures::dir() }
+        Self {
+            inner,
+            dir: Fixtures::dir(),
+        }
     }
 }
 
@@ -219,9 +253,9 @@ impl Browse for Recorder {
         Box::pin(async move {
             let response = self.inner.post(endpoint, body.clone()).await?;
             let path = self.dir.join(Fixtures::key(endpoint, &body));
-            if let Err(err) = std::fs::create_dir_all(&self.dir)
-                .and_then(|_| std::fs::write(&path, serde_json::to_string(&response).unwrap_or_default()))
-            {
+            if let Err(err) = std::fs::create_dir_all(&self.dir).and_then(|_| {
+                std::fs::write(&path, serde_json::to_string(&response).unwrap_or_default())
+            }) {
                 tracing::warn!(%err, path = %path.display(), "fixture not written");
             }
             Ok(response)
@@ -241,13 +275,19 @@ mod tests {
 
     impl Scripted {
         fn new(pages: Vec<Value>) -> Self {
-            Self { pages: Mutex::new(pages), requests: Mutex::new(Vec::new()) }
+            Self {
+                pages: Mutex::new(pages),
+                requests: Mutex::new(Vec::new()),
+            }
         }
     }
 
     impl Browse for Scripted {
         fn post<'a>(&'a self, endpoint: &'a str, body: Value) -> Response<'a> {
-            self.requests.lock().unwrap().push(format!("{endpoint} {body}"));
+            self.requests
+                .lock()
+                .unwrap()
+                .push(format!("{endpoint} {body}"));
             let next = self.pages.lock().unwrap().pop();
             Box::pin(async move {
                 match next {
@@ -292,7 +332,9 @@ mod tests {
             modern(vec![row("c")]),
             modern(vec![row("a"), row("b"), token_row("t2")]),
         ]);
-        let paged = Continuation::browse(&api, Some("t1".into())).collect(ids).await;
+        let paged = Continuation::browse(&api, Some("t1".into()))
+            .collect(ids)
+            .await;
         assert_eq!(paged.items, ["a", "b", "c"]);
         assert!(paged.error.is_none());
         let requests = api.requests.lock().unwrap().clone();
@@ -306,7 +348,9 @@ mod tests {
             legacy("gridContinuation", vec![row("b")], None),
             legacy("musicShelfContinuation", vec![row("a")], Some("t2")),
         ]);
-        let paged = Continuation::browse(&api, Some("t1".into())).collect(ids).await;
+        let paged = Continuation::browse(&api, Some("t1".into()))
+            .collect(ids)
+            .await;
         assert_eq!(paged.items, ["a", "b"]);
     }
 
@@ -329,7 +373,9 @@ mod tests {
     #[tokio::test]
     async fn a_failed_page_keeps_what_came_before_it() {
         let api = Scripted::new(vec![modern(vec![row("a"), token_row("t2")])]);
-        let paged = Continuation::browse(&api, Some("t1".into())).collect(ids).await;
+        let paged = Continuation::browse(&api, Some("t1".into()))
+            .collect(ids)
+            .await;
         assert_eq!(paged.items, ["a"]);
         assert!(paged.error.is_some());
         assert!(paged.strict().is_err());
@@ -350,18 +396,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_page_that_adds_nothing_ends_the_paging() {
-        let api = Scripted::new(vec![
-            modern(vec![row("b")]),
-            modern(vec![token_row("t2")]),
-        ]);
-        let paged = Continuation::browse(&api, Some("t1".into())).collect(ids).await;
+        let api = Scripted::new(vec![modern(vec![row("b")]), modern(vec![token_row("t2")])]);
+        let paged = Continuation::browse(&api, Some("t1".into()))
+            .collect(ids)
+            .await;
         assert!(paged.items.is_empty());
         assert_eq!(api.requests.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn the_page_cap_bounds_a_token_that_never_ends() {
-        let forever = (0..10).map(|_| modern(vec![row("x"), token_row("t")])).collect();
+        let forever = (0..10)
+            .map(|_| modern(vec![row("x"), token_row("t")]))
+            .collect();
         let api = Scripted::new(forever);
         let paged = Continuation::browse(&api, Some("t".into()))
             .pages(3)
@@ -375,7 +422,10 @@ mod tests {
         let first = Fixtures::key("browse", &json!({ "browseId": "VL123" }));
         let second = Fixtures::key("browse", &json!({ "continuation": "t2" }));
         assert_ne!(first, second);
-        assert_eq!(first, Fixtures::key("browse", &json!({ "browseId": "VL123" })));
+        assert_eq!(
+            first,
+            Fixtures::key("browse", &json!({ "browseId": "VL123" }))
+        );
         assert!(Fixtures::key("next?ctoken=t&_=", &json!({})).starts_with("next_ctoken"));
     }
 }

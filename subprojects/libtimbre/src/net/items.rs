@@ -11,27 +11,44 @@ pub const MTRIR: &str = "musicTwoRowItemRenderer";
 
 pub const DOT_SEPARATOR: &str = " \u{2022} ";
 
-pub const THUMBNAIL_RENDERER: &str = "/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails";
+pub const THUMBNAIL_RENDERER: &str =
+    "/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails";
 pub const THUMBNAILS: &str = "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails";
 
 static DURATION_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+:)*\d+:\d+$").unwrap());
 static YEAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}$").unwrap());
-static VIEWS_PREFIX_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\D*?[\s:\x{ff1a}\x{200e}-\x{200f}\x{202a}-\x{202e}]").unwrap());
 
 const VIDEO_TYPE_PATH: &str = "/menu/menuRenderer/items/0/menuNavigationItemRenderer/navigationEndpoint/watchEndpoint/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType";
-const BADGE_LABEL: &str = "/badges/0/musicInlineBadgeRenderer/accessibilityData/accessibilityData/label";
-const SUBTITLE_BADGE_LABEL: &str = "/subtitleBadges/0/musicInlineBadgeRenderer/accessibilityData/accessibilityData/label";
+const BADGE_LABEL: &str =
+    "/badges/0/musicInlineBadgeRenderer/accessibilityData/accessibilityData/label";
+const SUBTITLE_BADGE_LABEL: &str =
+    "/subtitleBadges/0/musicInlineBadgeRenderer/accessibilityData/accessibilityData/label";
 const PLAY_ENDPOINT: &str = "/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint";
-const MUSIC_VIDEO_TYPE: &str = "/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType";
+const MUSIC_VIDEO_TYPE: &str =
+    "/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType";
 const CARD_PAGE_TYPE: &str = "/title/runs/0/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType";
 
 const SONG_SECTION_KEYS: [&str; 13] = [
-    "song", "track", "favorite", "listen again", "quick pick", "forgotten", "rediscover",
-    "hidden gem", "recap", "your library", "from your library", "mix", "hits",
+    "song",
+    "track",
+    "favorite",
+    "listen again",
+    "quick pick",
+    "forgotten",
+    "rediscover",
+    "hidden gem",
+    "recap",
+    "your library",
+    "from your library",
+    "mix",
+    "hits",
 ];
 const VIDEO_SECTION_KEYS: [&str; 6] = [
-    "music video", "remix", "live performance", "performances", "video for you",
+    "music video",
+    "remix",
+    "live performance",
+    "performances",
+    "video for you",
     "videos for you",
 ];
 
@@ -69,7 +86,10 @@ pub fn walk_key<'a>(root: &'a Value, key: &str) -> Vec<&'a Value> {
 }
 
 pub fn library_sections(response: &Value) -> &[Value] {
-    for column in ["singleColumnBrowseResultsRenderer", "twoColumnBrowseResultsRenderer"] {
+    for column in [
+        "singleColumnBrowseResultsRenderer",
+        "twoColumnBrowseResultsRenderer",
+    ] {
         for tab in array_at(response, &format!("/contents/{column}/tabs")) {
             let sections = array_at(tab, "/tabRenderer/content/sectionListRenderer/contents");
             if !sections.is_empty() {
@@ -199,29 +219,18 @@ enum RunKind {
     Views(String),
 }
 
-fn parse_views(text: &str) -> Option<String> {
-    let has_latin = text.chars().any(|c| c.is_ascii_alphabetic());
-    let (stripped, prefixed) = if has_latin {
-        (text.to_owned(), false)
-    } else {
-        let s = VIEWS_PREFIX_RE.replace(text, "").into_owned();
-        let p = s != text;
-        (s, p)
-    };
-    if !stripped.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    if !prefixed && stripped.is_ascii() && !stripped.contains(' ') {
-        return None;
-    }
-    Some(stripped.split(' ').next().unwrap_or_default().to_owned())
-}
-
 fn parse_song_run(run: &Value) -> RunKind {
-    let text = run.get("text").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let text = run
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     if run.get("navigationEndpoint").is_some() {
         let id = owned_at(run, "/navigationEndpoint/browseEndpoint/browseId");
-        if id.as_deref().is_some_and(|i| i.starts_with("MPRE") || i.contains("release_detail")) {
+        if id
+            .as_deref()
+            .is_some_and(|i| i.starts_with("MPRE") || i.contains("release_detail"))
+        {
             return RunKind::Album(Named { name: text, id });
         }
         return RunKind::Artist(Person { name: text, id });
@@ -230,10 +239,8 @@ fn parse_song_run(run: &Value) -> RunKind {
         RunKind::Duration(text)
     } else if YEAR_RE.is_match(&text) {
         RunKind::Year(text)
-    } else if let Some(views) = parse_views(&text) {
-        RunKind::Views(views)
     } else {
-        RunKind::Artist(Person { name: text, id: None })
+        RunKind::Views(text)
     }
 }
 
@@ -266,7 +273,11 @@ pub fn parse_artists_runs(runs: &[Value]) -> Vec<Person> {
     runs.iter()
         .step_by(2)
         .map(|r| Person {
-            name: r.get("text").and_then(Value::as_str).unwrap_or_default().to_owned(),
+            name: r
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
             id: owned_at(r, "/navigationEndpoint/browseEndpoint/browseId"),
         })
         .collect()
@@ -277,7 +288,11 @@ fn flex_item(data: &Value, index: usize) -> Option<&Value> {
         .get("flexColumns")?
         .get(index)?
         .get("musicResponsiveListItemFlexColumnRenderer")?;
-    if col.pointer("/text/runs").is_none() { None } else { Some(col) }
+    if col.pointer("/text/runs").is_none() {
+        None
+    } else {
+        Some(col)
+    }
 }
 
 fn item_text(data: &Value, index: usize) -> Option<String> {
@@ -294,7 +309,10 @@ fn song_album(data: &Value, index: usize) -> Option<Named> {
     let col = flex_item(data, index)?;
     Some(Named {
         name: owned_at(col, "/text/runs/0/text").unwrap_or_default(),
-        id: owned_at(col, "/text/runs/0/navigationEndpoint/browseEndpoint/browseId"),
+        id: owned_at(
+            col,
+            "/text/runs/0/navigationEndpoint/browseEndpoint/browseId",
+        ),
     })
 }
 
@@ -304,7 +322,11 @@ fn fixed_duration(data: &Value) -> Option<String> {
 }
 
 fn joined_names(artists: &[Person]) -> String {
-    artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
+    artists
+        .iter()
+        .map(|a| a.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn parse_playlist_item(data: &Value, is_album: bool, is_collaborative: bool) -> Option<Track> {
@@ -320,13 +342,18 @@ pub fn parse_playlist_item(data: &Value, is_album: bool, is_collaborative: bool)
             }
         }
     }
-    if let Some(play) = data.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer") {
+    if let Some(play) =
+        data.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer")
+    {
         if let Some(v) = owned_at(play, "/playNavigationEndpoint/watchEndpoint/videoId") {
             video_id = Some(v);
             if data.get("menu").is_some() {
                 like = LikeStatus::parse(
-                    str_at(data, "/menu/menuRenderer/topLevelButtons/0/likeButtonRenderer/likeStatus")
-                        .unwrap_or("INDIFFERENT"),
+                    str_at(
+                        data,
+                        "/menu/menuRenderer/topLevelButtons/0/likeButtonRenderer/likeStatus",
+                    )
+                    .unwrap_or("INDIFFERENT"),
                 );
             }
         }
@@ -353,7 +380,9 @@ pub fn parse_playlist_item(data: &Value, is_album: bool, is_collaborative: bool)
     let mut unrecognized_index: Option<usize> = None;
 
     for index in 0..array_at(data, "/flexColumns").len() {
-        let Some(col) = flex_item(data, index) else { continue };
+        let Some(col) = flex_item(data, index) else {
+            continue;
+        };
         let run = col.pointer("/text/runs/0");
         match run.and_then(|r| r.get("navigationEndpoint")) {
             None => {
@@ -373,8 +402,12 @@ pub fn parse_playlist_item(data: &Value, is_album: bool, is_collaborative: bool)
                     "/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType",
                 ) {
                     match page_type {
-                        "MUSIC_PAGE_TYPE_ARTIST" | "MUSIC_PAGE_TYPE_UNKNOWN" => artist_index = Some(index),
-                        "MUSIC_PAGE_TYPE_ALBUM" | "MUSIC_PAGE_TYPE_AUDIOBOOK" => album_index = Some(index),
+                        "MUSIC_PAGE_TYPE_ARTIST" | "MUSIC_PAGE_TYPE_UNKNOWN" => {
+                            artist_index = Some(index)
+                        }
+                        "MUSIC_PAGE_TYPE_ALBUM" | "MUSIC_PAGE_TYPE_AUDIOBOOK" => {
+                            album_index = Some(index)
+                        }
                         "MUSIC_PAGE_TYPE_USER_CHANNEL" => user_channel_indexes.push(index),
                         "MUSIC_PAGE_TYPE_NON_MUSIC_AUDIO_TRACK_PAGE" => title_index = Some(index),
                         _ => {}
@@ -391,7 +424,9 @@ pub fn parse_playlist_item(data: &Value, is_album: bool, is_collaborative: bool)
     if title.as_deref() == Some("Song deleted") {
         return None;
     }
-    let artists = artist_index.map(|i| song_artists(data, i)).unwrap_or_default();
+    let artists = artist_index
+        .map(|i| song_artists(data, i))
+        .unwrap_or_default();
     let album = album_index.and_then(|i| song_album(data, i));
     let duration = duration_index
         .filter(|i| *i > 0)
@@ -436,15 +471,17 @@ pub fn parse_playlist_items<'a>(
 }
 
 pub fn history_feedback_token(data: &Value) -> Option<String> {
-    array_at(data, "/menu/menuRenderer/items").iter().find_map(|item| {
-        let menu_item = item.get("menuServiceItemRenderer")?;
-        let icon = str_at(menu_item, "/icon/iconType")
-            .or_else(|| str_at(menu_item, "/defaultIcon/iconType"))?;
-        if icon != "REMOVE_FROM_HISTORY" {
-            return None;
-        }
-        owned_at(menu_item, "/serviceEndpoint/feedbackEndpoint/feedbackToken")
-    })
+    array_at(data, "/menu/menuRenderer/items")
+        .iter()
+        .find_map(|item| {
+            let menu_item = item.get("menuServiceItemRenderer")?;
+            let icon = str_at(menu_item, "/icon/iconType")
+                .or_else(|| str_at(menu_item, "/defaultIcon/iconType"))?;
+            if icon != "REMOVE_FROM_HISTORY" {
+                return None;
+            }
+            owned_at(menu_item, "/serviceEndpoint/feedbackEndpoint/feedbackToken")
+        })
 }
 
 pub fn parse_uploaded_item(data: &Value) -> Option<Track> {
@@ -457,7 +494,10 @@ pub fn parse_uploaded_item(data: &Value) -> Option<Track> {
         )
     });
     let video_id = items.first().and_then(|i| {
-        owned_at(i, "/menuServiceItemRenderer/serviceEndpoint/queueAddEndpoint/queueTarget/videoId")
+        owned_at(
+            i,
+            "/menuServiceItemRenderer/serviceEndpoint/queueAddEndpoint/queueTarget/videoId",
+        )
     })?;
     let artists = song_artists(data, 1);
     let duration = fixed_duration(data);
@@ -470,8 +510,11 @@ pub fn parse_uploaded_item(data: &Value) -> Option<Track> {
         thumb: last_thumbnail_url(array_at(data, THUMBNAILS)),
         duration_seconds: duration.as_deref().and_then(parse_duration),
         like_status: LikeStatus::parse(
-            str_at(data, "/menu/menuRenderer/topLevelButtons/0/likeButtonRenderer/likeStatus")
-                .unwrap_or("INDIFFERENT"),
+            str_at(
+                data,
+                "/menu/menuRenderer/topLevelButtons/0/likeButtonRenderer/likeStatus",
+            )
+            .unwrap_or("INDIFFERENT"),
         ),
         entity_id,
         ..Track::default()
@@ -490,7 +533,8 @@ pub fn parse_watch_track(data: &Value) -> Option<Track> {
     let video_id = owned_at(data, "/videoId")?;
     let mut like = LikeStatus::Indifferent;
     for item in array_at(data, "/menu/menuRenderer/items") {
-        if let Some(service) = item.pointer("/toggleMenuServiceItemRenderer/defaultServiceEndpoint") {
+        if let Some(service) = item.pointer("/toggleMenuServiceItemRenderer/defaultServiceEndpoint")
+        {
             if service.get("likeEndpoint").is_some() {
                 like = parse_like_status(service);
             }
@@ -529,7 +573,10 @@ pub fn parse_watch_playlist<'a>(results: impl IntoIterator<Item = &'a Value>) ->
             continue;
         }
         if let Some(track) = parse_watch_track(data) {
-            out.push(WatchTrack { track, counterpart: counterpart.and_then(parse_watch_track) });
+            out.push(WatchTrack {
+                track,
+                counterpart: counterpart.and_then(parse_watch_track),
+            });
         }
     }
     out
@@ -554,13 +601,19 @@ pub fn parse_mixed_item(entry: &Value, section_title: &str) -> Option<MediaItem>
                 }),
                 None => parse_song_card(data, section_title),
             },
-            Some("MUSIC_PAGE_TYPE_ALBUM" | "MUSIC_PAGE_TYPE_AUDIOBOOK") => Some(parse_album_card(data)),
-            Some("MUSIC_PAGE_TYPE_ARTIST" | "MUSIC_PAGE_TYPE_USER_CHANNEL") => parse_artist_card(data),
+            Some("MUSIC_PAGE_TYPE_ALBUM" | "MUSIC_PAGE_TYPE_AUDIOBOOK") => {
+                Some(parse_album_card(data))
+            }
+            Some("MUSIC_PAGE_TYPE_ARTIST" | "MUSIC_PAGE_TYPE_USER_CHANNEL") => {
+                parse_artist_card(data)
+            }
             Some("MUSIC_PAGE_TYPE_PLAYLIST") => parse_playlist_card(data),
             Some(_) => None,
         };
     }
-    entry.get(MRLIR).and_then(|data| parse_song_row(data, section_title))
+    entry
+        .get(MRLIR)
+        .and_then(|data| parse_song_row(data, section_title))
 }
 
 pub fn parse_album_card(data: &Value) -> MediaItem {
@@ -574,8 +627,11 @@ pub fn parse_album_card(data: &Value) -> MediaItem {
         .collect();
     let mut item = MediaItem {
         kind: ItemKind::Album,
-        id: owned_at(data, "/title/runs/0/navigationEndpoint/browseEndpoint/browseId")
-            .unwrap_or_default(),
+        id: owned_at(
+            data,
+            "/title/runs/0/navigationEndpoint/browseEndpoint/browseId",
+        )
+        .unwrap_or_default(),
         title: owned_at(data, "/title/runs/0/text").unwrap_or_default(),
         artists,
         thumb: last_thumbnail_url(array_at(data, THUMBNAIL_RENDERER)),
@@ -606,9 +662,14 @@ pub fn parse_video_card(data: &Value) -> Option<MediaItem> {
         .position(|run| str_at(run, "/text") == Some(DOT_SEPARATOR))
         .unwrap_or(runs.len());
     let video_id = owned_at(data, "/navigationEndpoint/watchEndpoint/videoId").or_else(|| {
-        array_at(data, "/menu/menuRenderer/items").iter().find_map(|entry| {
-            owned_at(entry, "/menuServiceItemRenderer/serviceEndpoint/queueAddEndpoint/queueTarget/videoId")
-        })
+        array_at(data, "/menu/menuRenderer/items")
+            .iter()
+            .find_map(|entry| {
+                owned_at(
+                    entry,
+                    "/menuServiceItemRenderer/serviceEndpoint/queueAddEndpoint/queueTarget/videoId",
+                )
+            })
     })?;
     Some(MediaItem {
         kind: ItemKind::Video,
@@ -641,12 +702,18 @@ pub fn parse_song_card(data: &Value, section_title: &str) -> Option<MediaItem> {
         is_live: is_live(data),
         ..MediaItem::default()
     };
-    let video_type = str_at(data, &format!("/navigationEndpoint/watchEndpoint{MUSIC_VIDEO_TYPE}"));
+    let video_type = str_at(
+        data,
+        &format!("/navigationEndpoint/watchEndpoint{MUSIC_VIDEO_TYPE}"),
+    );
     with_playable_kind(item, video_type, section_title)
 }
 
 pub fn parse_playlist_card(data: &Value) -> Option<MediaItem> {
-    let browse_id = str_at(data, "/title/runs/0/navigationEndpoint/browseEndpoint/browseId")?;
+    let browse_id = str_at(
+        data,
+        "/title/runs/0/navigationEndpoint/browseEndpoint/browseId",
+    )?;
     let runs = array_at(data, "/subtitle/runs");
     let mut item = MediaItem {
         kind: ItemKind::Playlist,
@@ -673,20 +740,25 @@ pub fn parse_playlist_card(data: &Value) -> Option<MediaItem> {
 }
 
 pub fn parse_artist_card(data: &Value) -> Option<MediaItem> {
-    let browse_id = owned_at(data, "/title/runs/0/navigationEndpoint/browseEndpoint/browseId")?;
+    let browse_id = owned_at(
+        data,
+        "/title/runs/0/navigationEndpoint/browseEndpoint/browseId",
+    )?;
     Some(MediaItem {
         kind: ItemKind::Artist,
         id: browse_id,
         title: owned_at(data, "/title/runs/0/text").unwrap_or_default(),
-        subscribers: str_at(data, "/subtitle/runs/0/text")
-            .map(|text| text.split(' ').next().unwrap_or_default().to_owned()),
+        subscribers: owned_at(data, "/subtitle/runs/0/text"),
         thumb: last_thumbnail_url(array_at(data, THUMBNAIL_RENDERER)),
         ..MediaItem::default()
     })
 }
 
 pub fn parse_song_row(data: &Value, section_title: &str) -> Option<MediaItem> {
-    let title = owned_at(data, "/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text")?;
+    let title = owned_at(
+        data,
+        "/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text",
+    )?;
     let video_id = owned_at(
         data,
         "/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/navigationEndpoint/watchEndpoint/videoId",
@@ -700,7 +772,10 @@ pub fn parse_song_row(data: &Value, section_title: &str) -> Option<MediaItem> {
     let album = match data.pointer(&format!("{album_column}/navigationEndpoint")) {
         Some(_) => Some(Named {
             name: owned_at(data, &format!("{album_column}/text")).unwrap_or_default(),
-            id: owned_at(data, &format!("{album_column}/navigationEndpoint/browseEndpoint/browseId")),
+            id: owned_at(
+                data,
+                &format!("{album_column}/navigationEndpoint/browseEndpoint/browseId"),
+            ),
         }),
         None => runs.album,
     };
@@ -717,7 +792,10 @@ pub fn parse_song_row(data: &Value, section_title: &str) -> Option<MediaItem> {
         is_live: is_live(data),
         ..MediaItem::default()
     };
-    let video_type = str_at(data, &format!("{PLAY_ENDPOINT}/watchEndpoint{MUSIC_VIDEO_TYPE}"));
+    let video_type = str_at(
+        data,
+        &format!("{PLAY_ENDPOINT}/watchEndpoint{MUSIC_VIDEO_TYPE}"),
+    );
     with_playable_kind(item, video_type, section_title)
 }
 
@@ -769,7 +847,9 @@ pub fn detect_kind(
 
 pub fn parse_channel_item(raw: &Value) -> Option<MediaItem> {
     for key in [MTRIR, MRLIR] {
-        let Some(renderer) = raw.get(key) else { continue };
+        let Some(renderer) = raw.get(key) else {
+            continue;
+        };
         let mut item = MediaItem::default();
         let mut title_runs: &[Value] = array_at(renderer, "/title/runs");
         if title_runs.is_empty() {
@@ -784,9 +864,19 @@ pub fn parse_channel_item(raw: &Value) -> Option<MediaItem> {
         let mut browse_id = None;
         let mut video_id = None;
         if let Some(first) = title_runs.first() {
-            item.title = first.get("text").and_then(Value::as_str).unwrap_or_default().to_owned();
+            item.title = first
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
             browse_id = owned_at(first, "/navigationEndpoint/browseEndpoint/browseId");
             video_id = owned_at(first, "/navigationEndpoint/watchEndpoint/videoId");
+        }
+        if browse_id.is_none() {
+            browse_id = owned_at(renderer, "/navigationEndpoint/browseEndpoint/browseId");
+        }
+        if video_id.is_none() {
+            video_id = owned_at(renderer, "/navigationEndpoint/watchEndpoint/videoId");
         }
         for col in array_at(renderer, "/flexColumns").iter().skip(1) {
             let runs = array_at(col, "/musicResponsiveListItemFlexColumnRenderer/text/runs");
@@ -794,9 +884,15 @@ pub fn parse_channel_item(raw: &Value) -> Option<MediaItem> {
             for r in runs {
                 let text = r.get("text").and_then(Value::as_str).unwrap_or_default();
                 if let Some(id) = owned_at(r, "/navigationEndpoint/browseEndpoint/browseId") {
-                    artists.push(Person { name: text.to_owned(), id: Some(id) });
+                    artists.push(Person {
+                        name: text.to_owned(),
+                        id: Some(id),
+                    });
                 } else if !text.trim().is_empty() && !["•", "&", ","].contains(&text.trim()) {
-                    artists.push(Person { name: text.trim().to_owned(), id: None });
+                    artists.push(Person {
+                        name: text.trim().to_owned(),
+                        id: None,
+                    });
                 }
             }
             if !artists.is_empty() {
@@ -810,9 +906,15 @@ pub fn parse_channel_item(raw: &Value) -> Option<MediaItem> {
         {
             item.duration_seconds = parse_duration(text);
         }
-        let thumbs = array_at(renderer, "/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails");
+        let thumbs = array_at(
+            renderer,
+            "/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails",
+        );
         let thumbs = if thumbs.is_empty() {
-            array_at(renderer, "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+            array_at(
+                renderer,
+                "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails",
+            )
         } else {
             thumbs
         };
@@ -840,8 +942,13 @@ pub fn parse_channel_item(raw: &Value) -> Option<MediaItem> {
             let parsed = parse_song_runs(subtitle_runs);
             item.year = parsed.year;
             if let Some(first) = subtitle_runs.first() {
-                let text = first.get("text").and_then(Value::as_str).unwrap_or_default();
-                if first.get("navigationEndpoint").is_none() && ["Album", "Single", "EP"].contains(&text) {
+                let text = first
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if first.get("navigationEndpoint").is_none()
+                    && ["Album", "Single", "EP"].contains(&text)
+                {
                     item.item_type = Some(text.to_owned());
                 }
             }
@@ -888,8 +995,14 @@ mod tests {
 
     #[test]
     fn like_status_is_the_opposite_of_the_endpoint_action() {
-        assert_eq!(parse_like_status(&json!({"likeEndpoint": {"status": "LIKE"}})), LikeStatus::Indifferent);
-        assert_eq!(parse_like_status(&json!({"likeEndpoint": {"status": "INDIFFERENT"}})), LikeStatus::Like);
+        assert_eq!(
+            parse_like_status(&json!({"likeEndpoint": {"status": "LIKE"}})),
+            LikeStatus::Indifferent
+        );
+        assert_eq!(
+            parse_like_status(&json!({"likeEndpoint": {"status": "INDIFFERENT"}})),
+            LikeStatus::Like
+        );
     }
 
     #[test]
@@ -905,7 +1018,10 @@ mod tests {
         ]);
         let parsed = parse_song_runs(runs.as_array().unwrap());
         assert_eq!(parsed.artists.len(), 1);
-        assert_eq!(parsed.album.as_ref().map(|a| a.name.as_str()), Some("Revival"));
+        assert_eq!(
+            parsed.album.as_ref().map(|a| a.name.as_str()),
+            Some("Revival")
+        );
         assert_eq!(parsed.year.as_deref(), Some("2017"));
         assert_eq!(parsed.views.as_deref(), Some("1.2M"));
     }
@@ -926,7 +1042,10 @@ mod tests {
         assert_eq!(track.video_id.as_str(), "abc");
         assert_eq!(track.title, "Lost");
         assert_eq!(track.artist, "Guest Who");
-        assert_eq!(track.album.as_ref().and_then(|a| a.id.as_deref()), Some("MPREb_x"));
+        assert_eq!(
+            track.album.as_ref().and_then(|a| a.id.as_deref()),
+            Some("MPREb_x")
+        );
         assert_eq!(track.duration_seconds, Some(178));
         assert_eq!(track.set_video_id.as_deref(), Some("SET1"));
         assert_eq!(track.like_status, LikeStatus::Like);

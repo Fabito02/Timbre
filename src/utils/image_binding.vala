@@ -71,9 +71,11 @@ namespace Timbre.Utils {
                 return;
             }
 
-            var display = pic.get_display ();
+            var display = pic.get_display () ?? Gdk.Display.get_default ();
             if (display == null) {
                 this.apply_placeholder ();
+                this.try_hook ();
+                this.schedule_check ();
                 return;
             }
 
@@ -139,7 +141,6 @@ namespace Timbre.Utils {
             }
         }
 
-        // ─── Hook ─────────────────────────────────────────────────
         private void try_hook () {
             if (this.hooked) return;
             this.hook_scrolled ();
@@ -237,7 +238,6 @@ namespace Timbre.Utils {
             this.schedule_check ();
         }
 
-        // ─── Signals ────────────────────────────────────────────────
         private void on_map () {
             if (this.picture_destroyed) return;
 
@@ -305,7 +305,6 @@ namespace Timbre.Utils {
             this.picture = null;
         }
 
-        // ─── Unload ───────────────────────────────────────────────
         private void schedule_unload () {
             if (this.unload_id != 0) return;
             this.unload_id = GLib.Timeout.add_seconds (HIDDEN_UNLOAD_SECS, () => {
@@ -368,14 +367,13 @@ namespace Timbre.Utils {
             return true;
         }
 
-        // ─── Fetch ────────────────────────────────────────────────
         private void start_fetch (string url) {
             if (this.picture_destroyed) return;
             if (this.cancellable != null) return;
 
             var pic = this.picture;
             if (pic == null) return;
-            var display = pic.get_display ();
+            var display = pic.get_display () ?? Gdk.Display.get_default ();
             if (display == null) return;
 
             int scale = pic.get_scale_factor ();
@@ -412,7 +410,6 @@ namespace Timbre.Utils {
             );
         }
 
-        // ─── Placeholder ──────────────────────────────────────────
         private void apply_placeholder () {
             if (this.picture_destroyed) return;
             var pic = this.picture;
@@ -431,7 +428,6 @@ namespace Timbre.Utils {
             }
         }
 
-        // ─── Life cycle ────────────────────────────────────────
         public override void dispose () {
             if (this.cancellable != null) {
                 this.cancellable.cancel ();

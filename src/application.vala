@@ -39,15 +39,41 @@ public class Timbre.Application : Adw.Application {
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         );
 
+        string hl = detect_hl ();
+        string gl = detect_gl ();
+        message ("locale: hl=%s gl=%s", hl, gl);
+        Timbre.set_locale (hl, gl);
+
         this._player = new Timbre.Player ();
 
-        string config_dir = GLib.Path.build_filename (GLib.Environment.get_user_config_dir (), "timbre");
-        GLib.DirUtils.create_with_parents (config_dir, 0755);
-        this.cookies_path = GLib.Path.build_filename (config_dir, "headers_auth.json");
+        string data_dir = GLib.Path.build_filename (GLib.Environment.get_user_data_dir (), "timbre");
+        GLib.DirUtils.create_with_parents (data_dir, 0755);
+        this.cookies_path = GLib.Path.build_filename (data_dir, "headers_auth.json");
 
         this.restore_image_auth ();
 
         setup_actions ();
+    }
+
+    // Locale
+    private string detect_hl () {
+        unowned string[] names = Intl.get_language_names ();
+        if (names.length == 0) return "en";
+        string first = names[0];
+        if (first == "C" || first == "POSIX" || first.has_prefix ("C.")) return "en";
+
+        int dot = first.index_of_char ('.');
+        if (dot >= 0) first = first.substring (0, dot);
+        return first.replace ("_", "-");
+    }
+
+    private string detect_gl () {
+        string hl = detect_hl ();
+        int dash = hl.index_of_char ('-');
+        if (dash >= 0 && hl.length > dash + 1) {
+            return hl.substring (dash + 1).up ();
+        }
+        return "";
     }
 
     private void restore_image_auth () {
@@ -114,9 +140,17 @@ public class Timbre.Application : Adw.Application {
 
     public override void activate () {
         base.activate ();
+
         typeof (Timbre.ThemeSelector).ensure ();
-        var win = this.active_window ?? new Timbre.Window (this);
+
+        var win = this.active_window;
+        if (win == null) {
+            win = new Timbre.Window (this);
+        }
+
+        win.set_visible (true);
         win.present ();
+        win.present_with_time (Gdk.CURRENT_TIME);
     }
 
     private void on_about_action () {
@@ -124,10 +158,13 @@ public class Timbre.Application : Adw.Application {
             application_name = "Timbre",
             application_icon = "io.github.fabito02.Timbre",
             developer_name = "Fabito02",
-            translator_credits = _("translator-credits"),
             version = "0.1.0",
-            developers = { "Fabito02" },
-            copyright = "© 2026 Fabito02",
+            developers = { "Fabiano Júnior Lima Barbosa https://github.com/Fabito02" },
+            copyright = "© 2026 Fabiano Júnior Lima Barbosa",
+            license_type = Gtk.License.GPL_3_0,
+            website = "https://github.com/Fabito02/Timbre",
+            issue_url = "https://github.com/Fabito02/Timbre/issues",
+            translator_credits = _("translator-credits"),
         };
         about.present (this.active_window);
     }

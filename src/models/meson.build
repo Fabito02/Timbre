@@ -1,4 +1,1 @@
-models_sources = files(
-  'home.vala',
-  'track.vala'
-)
+models_sources = files('home.vala', 'track.vala')

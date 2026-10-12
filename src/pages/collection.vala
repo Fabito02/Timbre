@@ -120,6 +120,14 @@ namespace Timbre {
             });
         }
 
+        private static LikeStatus parse_like_status (string s) {
+            switch (s) {
+                case "Like":    return LikeStatus.LIKE;
+                case "Dislike": return LikeStatus.DISLIKE;
+                default:        return LikeStatus.INDIFFERENT;
+            }
+        }
+
         private GenericArray<Timbre.TrackItem> parse_tracks_json (string json_data) {
             var list = new GenericArray<Timbre.TrackItem> ();
 
@@ -196,6 +204,11 @@ namespace Timbre {
                     track.thumbnail_url = obj.get_string_member ("thumbnail_url");
                 }
 
+                if (obj.has_member ("like_status") && !obj.get_null_member ("like_status")) {
+                    track.like_status = parse_like_status (
+                        obj.get_string_member ("like_status"));
+                }
+
                 list.add (track);
             }
 
@@ -221,11 +234,14 @@ namespace Timbre {
                 }
 
                 this.tracks_list.append (new Timbre.TrackRow (
+                    this.player,
+                    "Song",
                     track.id,
                     display_title,
                     track.artist,
                     track.duration_secs,
-                    display_cover
+                    display_cover,
+                    track.like_status
                 ));
             }
         }

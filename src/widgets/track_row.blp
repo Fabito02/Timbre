@@ -1,8 +1,8 @@
 using Gtk 4.0;
-using Adw 1;
 
-template $TimbreTrackRow : ListBoxRow {
+template $TimbreTrackRow: ListBoxRow {
   activatable: true;
+
   Box {
     orientation: horizontal;
     spacing: 6;
@@ -18,7 +18,10 @@ template $TimbreTrackRow : ListBoxRow {
       height-request: 48;
       valign: center;
       halign: center;
-      styles ["row-cover-img"]
+
+      styles [
+        "row-cover-img",
+      ]
     }
 
     Box {
@@ -30,17 +33,38 @@ template $TimbreTrackRow : ListBoxRow {
       Label label_title {
         xalign: 0.0;
         ellipsize: end;
-        styles ["heading"]
+
+        styles [
+          "heading",
+        ]
       }
+
       Label label_artist {
         xalign: 0.0;
         ellipsize: end;
-        styles ["caption", "dim-label"]
+
+        styles [
+          "caption",
+          "dim-label",
+        ]
       }
     }
+
     Label label_duration {
       valign: center;
-      styles ["numeric", "caption", "dim-label"]
+
+      styles [
+        "numeric",
+        "caption",
+        "dim-label",
+      ]
+    }
+
+    Box like_slot {
+      orientation: horizontal;
+      spacing: 0;
+      valign: center;
+      halign: end;
     }
   }
 }

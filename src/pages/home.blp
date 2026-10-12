@@ -1,23 +1,71 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $TimbreHomePage : Adw.NavigationPage {
-  ScrolledWindow {
-    hscrollbar-policy: never;
+template $TimbreHomePage: Adw.NavigationPage {
+  Gtk.Stack stack {
+    transition-type: crossfade;
+    vexpand: true;
+    hhomogeneous: false;
+    visible-child-name: "loading";
 
-    Adw.Clamp {
-      maximum-size: 1280;
+    Gtk.StackPage {
+      name: "loading";
 
-      Box content_box {
-        orientation: vertical;
-        spacing: 24;
-        margin-top: 24;
-        margin-bottom: 24;
-        margin-start: 8;
-        margin-end: 8;
+      child: Gtk.ScrolledWindow {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        vexpand: true;
 
-      }
+        Adw.Clamp {
+          maximum-size: 1080;
+          tightening-threshold: 720;
+
+          Gtk.Box skeleton_box {
+            orientation: vertical;
+            spacing: 32;
+            margin-top: 32;
+            margin-bottom: 32;
+            margin-start: 18;
+            margin-end: 18;
+            valign: center;
+            vexpand: true;
+          }
+        }
+      };
+    }
+
+    Gtk.StackPage {
+      name: "feed";
+
+      child: Gtk.ScrolledWindow feed_scroll {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        vexpand: true;
+
+        Adw.Clamp {
+          maximum-size: 1080;
+          tightening-threshold: 720;
+
+          Gtk.Box content_box {
+            orientation: vertical;
+            spacing: 32;
+            margin-top: 32;
+            margin-bottom: 32;
+            margin-start: 18;
+            margin-end: 18;
+          }
+        }
+      };
+    }
+
+    Gtk.StackPage {
+      name: "status";
+
+      child: Adw.StatusPage status_page {
+        icon-name: "user-home-symbolic";
+        title: _("Could not load Home");
+        description: _("Try refreshing in a moment.");
+      };
     }
   }
 }
-

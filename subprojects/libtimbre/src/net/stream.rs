@@ -26,13 +26,19 @@ pub enum ResolveError {
 }
 
 pub trait StreamResolver: Send + Sync {
-    fn resolve(&self, video_id: VideoId, auth: Option<HttpAuth>) -> BoxFuture<'_, Result<StreamInfo, ResolveError>>;
+    fn resolve(
+        &self,
+        video_id: VideoId,
+        auth: Option<HttpAuth>,
+    ) -> BoxFuture<'_, Result<StreamInfo, ResolveError>>;
     fn invalidate(&self, video_id: &VideoId) -> BoxFuture<'_, ()>;
 }
 
-const YTDLP_FORMAT: &str = "bestaudio[acodec=opus]/bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio/best";
+const YTDLP_FORMAT: &str =
+    "bestaudio[acodec=opus]/bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio/best";
 const YTDLP_FORMAT_SORT: &str = "proto:https,acodec:opus";
-const YTDLP_PLAYER_CLIENTS: &str = "youtube:player_client=web_music,mweb,tv,web_safari,android_vr,android,ios";
+const YTDLP_PLAYER_CLIENTS: &str =
+    "youtube:player_client=web_music,mweb,tv,web_safari,android_vr,android,ios";
 
 pub struct YtDlpResolver {
     binary: PathBuf,
@@ -52,12 +58,24 @@ impl YtDlpResolver {
         }
     }
 
-    async fn run(&self, video_id: &VideoId, auth: Option<&HttpAuth>) -> Result<StreamInfo, ResolveError> {
+    async fn run(
+        &self,
+        video_id: &VideoId,
+        auth: Option<&HttpAuth>,
+    ) -> Result<StreamInfo, ResolveError> {
         let url = format!("https://music.youtube.com/watch?v={video_id}");
         let mut cmd = Command::new(&self.binary);
-        cmd.args(["-j", "--no-playlist", "--no-warnings", "-f", YTDLP_FORMAT, "-S", YTDLP_FORMAT_SORT])
-            .args(["--extractor-args", YTDLP_PLAYER_CLIENTS])
-            .args(["--js-runtimes", "node"]);
+        cmd.args([
+            "-j",
+            "--no-playlist",
+            "--no-warnings",
+            "-f",
+            YTDLP_FORMAT,
+            "-S",
+            YTDLP_FORMAT_SORT,
+        ])
+        .args(["--extractor-args", YTDLP_PLAYER_CLIENTS])
+        .args(["--js-runtimes", "node"]);
         if let Some(token) = self.tokens.for_video(video_id.as_str()).await {
             cmd.arg("--extractor-args")
                 .arg(crate::net::potoken::extractor_arg(&token));
@@ -65,7 +83,10 @@ impl YtDlpResolver {
         let cookie_file = match auth {
             Some(auth) => {
                 let path = write_netscape_cookies(&self.tmp_dir, &auth.cookie).await?;
-                cmd.arg("--cookies").arg(&path).arg("--user-agent").arg(&auth.user_agent);
+                cmd.arg("--cookies")
+                    .arg(&path)
+                    .arg("--user-agent")
+                    .arg(&auth.user_agent);
                 if let Some(a) = &auth.authorization {
                     cmd.arg("--add-headers").arg(format!("Authorization:{a}"));
                 }
@@ -73,7 +94,9 @@ impl YtDlpResolver {
             }
             None => None,
         };
-        cmd.arg(&url).kill_on_drop(true).stdin(std::process::Stdio::null());
+        cmd.arg(&url)
+            .kill_on_drop(true)
+            .stdin(std::process::Stdio::null());
 
         let output = cmd.output().await;
         if let Some(path) = cookie_file {
@@ -124,7 +147,11 @@ impl YtDlpResolver {
 }
 
 impl StreamResolver for YtDlpResolver {
-    fn resolve(&self, video_id: VideoId, auth: Option<HttpAuth>) -> BoxFuture<'_, Result<StreamInfo, ResolveError>> {
+    fn resolve(
+        &self,
+        video_id: VideoId,
+        auth: Option<HttpAuth>,
+    ) -> BoxFuture<'_, Result<StreamInfo, ResolveError>> {
         Box::pin(async move {
             if let Some(mut info) = self.cache.get(&video_id).await {
                 if info.uri.contains("yt_live_broadcast") || crate::audio::is_live_uri(&info.uri) {
@@ -158,10 +185,20 @@ impl DemoResolver {
 }
 
 impl StreamResolver for DemoResolver {
-    fn resolve(&self, video_id: VideoId, auth: Option<HttpAuth>) -> BoxFuture<'_, Result<StreamInfo, ResolveError>> {
+    fn resolve(
+        &self,
+        video_id: VideoId,
+        auth: Option<HttpAuth>,
+    ) -> BoxFuture<'_, Result<StreamInfo, ResolveError>> {
         if let Some(uri) = self.uris.get(video_id.as_str()).cloned() {
             let is_local = uri.starts_with("file://");
-            return Box::pin(async move { Ok(StreamInfo { uri, is_local, ..StreamInfo::default() }) });
+            return Box::pin(async move {
+                Ok(StreamInfo {
+                    uri,
+                    is_local,
+                    ..StreamInfo::default()
+                })
+            });
         }
         self.inner.resolve(video_id, auth)
     }
@@ -238,7 +275,10 @@ impl StreamCache {
     const TTL: Duration = Duration::from_secs(5 * 3600);
 
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir, puts: std::sync::atomic::AtomicUsize::new(0) }
+        Self {
+            dir,
+            puts: std::sync::atomic::AtomicUsize::new(0),
+        }
     }
 
     fn path_for(&self, video_id: &VideoId) -> PathBuf {
@@ -285,7 +325,9 @@ impl StreamCache {
 }
 
 fn evict_old(dir: &Path, keep: usize) {
-    let Ok(read) = std::fs::read_dir(dir) else { return };
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return;
+    };
     let mut entries: Vec<(SystemTime, PathBuf)> = read
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
@@ -318,7 +360,9 @@ pub async fn write_netscape_cookies(dir: &Path, cookie_header: &str) -> std::io:
     let mut body = String::from("# Netscape HTTP Cookie File\n");
     for part in cookie_header.split(';') {
         if let Some((k, v)) = part.trim().split_once('=') {
-            body.push_str(&format!(".youtube.com\tTRUE\t/\tTRUE\t{expiry}\t{k}\t{v}\n"));
+            body.push_str(&format!(
+                ".youtube.com\tTRUE\t/\tTRUE\t{expiry}\t{k}\t{v}\n"
+            ));
         }
     }
     let write_path = path.clone();

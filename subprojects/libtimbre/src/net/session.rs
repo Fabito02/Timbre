@@ -3,16 +3,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::watch;
 use ytmusicapi::{BrowserAuth, YTMusicClient};
 
 use super::error::NetError;
 use super::media::{HttpAuth, LikeStatus};
-use crate::context::Paths;
+use crate::context::{Locale, Paths, locale};
 
-const LOGIN_USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36";
+const LOGIN_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36";
 
 pub const CHANNEL_PREF: &str = "account_page_id";
 
@@ -65,6 +64,7 @@ pub struct Session {
     auth: watch::Sender<AuthState>,
     known_likes: RwLock<HashMap<String, LikeStatus>>,
     page_id: RwLock<Option<String>>,
+    locale: Locale,
 }
 
 impl Session {
@@ -74,7 +74,14 @@ impl Session {
             .gzip(true)
             .build()?;
         let (auth, _) = watch::channel(AuthState::Anonymous);
-        let anonymous = YTMusicClient::builder().build()?;
+
+        let locale = locale();
+        tracing::info!(hl = %locale.hl, gl = %locale.gl, "session locale");
+
+        let anonymous = YTMusicClient::builder()
+            .with_language(locale.hl.clone())
+            .build()?;
+
         let page_id = paths
             .read_prefs()
             .get(CHANNEL_PREF)
@@ -89,6 +96,7 @@ impl Session {
             auth,
             known_likes: RwLock::new(HashMap::new()),
             page_id: RwLock::new(page_id),
+            locale,
         });
         session.load_saved_session();
         Ok(session)
@@ -133,7 +141,11 @@ impl Session {
             .browser_auth
             .as_ref()
             .and_then(|a| a.get_authorization().ok());
-        Some(HttpAuth { cookie, user_agent, authorization })
+        Some(HttpAuth {
+            cookie,
+            user_agent,
+            authorization,
+        })
     }
 
     pub fn browser_headers(&self) -> Option<BTreeMap<String, String>> {
@@ -187,11 +199,15 @@ impl Session {
         browser_auth
             .sapisid()
             .map_err(|e| NetError::InvalidAuth(e.to_string()))?;
-        let mut builder = YTMusicClient::builder().with_browser_auth(browser_auth.clone());
+
+        let mut builder = YTMusicClient::builder()
+            .with_language(self.locale.hl.clone())
+            .with_browser_auth(browser_auth.clone());
         if let Some(page_id) = self.page_id.read().unwrap().clone() {
             builder = builder.with_user(page_id);
         }
         *self.api.write().unwrap() = Arc::new(builder.build()?);
+
         let mut credentials = self.credentials.write().unwrap();
         credentials.headers = headers;
         credentials.browser_auth = Some(browser_auth);
@@ -246,7 +262,9 @@ impl Session {
             }
             None => {
                 self.clear_session();
-                Err(NetError::InvalidAuth("server rejected these headers".into()))
+                Err(NetError::InvalidAuth(
+                    "server rejected these headers".into(),
+                ))
             }
         }
     }
@@ -257,7 +275,10 @@ impl Session {
     }
 
     fn clear_session(&self) {
-        if let Ok(anonymous) = YTMusicClient::builder().build() {
+        if let Ok(anonymous) = YTMusicClient::builder()
+            .with_language(self.locale.hl.clone())
+            .build()
+        {
             *self.api.write().unwrap() = Arc::new(anonymous);
         }
         *self.credentials.write().unwrap() = Credentials::default();
@@ -321,7 +342,9 @@ impl Session {
         let header = resp.pointer(
             "/actions/0/openPopupAction/popup/multiPageMenuRenderer/header/activeAccountHeaderRenderer",
         );
-        let Some(header) = header else { return Ok(None) };
+        let Some(header) = header else {
+            return Ok(None);
+        };
         let name = header
             .pointer("/accountName/runs/0/text")
             .and_then(Value::as_str)
@@ -341,7 +364,11 @@ impl Session {
             .and_then(|t| t.get("url"))
             .and_then(Value::as_str)
             .map(str::to_owned);
-        Ok(Some(AccountInfo { name, handle, photo_url }))
+        Ok(Some(AccountInfo {
+            name,
+            handle,
+            photo_url,
+        }))
     }
 }
 
@@ -402,7 +429,10 @@ fn parse_account(item: &Value) -> Option<Account> {
             .and_then(Value::as_str)
             .map(str::to_owned),
         page_id,
-        selected: item.get("isSelected").and_then(Value::as_bool).unwrap_or(false),
+        selected: item
+            .get("isSelected")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     })
 }
 
@@ -446,7 +476,9 @@ fn title_case(key: &str) -> String {
         .map(|part| {
             let mut chars = part.chars();
             match chars.next() {
-                Some(first) => first.to_ascii_uppercase().to_string() + &chars.as_str().to_ascii_lowercase(),
+                Some(first) => {
+                    first.to_ascii_uppercase().to_string() + &chars.as_str().to_ascii_lowercase()
+                }
                 None => String::new(),
             }
         })

@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context as _, Result};
 use serde_json::Value;
@@ -9,6 +9,31 @@ use crate::net::player_endpoint::PlayerEndpointResolver;
 use crate::net::potoken::PoTokens;
 use crate::net::session::Session;
 use crate::net::stream::{StreamResolver, YtDlpResolver};
+
+#[derive(Clone, Debug)]
+pub struct Locale {
+    pub hl: String, // "pt-BR", "en", "ja"
+    pub gl: String, // "BR", "US", "JP"
+}
+
+impl Default for Locale {
+    fn default() -> Self {
+        Self {
+            hl: "en".into(),
+            gl: "US".into(),
+        }
+    }
+}
+
+static LOCALE: OnceLock<Locale> = OnceLock::new();
+
+pub fn set_locale(hl: String, gl: String) {
+    let _ = LOCALE.set(Locale { hl, gl });
+}
+
+pub fn locale() -> Locale {
+    LOCALE.get().cloned().unwrap_or_default()
+}
 
 #[derive(Clone)]
 pub struct Paths {

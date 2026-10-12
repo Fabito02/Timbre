@@ -1,181 +1,212 @@
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/home.ui")]
     public class HomePage : Adw.NavigationPage {
+        [GtkChild] private unowned Gtk.Stack stack;
         [GtkChild] private unowned Gtk.Box content_box;
+        [GtkChild] private unowned Gtk.Box skeleton_box;
+        [GtkChild] private unowned Adw.StatusPage status_page;
+        [GtkChild] private unowned Gtk.ScrolledWindow feed_scroll;
 
         private unowned Timbre.Player? player;
-        private GenericArray<HomeSectionModel> sections;
+        private bool loaded = false;
+        private bool loading = false;
+        private int retry_count = 0;
+        private int64 last_refresh_usec = 0;
+
+        private int populate_gen = 0;
+        private int populate_idx = 0;
+        private HomeSectionModel[] populate_queue = new HomeSectionModel[0];
 
         public signal void track_selected (string id, uint64 duration, string title, string artist, string? cover);
         public signal void collection_selected (string id, string type_name, string title, string subtitle, string? cover);
+        public signal void show_all_requested (string browse_id, string? params_json, string title, GenericArray<HomeItemModel> seed);
 
         public HomePage () {
             Object ();
-            this.sections = new GenericArray<HomeSectionModel> ();
+            this.show_skeleton ();
+
+            this.feed_scroll.edge_overshot.connect ((pos) => {
+                if (pos != Gtk.PositionType.TOP) return;
+                if (this.loading) return;
+                int64 now = GLib.get_monotonic_time ();
+                if (now - this.last_refresh_usec < 2000000) return;
+                this.last_refresh_usec = now;
+                this.load_home_data (true);
+            });
         }
 
         public void set_player (Timbre.Player player) {
             this.player = player;
-            this.load_home_data ();
+            this.load_home_data (false);
         }
 
-        private void load_home_data () {
+        public void refresh () {
+            this.load_home_data (true);
+        }
+
+        private void load_home_data (bool force) {
             if (this.player == null) return;
+            if (this.loading) return;
+            if (this.loaded && !force) return;
+
+            this.loading = true;
+            if (force) this.loaded = false;
+
+            this.show_skeleton ();
 
             this.player.get_home ((json, error) => {
                 Idle.add (() => {
+                    this.loading = false;
+
                     if (error != null) {
                         warning ("home: %s", (string) error);
                         Timbre.string_free (error);
+                        this.on_load_failed ();
                         return GLib.Source.REMOVE;
                     }
-                    this.set_results (this.parse_sections ((string) json));
+
+                    string json_str = (string) json;
+                    var sections = HomeParser.parse_sections (json_str);
                     Timbre.string_free (json);
+
+                    if (sections.length == 0) {
+                        this.show_empty ();
+                        return GLib.Source.REMOVE;
+                    }
+
+                    this.loaded = true;
+                    this.retry_count = 0;
+                    this.populate_async (sections);
+                    this.stack.visible_child_name = "feed";
                     return GLib.Source.REMOVE;
                 });
             });
         }
 
-        private GenericArray<HomeSectionModel> parse_sections (string json_data) {
-            var list = new GenericArray<HomeSectionModel> ();
-
-            var parser = new Json.Parser ();
-            try {
-                parser.load_from_data (json_data);
-            } catch (Error e) {
-                warning ("home json: %s", e.message);
-                return list;
+        private void on_load_failed () {
+            this.retry_count++;
+            if (this.retry_count < 3) {
+                uint delay = (uint) (1500 * this.retry_count);
+                GLib.Timeout.add (delay, () => {
+                    this.load_home_data (true);
+                    return GLib.Source.REMOVE;
+                });
+                return;
             }
-
-            var root = parser.get_root ();
-            if (root == null || root.get_node_type () != Json.NodeType.ARRAY) {
-                return list;
-            }
-
-            foreach (unowned Json.Node sec_node in root.get_array ().get_elements ()) {
-                if (sec_node.get_node_type () != Json.NodeType.OBJECT) continue;
-                var sec_obj = sec_node.get_object ();
-
-                string sec_title = sec_obj.has_member ("title") && !sec_obj.get_null_member ("title")
-                    ? sec_obj.get_string_member ("title")
-                    : "";
-                var section = new HomeSectionModel (sec_title);
-
-                if (!sec_obj.has_member ("items")) {
-                    list.add (section);
-                    continue;
-                }
-
-                foreach (unowned Json.Node item_node in sec_obj.get_array_member ("items").get_elements ()) {
-                    if (item_node.get_node_type () != Json.NodeType.OBJECT) continue;
-                    var obj = item_node.get_object ();
-                    var item = new HomeItemModel ();
-
-                    if (obj.has_member ("kind")) {
-                        item.type_name = obj.get_string_member ("kind");
-                    }
-                    if (obj.has_member ("id") && !obj.get_null_member ("id")) {
-                        item.id = obj.get_string_member ("id");
-                    }
-                    if (obj.has_member ("title") && !obj.get_null_member ("title")) {
-                        item.title = obj.get_string_member ("title");
-                    }
-                    if (obj.has_member ("duration_seconds") && !obj.get_null_member ("duration_seconds")) {
-                        item.duration_secs = (uint64) obj.get_int_member ("duration_seconds");
-                    }
-
-                    if (obj.has_member ("artists") && !obj.get_null_member ("artists")) {
-                        var artists_node = obj.get_member ("artists");
-                        if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
-                            var sb = new StringBuilder ();
-                            foreach (unowned Json.Node a_node in artists_node.get_array ().get_elements ()) {
-                                if (a_node.get_node_type () == Json.NodeType.OBJECT) {
-                                    var ao = a_node.get_object ();
-                                    if (ao.has_member ("name")) {
-                                        if (sb.len > 0) sb.append (", ");
-                                        sb.append (ao.get_string_member ("name"));
-                                    }
-                                }
-                            }
-                            if (sb.len > 0) {
-                                item.subtitle = sb.str;
-                            }
-                        }
-                    } else if (obj.has_member ("description") && !obj.get_null_member ("description")) {
-                        item.subtitle = obj.get_string_member ("description");
-                    }
-
-                    if (obj.has_member ("thumb") && !obj.get_null_member ("thumb")) {
-                        item.thumbnail_url = obj.get_string_member ("thumb");
-                    }
-
-                    section.items.add (item);
-                }
-
-                list.add (section);
-            }
-
-            return list;
+            this.show_error ();
         }
 
-        private void set_results (GenericArray<HomeSectionModel> sections) {
+        private void show_offline () {
+            this.show_status ("network-offline-symbolic",
+                              _("You're offline"),
+                              _("Home requires an internet connection.\nYour downloaded songs are still available."),
+                              false);
+        }
+
+        private void show_empty () {
+            this.show_status ("folder-symbolic",
+                              _("Nothing new here"),
+                              _("There's nothing to show right now. Check back later."),
+                              true);
+        }
+
+        private void show_error () {
+            this.show_status ("dialog-warning-symbolic",
+                              _("Couldn't load Home"),
+                              _("Try refreshing in a moment."),
+                              true);
+        }
+
+        private void show_status (string icon, string title, string description, bool with_retry) {
+            this.status_page.icon_name = icon;
+            this.status_page.title = title;
+            this.status_page.description = description;
+
+            if (with_retry) {
+                var retry = new Gtk.Button.with_label (_("Retry")) {
+                    halign = Gtk.Align.CENTER
+                };
+                retry.add_css_class ("pill");
+                retry.add_css_class ("suggested-action");
+                retry.clicked.connect (() => {
+                    this.retry_count = 0;
+                    this.load_home_data (true);
+                });
+                this.status_page.child = retry;
+            } else {
+                this.status_page.child = null;
+            }
+
+            this.stack.visible_child_name = "status";
+        }
+
+        private void show_skeleton () {
+            Gtk.Widget? c = this.skeleton_box.get_first_child ();
+            while (c != null) {
+                var next = c.get_next_sibling ();
+                this.skeleton_box.remove (c);
+                c = next;
+            }
+
+            for (int s = 0; s < 3; s++) {
+                var sec = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+
+                var title = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) {
+                    height_request = 20,
+                    width_request = 160,
+                    halign = Gtk.Align.START
+                };
+                title.add_css_class ("skeleton");
+                title.add_css_class ("skeleton-title");
+                sec.append (title);
+
+                var strip = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12) {
+                    homogeneous = true,
+                    hexpand = true
+                };
+                for (int i = 0; i < 4; i++) {
+                    var card = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) {
+                        height_request = 150,
+                        hexpand = true
+                    };
+                    card.add_css_class ("skeleton");
+                    strip.append (card);
+                }
+                sec.append (strip);
+                this.skeleton_box.append (sec);
+            }
+        }
+
+        private void populate_async (GenericArray<HomeSectionModel> sections) {
+            this.populate_gen++;
+            int gen = this.populate_gen;
+
             this.clear_list ();
 
-            for (int i = 0; i < sections.length; i++) {
-                var section = sections.get (i);
+            int n = sections.length;
+            this.populate_queue = new HomeSectionModel[n];
+            for (int i = 0; i < n; i++) {
+                this.populate_queue[i] = sections.get (i);
+            }
+            this.populate_idx = 0;
 
-                var section_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12) {
-                    margin_top = 12,
-                    margin_bottom = 12,
-                    margin_start = 18,
-                    margin_end = 18
-                };
-
-                var title_label = new Gtk.Label (section.title) {
-                    halign = Gtk.Align.START,
-                    xalign = 0
-                };
-                title_label.add_css_class ("title-2");
-                section_box.append (title_label);
-
-                var cards_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
-
-                for (int j = 0; j < section.items.length; j++) {
-                    HomeItemModel item = section.items.get (j);
-
-                    var card = new Timbre.TrackCard (
-                        item.id, item.type_name, item.title, item.subtitle ?? "", item.thumbnail_url);
-
-                    string item_id = item.id;
-                    uint64 item_duration = item.duration_secs;
-                    string item_type = item.type_name;
-                    string item_title = item.title;
-                    string item_sub = item.subtitle ?? "";
-                    string? item_thumb = item.thumbnail_url;
-
-                    card.clicked.connect (() => {
-                        if (item_type == "Song" || item_type == "Video") {
-                            this.track_selected (item_id, item_duration, item_title, item_sub, item_thumb);
-                        } else {
-                            this.collection_selected (item_id, item_type, item_title, item_sub, item_thumb);
-                        }
-                    });
-
-                    cards_box.append (card);
+            GLib.Idle.add_full (GLib.Priority.LOW, () => {
+                if (this.populate_gen != gen) return GLib.Source.REMOVE;
+                if (this.populate_idx >= this.populate_queue.length) {
+                    return GLib.Source.REMOVE;
                 }
 
-                var scroll = new Gtk.ScrolledWindow () {
-                    hscrollbar_policy = Gtk.PolicyType.AUTOMATIC,
-                    vscrollbar_policy = Gtk.PolicyType.NEVER,
-                    hexpand = true,
-                    overlay_scrolling = true,
-                    child = cards_box,
-                    margin_bottom = 24
-                };
+                var sec = this.populate_queue[this.populate_idx];
+                this.populate_idx++;
 
-                section_box.append (scroll);
-                this.content_box.append (section_box);
-            }
+                if (sec.kind == "hero_dial") {
+                    HomeSection.add_speed_dial (this, this.content_box, sec, 3);
+                } else {
+                    HomeSection.add_section (this, this.content_box, sec);
+                }
+
+                return GLib.Source.CONTINUE;
+            });
         }
 
         private void clear_list () {

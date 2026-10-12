@@ -2,8 +2,8 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -43,8 +43,17 @@ pub unsafe extern "C" fn timbre_set_log_level(level: c_int) {
     install_tracing(level.clamp(0, 3) as u8);
 }
 
-pub type TimbreCallback = unsafe extern "C" fn(json: *mut c_char, error: *mut c_char, ud: *mut c_void);
-pub type TimbreDoneCallback = unsafe extern "C" fn(success: bool, error: *mut c_char, ud: *mut c_void);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_set_locale(hl: *const c_char, gl: *const c_char) {
+    let hl = from_c(hl).unwrap_or_else(|| "en".into());
+    let gl = from_c(gl).unwrap_or_else(|| "US".into());
+    crate::context::set_locale(hl, gl);
+}
+
+pub type TimbreCallback =
+    unsafe extern "C" fn(json: *mut c_char, error: *mut c_char, ud: *mut c_void);
+pub type TimbreDoneCallback =
+    unsafe extern "C" fn(success: bool, error: *mut c_char, ud: *mut c_void);
 
 pub struct TimbrePlayerHandle {
     player: Arc<AudioPlayer>,
@@ -148,7 +157,11 @@ pub unsafe extern "C" fn timbre_player_new() -> *mut TimbrePlayerHandle {
             return std::ptr::null_mut();
         }
     };
-    Box::into_raw(Box::new(TimbrePlayerHandle { player, runtime, ctx }))
+    Box::into_raw(Box::new(TimbrePlayerHandle {
+        player,
+        runtime,
+        ctx,
+    }))
 }
 
 #[unsafe(no_mangle)]
@@ -163,8 +176,12 @@ pub unsafe extern "C" fn timbre_player_play_file(
     handle: *mut TimbrePlayerHandle,
     path: *const c_char,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(path) = from_c(path) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(path) = from_c(path) else {
+        return false;
+    };
     h.player.play_file(&path).is_ok()
 }
 
@@ -176,7 +193,9 @@ pub unsafe extern "C" fn timbre_player_play_url(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
     let Some(url) = from_c(url) else { return false };
 
     let player = h.player.clone();
@@ -202,8 +221,12 @@ pub unsafe extern "C" fn timbre_player_play_track_id(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(id) = from_c(track_id) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(id) = from_c(track_id) else {
+        return false;
+    };
     if id.is_empty() {
         return false;
     }
@@ -277,7 +300,14 @@ async fn play_once(
         }
 
         player
-            .play_url(my_gen, Some(video), &info.uri, duration, info.user_agent.as_deref(), Some(&info))
+            .play_url(
+                my_gen,
+                Some(video),
+                &info.uri,
+                duration,
+                info.user_agent.as_deref(),
+                Some(&info),
+            )
             .await
             .map_err(|e| e.to_string())
     };
@@ -318,7 +348,9 @@ pub unsafe extern "C" fn timbre_player_seek(
     if target_secs < 0.0 {
         return false;
     }
-    let Some(h) = handle.as_ref() else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
     let player = h.player.clone();
     h.runtime.spawn(async move {
         if let Err(e) = player.seek(Duration::from_secs_f64(target_secs)).await {
@@ -347,12 +379,18 @@ pub unsafe extern "C" fn timbre_player_get_duration(handle: *mut TimbrePlayerHan
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_is_finished(handle: *mut TimbrePlayerHandle) -> bool {
-    handle.as_ref().map(|h| h.player.is_finished()).unwrap_or(false)
+    handle
+        .as_ref()
+        .map(|h| h.player.is_finished())
+        .unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_is_paused(handle: *mut TimbrePlayerHandle) -> bool {
-    handle.as_ref().map(|h| h.player.is_paused()).unwrap_or(false)
+    handle
+        .as_ref()
+        .map(|h| h.player.is_paused())
+        .unwrap_or(false)
 }
 
 #[unsafe(no_mangle)]
@@ -381,8 +419,12 @@ pub unsafe extern "C" fn timbre_player_get_state(handle: *mut TimbrePlayerHandle
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_take_last_error(handle: *mut TimbrePlayerHandle) -> *mut c_char {
-    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+pub unsafe extern "C" fn timbre_player_take_last_error(
+    handle: *mut TimbrePlayerHandle,
+) -> *mut c_char {
+    let Some(h) = handle.as_ref() else {
+        return std::ptr::null_mut();
+    };
     match h.player.take_error() {
         Some(msg) => to_c(msg),
         None => std::ptr::null_mut(),
@@ -391,13 +433,17 @@ pub unsafe extern "C" fn timbre_player_take_last_error(handle: *mut TimbrePlayer
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_get_stats(handle: *mut TimbrePlayerHandle) -> *mut c_char {
-    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+    let Some(h) = handle.as_ref() else {
+        return std::ptr::null_mut();
+    };
     to_c(serde_json::to_string(&h.player.stats()).unwrap_or_else(|_| "{}".into()))
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_audio_stats(handle: *mut TimbrePlayerHandle) -> *mut c_char {
-    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+    let Some(h) = handle.as_ref() else {
+        return std::ptr::null_mut();
+    };
     let store = h.player.store().clone();
     let result = h.runtime.block_on(async move {
         let (cache_bytes, cache_count) = store.size(StoreKind::Cache).await;
@@ -418,7 +464,9 @@ pub unsafe extern "C" fn timbre_audio_list(
     handle: *mut TimbrePlayerHandle,
     kind: c_int,
 ) -> *mut c_char {
-    let Some(h) = handle.as_ref() else { return std::ptr::null_mut() };
+    let Some(h) = handle.as_ref() else {
+        return std::ptr::null_mut();
+    };
     let store = h.player.store().clone();
     let kind = StoreKind::from_int(kind);
     let entries = h.runtime.block_on(store.list(kind));
@@ -432,8 +480,12 @@ pub unsafe extern "C" fn timbre_audio_remove(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(video_id) = from_c(video_id) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(video_id) = from_c(video_id) else {
+        return false;
+    };
     let store = h.player.store().clone();
     let user = SendPtr::new(ud);
     h.runtime.spawn(async move {
@@ -450,7 +502,9 @@ pub unsafe extern "C" fn timbre_audio_clear(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
     let store = h.player.store().clone();
     let kind = StoreKind::from_int(kind);
     let user = SendPtr::new(ud);
@@ -462,10 +516,7 @@ pub unsafe extern "C" fn timbre_audio_clear(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_audio_set_cache_limit(
-    handle: *mut TimbrePlayerHandle,
-    bytes: u64,
-) {
+pub unsafe extern "C" fn timbre_audio_set_cache_limit(handle: *mut TimbrePlayerHandle, bytes: u64) {
     let Some(h) = handle.as_ref() else { return };
     h.player.store().set_cache_limit(bytes);
 }
@@ -477,8 +528,12 @@ pub unsafe extern "C" fn timbre_audio_download(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(id) = from_c(track_id) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(id) = from_c(track_id) else {
+        return false;
+    };
     if id.is_empty() {
         return false;
     }
@@ -561,7 +616,10 @@ async fn download_to_store(
         let chunk_end = stream_pos + chunk.len() as u64;
         if chunk_end > saved_offset {
             let skip = saved_offset.saturating_sub(chunk_start) as usize;
-            writer.write(&chunk[skip..]).await.map_err(|e| e.to_string())?;
+            writer
+                .write(&chunk[skip..])
+                .await
+                .map_err(|e| e.to_string())?;
         }
         stream_pos = chunk_end;
     }
@@ -696,17 +754,35 @@ endpoint_json_str!(timbre_player_get_artist, |ctx, channel_id| {
     artist::get_artist(api, &channel_id).await
 });
 
+endpoint_json_str!(timbre_player_browse_section, |ctx, args_json| {
+    let args: crate::net::playlists::SectionArgs = serde_json::from_str(&args_json)
+        .map_err(|e| crate::net::NetError::Message(format!("invalid args: {e}")))?;
+    let api = ctx.session.api();
+    crate::net::playlists::browse_section_page(&*api, &args).await
+});
+
 endpoint_json_str!(timbre_player_get_radio, |ctx, track_id| {
     let api = ctx.session.api();
     playlists::radio_tracks(&*api, Some(&track_id), None).await
 });
 
-endpoint_json_str2!(timbre_player_get_watch_playlist, |ctx, video_id, playlist_id| {
-    let api = ctx.session.api();
-    let vid = if video_id.is_empty() { None } else { Some(video_id.as_str()) };
-    let pid = if playlist_id.is_empty() { None } else { Some(playlist_id.as_str()) };
-    playlists::get_watch_playlist(&*api, vid, pid, 50, false).await
-});
+endpoint_json_str2!(
+    timbre_player_get_watch_playlist,
+    |ctx, video_id, playlist_id| {
+        let api = ctx.session.api();
+        let vid = if video_id.is_empty() {
+            None
+        } else {
+            Some(video_id.as_str())
+        };
+        let pid = if playlist_id.is_empty() {
+            None
+        } else {
+            Some(playlist_id.as_str())
+        };
+        playlists::get_watch_playlist(&*api, vid, pid, 50, false).await
+    }
+);
 
 endpoint_json!(timbre_player_get_library_playlists, |ctx| {
     let api = ctx.session.api();
@@ -791,7 +867,9 @@ pub unsafe extern "C" fn timbre_player_logout(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
     let ctx = h.ctx.clone();
     let user = SendPtr::new(ud);
     h.runtime.spawn(async move {
@@ -805,17 +883,25 @@ pub unsafe extern "C" fn timbre_player_logout(
 pub unsafe extern "C" fn timbre_player_rate_track(
     handle: *mut TimbrePlayerHandle,
     track_id: *const c_char,
-    like: bool,
+    rating: c_int, // -1 = dislike, 0 = indifferent, 1 = like
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(track_id) = from_c(track_id) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(track_id) = from_c(track_id) else {
+        return false;
+    };
     let ctx = h.ctx.clone();
     let user = SendPtr::new(ud);
 
     h.runtime.spawn(async move {
-        let status = if like { LikeStatus::Like } else { LikeStatus::Indifferent };
+        let status = match rating {
+            1 => LikeStatus::Like,
+            -1 => LikeStatus::Dislike,
+            _ => LikeStatus::Indifferent,
+        };
         let result = ctx
             .session
             .rate_song(&track_id, status)
@@ -834,8 +920,12 @@ pub unsafe extern "C" fn timbre_player_subscribe_artist(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(channel_id) = from_c(channel_id) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(channel_id) = from_c(channel_id) else {
+        return false;
+    };
     let ctx = h.ctx.clone();
     let user = SendPtr::new(ud);
 
@@ -859,8 +949,12 @@ pub unsafe extern "C" fn timbre_player_remove_history(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(tokens_json) = from_c(tokens_json) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(tokens_json) = from_c(tokens_json) else {
+        return false;
+    };
     let ctx = h.ctx.clone();
     let user = SendPtr::new(ud);
 
@@ -889,9 +983,15 @@ pub unsafe extern "C" fn timbre_player_add_to_playlist(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(playlist_id) = from_c(playlist_id) else { return false };
-    let Some(track_ids_json) = from_c(track_ids_json) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(playlist_id) = from_c(playlist_id) else {
+        return false;
+    };
+    let Some(track_ids_json) = from_c(track_ids_json) else {
+        return false;
+    };
     let ctx = h.ctx.clone();
     let user = SendPtr::new(ud);
 
@@ -921,8 +1021,12 @@ pub unsafe extern "C" fn timbre_player_create_playlist(
     cb: Option<TimbreCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let (Some(title), Some(desc), Some(privacy)) = (from_c(title), from_c(description), from_c(privacy)) else {
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let (Some(title), Some(desc), Some(privacy)) =
+        (from_c(title), from_c(description), from_c(privacy))
+    else {
         return false;
     };
     let ctx = h.ctx.clone();
@@ -955,8 +1059,12 @@ pub unsafe extern "C" fn timbre_player_edit_playlist(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(playlist_id) = from_c(playlist_id) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(playlist_id) = from_c(playlist_id) else {
+        return false;
+    };
     let title = from_c(title).unwrap_or_default();
     let description = from_c(description).unwrap_or_default();
     let privacy = from_c(privacy).unwrap_or_default();
@@ -986,8 +1094,12 @@ pub unsafe extern "C" fn timbre_player_record_play(
     cb: Option<TimbreDoneCallback>,
     ud: *mut c_void,
 ) -> bool {
-    let Some(h) = handle.as_ref() else { return false };
-    let Some(track_id) = from_c(track_id) else { return false };
+    let Some(h) = handle.as_ref() else {
+        return false;
+    };
+    let Some(track_id) = from_c(track_id) else {
+        return false;
+    };
     let ctx = h.ctx.clone();
     let user = SendPtr::new(ud);
 
@@ -1019,10 +1131,7 @@ pub unsafe extern "C" fn timbre_audio_rebuild_sink(handle: *mut TimbrePlayerHand
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_set_active(
-    handle: *mut TimbrePlayerHandle,
-    active: bool,
-) {
+pub unsafe extern "C" fn timbre_player_set_active(handle: *mut TimbrePlayerHandle, active: bool) {
     if let Some(h) = handle.as_ref() {
         h.player.set_active(active);
     }

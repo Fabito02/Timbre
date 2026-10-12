@@ -1,6 +1,6 @@
 using Gtk 4.0;
 
-template $TimbreThemeSelector : Widget {
+template $TimbreThemeSelector: Widget {
   hexpand: true;
 
   Box box {
@@ -9,7 +9,11 @@ template $TimbreThemeSelector : Widget {
     spacing: 12;
 
     CheckButton follow {
-      styles ["theme-selector", "follow"]
+      styles [
+        "theme-selector",
+        "follow",
+      ]
+
       hexpand: true;
       halign: center;
       group: light;
@@ -20,7 +24,11 @@ template $TimbreThemeSelector : Widget {
     }
 
     CheckButton light {
-      styles ["theme-selector", "light"]
+      styles [
+        "theme-selector",
+        "light",
+      ]
+
       hexpand: true;
       halign: center;
       focus-on-click: false;
@@ -30,7 +38,11 @@ template $TimbreThemeSelector : Widget {
     }
 
     CheckButton dark {
-      styles ["theme-selector", "dark"]
+      styles [
+        "theme-selector",
+        "dark",
+      ]
+
       hexpand: true;
       halign: center;
       group: light;

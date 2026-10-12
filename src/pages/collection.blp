@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $TimbreCollectionPage : Adw.NavigationPage {
+template $TimbreCollectionPage: Adw.NavigationPage {
   title: _("Details");
 
   ScrolledWindow {
@@ -27,7 +27,10 @@ template $TimbreCollectionPage : Adw.NavigationPage {
             width-request: 160;
             height-request: 160;
             can-shrink: false;
-            styles ["card"]
+
+            styles [
+              "card",
+            ]
           }
 
           Box {
@@ -40,14 +43,21 @@ template $TimbreCollectionPage : Adw.NavigationPage {
               halign: start;
               wrap: true;
               xalign: 0;
-              styles ["title-1"]
+
+              styles [
+                "title-1",
+              ]
             }
 
             Label label_subtitle {
               halign: start;
               wrap: true;
               xalign: 0;
-              styles ["dim-label", "title-4"]
+
+              styles [
+                "dim-label",
+                "title-4",
+              ]
             }
 
             Button button_play_all {
@@ -55,7 +65,11 @@ template $TimbreCollectionPage : Adw.NavigationPage {
               margin-top: 12;
               icon-name: "media-playback-start-symbolic";
               label: _("Play All");
-              styles ["suggested-action", "pill"]
+
+              styles [
+                "suggested-action",
+                "pill",
+              ]
             }
           }
         }
@@ -68,7 +82,10 @@ template $TimbreCollectionPage : Adw.NavigationPage {
         ListBox tracks_list {
           selection-mode: none;
           visible: false;
-          styles ["boxed-list"]
+
+          styles [
+            "boxed-list",
+          ]
         }
       }
     }

@@ -133,7 +133,7 @@ namespace Timbre {
         public bool logout ([CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_rate_track")]
-        public bool rate_track (string track_id, bool like,
+        public bool rate_track (string track_id, int rating,
                                 [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_subscribe_artist")]
@@ -173,6 +173,10 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_set_active")]
         public void set_active (bool active);
+
+        [CCode (cname = "timbre_player_browse_section")]
+        public bool browse_section (string args_json,
+                                    [CCode (scope = "async")] JsonCallback cb);
     }
 
     [CCode (cname = "timbre_string_free")]
@@ -180,4 +184,7 @@ namespace Timbre {
 
     [CCode (cname = "timbre_set_log_level")]
     public static void set_log_level (int level);
+
+    [CCode (cname = "timbre_set_locale")]
+    public static void set_locale (string hl, string gl);
 }

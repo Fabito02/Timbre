@@ -1,3 +1,4 @@
 services_sources = files(
-    'queue_manager.vala',
+  'mpris.vala',
+  'queue_manager.vala',
 )

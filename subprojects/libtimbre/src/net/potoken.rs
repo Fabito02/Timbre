@@ -28,7 +28,10 @@ impl PoTokens {
                 "rustypipe-botguard not found; uploaded songs and gated formats will not play"
             ),
         }
-        Self { binary, minted: Mutex::new(HashMap::new()) }
+        Self {
+            binary,
+            minted: Mutex::new(HashMap::new()),
+        }
     }
 
     pub async fn for_video(&self, video_id: &str) -> Option<String> {
@@ -43,10 +46,13 @@ impl PoTokens {
         }
         let (value, expires) = parse(&String::from_utf8_lossy(&output.stdout))?;
         tracing::debug!(video_id, "po token minted");
-        self.minted
-            .lock()
-            .unwrap()
-            .insert(video_id.to_owned(), Token { value: value.clone(), expires });
+        self.minted.lock().unwrap().insert(
+            video_id.to_owned(),
+            Token {
+                value: value.clone(),
+                expires,
+            },
+        );
         Some(value)
     }
 
@@ -64,7 +70,10 @@ impl PoTokens {
 }
 
 fn parse(output: &str) -> Option<(String, SystemTime)> {
-    let line = output.lines().rev().find(|line| line.contains("valid_until="))?;
+    let line = output
+        .lines()
+        .rev()
+        .find(|line| line.contains("valid_until="))?;
     let mut parts = line.split_whitespace();
     let value = parts.next()?.to_owned();
     let seconds: u64 = parts

@@ -25,8 +25,20 @@ namespace Timbre {
             this.label_title.label = title;
             this.label_artist.label = artists;
 
-            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 150);
+            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 140);
             this.cover_binding.load (cover_url);
+
+            if (type_name == "Artist") {
+                this.add_css_class ("artist");
+            }
+            
+            if (type_name == "Song") {
+                this.add_css_class ("song");
+            }
+
+            if (type_name == "Album") {
+                this.add_css_class ("album");
+            }
         }
     }
 }

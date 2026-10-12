@@ -1,0 +1,100 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreHomeSpeedTile: Button {
+  styles [
+    "home-speed-tile",
+    "card",
+  ]
+
+  Box {
+    orientation: horizontal;
+    spacing: 10;
+
+    Overlay {
+      valign: center;
+
+      Picture image_cover {
+        width-request: 48;
+        height-request: 48;
+        content-fit: cover;
+        valign: center;
+
+        styles [
+          "home-speed-cover",
+        ]
+      }
+
+      [overlay]
+      Adw.Bin play_overlay {
+        halign: center;
+        valign: center;
+
+        styles [
+          "play-overlay",
+        ]
+
+        Image {
+          icon-name: "media-playback-start-symbolic";
+          pixel-size: 14;
+
+          styles [
+            "play-overlay-icon-speed-tile",
+          ]
+        }
+      }
+
+      [overlay]
+      Adw.Bin {
+        halign: end;
+        valign: end;
+
+        styles [
+          "album-overlay",
+        ]
+
+        Image {
+          icon-name: "media-optical-symbolic";
+          pixel-size: 12;
+
+          styles [
+            "album-overlay-icon-speed-tile",
+          ]
+        }
+      }
+    }
+
+    Box {
+      orientation: vertical;
+      spacing: 2;
+      valign: center;
+      hexpand: true;
+
+      Label label_title {
+        halign: start;
+        xalign: 0;
+        ellipsize: end;
+        lines: 2;
+        wrap: true;
+        wrap-mode: word_char;
+        hexpand: true;
+        max-width-chars: 24;
+
+        styles [
+          "home-speed-title",
+        ]
+      }
+
+      Label label_sub {
+        halign: start;
+        xalign: 0;
+        ellipsize: end;
+
+        styles [
+          "caption",
+          "dim-label",
+        ]
+      }
+    }
+  }
+}

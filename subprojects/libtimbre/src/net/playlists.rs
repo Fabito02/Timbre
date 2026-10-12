@@ -3,19 +3,20 @@ use std::path::Path;
 use std::sync::{Arc, LazyLock};
 
 use regex::Regex;
-use serde::Serialize;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use super::browse::{Browse, Continuation};
+use crate::net::NetError;
 use crate::net::cache::{LibraryIds, SortMetric};
 use crate::net::items::*;
 use crate::net::library::{self, parse_two_row};
 use crate::net::media::{HttpAuth, ItemKind, LikeStatus, MediaItem, Named, Person, Track};
-use crate::net::search::{search, SearchFilter};
-use crate::net::NetError;
+use crate::net::search::{SearchFilter, search};
 
 const HEADER_SECTION: &str = "/contents/twoColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0";
-const SECONDARY_SECTIONS: &str = "/contents/twoColumnBrowseResultsRenderer/secondaryContents/sectionListRenderer/contents";
+const SECONDARY_SECTIONS: &str =
+    "/contents/twoColumnBrowseResultsRenderer/secondaryContents/sectionListRenderer/contents";
 const SINGLE_SECTIONS: &str = "/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents";
 const MAX_METRIC_PAGES: usize = 60;
 const MAX_CONTINUATION_PAGES: usize = 100;
@@ -33,6 +34,21 @@ fn message(text: impl Into<String>) -> NetError {
 fn to_int(text: &str) -> Option<u32> {
     let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
     digits.parse().ok()
+}
+
+fn is_auto_playlist(playlist_id: &str) -> bool {
+    playlist_id.starts_with("RD")
+        || playlist_id.starts_with("VLLM")
+        || playlist_id == "LM"
+        || playlist_id == "SE"
+}
+
+fn is_radio_playlist(playlist_id: &str) -> bool {
+    playlist_id.starts_with("RD")
+}
+
+fn is_likes_playlist(playlist_id: &str) -> bool {
+    playlist_id == "LM" || playlist_id.starts_with("VLLM")
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -71,6 +87,10 @@ pub async fn get_playlist(
     playlist_id: &str,
     limit: Option<usize>,
 ) -> Result<PlaylistDetails, NetError> {
+    if is_auto_playlist(playlist_id) {
+        return get_auto_playlist(api, playlist_id, limit).await;
+    }
+
     let browse_id = if playlist_id.starts_with("VL") {
         playlist_id.to_owned()
     } else {
@@ -83,7 +103,9 @@ pub async fn get_playlist(
         details.id = playlist_id.trim_start_matches("VL").to_owned();
     }
     let collaborative = details.collaborators.is_some();
-    let shelf = response.pointer(&format!("{SECONDARY_SECTIONS}/0/musicPlaylistShelfRenderer"));
+    let shelf = response.pointer(&format!(
+        "{SECONDARY_SECTIONS}/0/musicPlaylistShelfRenderer"
+    ));
     let limit = limit.unwrap_or(usize::MAX);
     let mut tracks = shelf
         .map(|s| parse_playlist_items(array_at(s, "/contents"), false, collaborative))
@@ -106,6 +128,90 @@ pub async fn get_playlist(
         details.title = "Your Likes".to_owned();
         details.description = "Your liked songs from YouTube Music.".to_owned();
     }
+    tracing::info!(
+        playlist_id,
+        tracks = details.tracks.len(),
+        declared = ?details.track_count,
+        "playlist fetched"
+    );
+    Ok(details)
+}
+
+async fn get_auto_playlist(
+    api: &dyn Browse,
+    playlist_id: &str,
+    limit: Option<usize>,
+) -> Result<PlaylistDetails, NetError> {
+    let radio = is_radio_playlist(playlist_id);
+    let is_likes = is_likes_playlist(playlist_id);
+    let want = match (limit, is_likes) {
+        (Some(n), _) => n,
+        (None, true) => usize::MAX,
+        (None, false) => 500,
+    };
+
+    let browse_id = if playlist_id.starts_with("VL") {
+        playlist_id.to_owned()
+    } else {
+        format!("VL{playlist_id}")
+    };
+
+    let (title, description, thumbnails) = match api
+        .post("browse", json!({ "browseId": browse_id }))
+        .await
+    {
+        Ok(resp) => {
+            let header = resp
+                .pointer("/header/musicImmersiveHeaderRenderer")
+                .or_else(|| resp.pointer("/header/musicVisualHeaderRenderer"))
+                .or_else(|| {
+                    resp.pointer(
+                        "/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/musicResponsiveHeaderRenderer",
+                    )
+                });
+            let t = header
+                .and_then(|h| owned_at(h, "/title/runs/0/text"))
+                .unwrap_or_default();
+            let d = header
+                .and_then(|h| owned_at(h, "/description/runs/0/text"))
+                .unwrap_or_default();
+            let thumbs = header
+                .map(|h| thumbnails_at(h, "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails"))
+                .unwrap_or_default();
+            (t, d, thumbs)
+        }
+        Err(_) => (String::new(), String::new(), Vec::new()),
+    };
+
+    let watch = get_watch_playlist(api, None, Some(playlist_id), want, radio).await?;
+
+    let tracks: Vec<Track> = watch.tracks.into_iter().map(|w| w.track).collect();
+
+    let mut details = PlaylistDetails {
+        id: playlist_id.to_owned(),
+        title: if title.is_empty() {
+            playlist_id.to_owned()
+        } else {
+            title
+        },
+        description,
+        thumbnails,
+        tracks,
+        ..PlaylistDetails::default()
+    };
+
+    if playlist_id == "LM" {
+        details.title = "Your Likes".to_owned();
+        details.description = "Your liked songs from YouTube Music.".to_owned();
+    }
+
+    details.sum_duration();
+    tracing::info!(
+        playlist_id,
+        radio,
+        tracks = details.tracks.len(),
+        "auto playlist fetched"
+    );
     Ok(details)
 }
 
@@ -118,7 +224,10 @@ fn parse_playlist_header(response: &Value) -> Option<PlaylistDetails> {
         let editable = &header_data["musicEditablePlaylistDetailHeaderRenderer"];
         (
             editable.pointer("/header/musicResponsiveHeaderRenderer")?,
-            owned_at(editable, "/editHeader/musicPlaylistEditHeaderRenderer/privacy"),
+            owned_at(
+                editable,
+                "/editHeader/musicPlaylistEditHeaderRenderer/privacy",
+            ),
             owned_at(editable, "/playlistId"),
         )
     } else {
@@ -126,7 +235,10 @@ fn parse_playlist_header(response: &Value) -> Option<PlaylistDetails> {
         (
             header,
             Some("PUBLIC".to_owned()),
-            owned_at(header, "/buttons/1/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/playlistId"),
+            owned_at(
+                header,
+                "/buttons/1/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/playlistId",
+            ),
         )
     };
     let mut details = PlaylistDetails {
@@ -134,9 +246,15 @@ fn parse_playlist_header(response: &Value) -> Option<PlaylistDetails> {
         privacy,
         ..PlaylistDetails::default()
     };
-    details.description = runs_text(array_at(header, "/description/musicDescriptionShelfRenderer/description/runs"));
+    details.description = runs_text(array_at(
+        header,
+        "/description/musicDescriptionShelfRenderer/description/runs",
+    ));
     details.title = runs_text(array_at(header, "/title/runs"));
-    details.thumbnails = thumbnails_at(header, "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails");
+    details.thumbnails = thumbnails_at(
+        header,
+        "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails",
+    );
     if let Some(face) = header.pointer("/facepile/avatarStackViewModel") {
         let command = face.pointer("/rendererContext/commandContext/onTap/innertubeCommand");
         let is_collab = command
@@ -173,7 +291,9 @@ fn parse_playlist_header(response: &Value) -> Option<PlaylistDetails> {
 
 pub async fn get_album(api: &dyn Browse, browse_id: &str) -> Result<PlaylistDetails, NetError> {
     if !browse_id.starts_with("MPRE") {
-        return Err(message("Invalid album browseId provided, must start with MPRE."));
+        return Err(message(
+            "Invalid album browseId provided, must start with MPRE.",
+        ));
     }
     let response = api.post("browse", json!({ "browseId": browse_id })).await?;
     let header = response
@@ -185,23 +305,42 @@ pub async fn get_album(api: &dyn Browse, browse_id: &str) -> Result<PlaylistDeta
     };
     details.title = owned_at(header, "/title/runs/0/text").unwrap_or_default();
     details.album_type = owned_at(header, "/subtitle/runs/0/text");
-    details.thumbnails = thumbnails_at(header, "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails");
-    details.description = runs_text(array_at(header, "/description/musicDescriptionShelfRenderer/description/runs"));
+    details.thumbnails = thumbnails_at(
+        header,
+        "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails",
+    );
+    details.description = runs_text(array_at(
+        header,
+        "/description/musicDescriptionShelfRenderer/description/runs",
+    ));
     let subtitle = array_at(header, "/subtitle/runs");
     details.year = parse_song_runs(subtitle.get(2..).unwrap_or(&[])).year;
     details.author = parse_artists_runs(array_at(header, "/straplineTextOne/runs"));
     let second = array_at(header, "/secondSubtitle/runs");
     if second.len() > 1 {
-        details.track_count = second.first().and_then(|r| str_at(r, "/text")).and_then(to_int);
+        details.track_count = second
+            .first()
+            .and_then(|r| str_at(r, "/text"))
+            .and_then(to_int);
         details.duration = second.get(2).and_then(|r| owned_at(r, "/text"));
     } else {
         details.duration = second.first().and_then(|r| owned_at(r, "/text"));
     }
     let buttons = array_at(header, "/buttons");
-    let play = buttons.iter().find(|b| b.get("musicPlayButtonRenderer").is_some());
+    let play = buttons
+        .iter()
+        .find(|b| b.get("musicPlayButtonRenderer").is_some());
     details.audio_playlist_id = play.and_then(|b| {
-        owned_at(b, "/musicPlayButtonRenderer/playNavigationEndpoint/watchPlaylistEndpoint/playlistId")
-            .or_else(|| owned_at(b, "/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/playlistId"))
+        owned_at(
+            b,
+            "/musicPlayButtonRenderer/playNavigationEndpoint/watchPlaylistEndpoint/playlistId",
+        )
+        .or_else(|| {
+            owned_at(
+                b,
+                "/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/playlistId",
+            )
+        })
     });
     if let Some(service) = buttons
         .iter()
@@ -233,7 +372,10 @@ pub async fn get_album(api: &dyn Browse, browse_id: &str) -> Result<PlaylistDeta
     Ok(details)
 }
 
-pub async fn get_upload_album(api: &dyn Browse, browse_id: &str) -> Result<PlaylistDetails, NetError> {
+pub async fn get_upload_album(
+    api: &dyn Browse,
+    browse_id: &str,
+) -> Result<PlaylistDetails, NetError> {
     let response = api.post("browse", json!({ "browseId": browse_id })).await?;
     let header = response
         .pointer("/header/musicDetailHeaderRenderer")
@@ -244,7 +386,10 @@ pub async fn get_upload_album(api: &dyn Browse, browse_id: &str) -> Result<Playl
     };
     details.title = owned_at(header, "/title/runs/0/text").unwrap_or_default();
     details.album_type = owned_at(header, "/subtitle/runs/0/text");
-    details.thumbnails = thumbnails_at(header, "/thumbnail/croppedSquareThumbnailRenderer/thumbnail/thumbnails");
+    details.thumbnails = thumbnails_at(
+        header,
+        "/thumbnail/croppedSquareThumbnailRenderer/thumbnail/thumbnails",
+    );
     details.description = owned_at(header, "/description/runs/0/text").unwrap_or_default();
     let subtitle = array_at(header, "/subtitle/runs");
     let parsed = parse_song_runs(subtitle.get(2..).unwrap_or(&[]));
@@ -252,7 +397,10 @@ pub async fn get_upload_album(api: &dyn Browse, browse_id: &str) -> Result<Playl
     details.year = parsed.year;
     let second = array_at(header, "/secondSubtitle/runs");
     if second.len() > 1 {
-        details.track_count = second.first().and_then(|r| str_at(r, "/text")).and_then(to_int);
+        details.track_count = second
+            .first()
+            .and_then(|r| str_at(r, "/text"))
+            .and_then(to_int);
         details.duration = second.get(2).and_then(|r| owned_at(r, "/text"));
     } else {
         details.duration = second.first().and_then(|r| owned_at(r, "/text"));
@@ -269,14 +417,19 @@ pub async fn get_upload_album(api: &dyn Browse, browse_id: &str) -> Result<Playl
 
 pub async fn get_upload_songs(api: &dyn Browse) -> Result<Vec<Track>, NetError> {
     let response = api
-        .post("browse", json!({ "browseId": "FEmusic_library_privately_owned_tracks" }))
+        .post(
+            "browse",
+            json!({ "browseId": "FEmusic_library_privately_owned_tracks" }),
+        )
         .await?;
     let sections = library_sections(&response);
     let shelf = sections.iter().find_map(|s| {
         s.get("musicShelfRenderer")
             .or_else(|| s.pointer("/itemSectionRenderer/contents/0/musicShelfRenderer"))
     });
-    let Some(shelf) = shelf else { return Ok(Vec::new()) };
+    let Some(shelf) = shelf else {
+        return Ok(Vec::new());
+    };
     let mut songs = parse_uploaded_items(array_at(shelf, "/contents"));
     let rest = Continuation::browse(api, next_continuation(shelf))
         .pages(MAX_CONTINUATION_PAGES)
@@ -299,7 +452,9 @@ pub async fn get_watch_playlist(
         "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
     });
     if video_id.is_none() && playlist_id.is_none() {
-        return Err(message("You must provide either a video id, a playlist id, or both"));
+        return Err(message(
+            "You must provide either a video id, a playlist id, or both",
+        ));
     }
     let mut playlist_id = playlist_id.map(str::to_owned);
     if let Some(v) = video_id {
@@ -319,7 +474,11 @@ pub async fn get_watch_playlist(
     let mut is_playlist = false;
     if let Some(p) = &playlist_id {
         let pid = p.trim_start_matches("VL");
-        is_playlist = pid.starts_with("PL") || pid.starts_with("OLA");
+        is_playlist = pid.starts_with("PL")
+            || pid.starts_with("OLA")
+            || pid == "LM"
+            || pid.starts_with("VLLM")
+            || pid == "SE";
         body["playlistId"] = json!(pid);
     }
     if radio {
@@ -334,12 +493,17 @@ pub async fn get_watch_playlist(
         .ok_or_else(|| {
             let mut msg = "No content returned by the server.".to_owned();
             if let Some(p) = &playlist_id {
-                msg.push_str(&format!("\nEnsure you have access to {p} - a private playlist may cause this."));
+                msg.push_str(&format!(
+                    "\nEnsure you have access to {p} - a private playlist may cause this."
+                ));
             }
             message(msg)
         })?;
     let panel_playlist = array_at(results, "/contents").iter().find_map(|x| {
-        owned_at(x, "/playlistPanelVideoRenderer/navigationEndpoint/watchEndpoint/playlistId")
+        owned_at(
+            x,
+            "/playlistPanelVideoRenderer/navigationEndpoint/watchEndpoint/playlistId",
+        )
     });
     let mut tracks = parse_watch_playlist(array_at(results, "/contents"));
     let key = if is_playlist {
@@ -350,11 +514,14 @@ pub async fn get_watch_playlist(
     let token = owned_at(results, key);
     let rest = Continuation::query(api, "next", body, token)
         .limit(limit.saturating_sub(tracks.len()))
-        .pages(20)
+        .pages(MAX_CONTINUATION_PAGES)
         .collect(|entries| parse_watch_playlist(entries.iter().copied()))
         .await;
     tracks.extend(rest.strict()?);
-    Ok(WatchPlaylist { tracks, playlist_id: panel_playlist })
+    Ok(WatchPlaylist {
+        tracks,
+        playlist_id: panel_playlist,
+    })
 }
 
 pub async fn radio_tracks(
@@ -365,17 +532,28 @@ pub async fn radio_tracks(
     get_watch_playlist(api, video_id, playlist_id, 50, true).await
 }
 
-pub async fn find_audio_version(api: &dyn Browse, video_id: &str) -> Result<Option<Track>, NetError> {
+pub async fn find_audio_version(
+    api: &dyn Browse,
+    video_id: &str,
+) -> Result<Option<Track>, NetError> {
     let watch = get_watch_playlist(api, Some(video_id), None, 1, false)
         .await
         .unwrap_or_default();
-    let Some(current) = watch.tracks.first() else { return Ok(None) };
-    let cur_type = current.track.video_type.clone().unwrap_or_default().to_uppercase();
+    let Some(current) = watch.tracks.first() else {
+        return Ok(None);
+    };
+    let cur_type = current
+        .track
+        .video_type
+        .clone()
+        .unwrap_or_default()
+        .to_uppercase();
     if cur_type == "MUSIC_VIDEO_TYPE_ATV" {
         return Ok(None);
     }
     if let Some(cp) = &current.counterpart {
-        let is_song = cp.video_type.as_deref().map(str::to_uppercase).as_deref() == Some("MUSIC_VIDEO_TYPE_ATV");
+        let is_song = cp.video_type.as_deref().map(str::to_uppercase).as_deref()
+            == Some("MUSIC_VIDEO_TYPE_ATV");
         if cp.video_id.as_str() != video_id && is_song {
             return Ok(Some(cp.clone()));
         }
@@ -409,7 +587,11 @@ pub async fn find_audio_version(api: &dyn Browse, video_id: &str) -> Result<Opti
 }
 
 fn normalize_title(title: &str) -> String {
-    title.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
+    title
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect()
 }
 
 pub async fn get_album_browse_id(
@@ -417,7 +599,9 @@ pub async fn get_album_browse_id(
     auth: Option<&HttpAuth>,
     audio_playlist_id: &str,
 ) -> Result<Option<String>, NetError> {
-    let mut request = http.get(format!("https://music.youtube.com/playlist?list={audio_playlist_id}"));
+    let mut request = http.get(format!(
+        "https://music.youtube.com/playlist?list={audio_playlist_id}"
+    ));
     if let Some(auth) = auth {
         request = request
             .header("Cookie", &auth.cookie)
@@ -446,7 +630,8 @@ pub async fn rate_playlist(
         LikeStatus::Dislike => "like/dislike",
         LikeStatus::Indifferent => "like/removelike",
     };
-    api.post(endpoint, json!({ "target": { "playlistId": pid } })).await?;
+    api.post(endpoint, json!({ "target": { "playlistId": pid } }))
+        .await?;
     Ok(())
 }
 
@@ -462,7 +647,8 @@ pub async fn edit_playlist(
         actions.push(json!({ "action": "ACTION_SET_PLAYLIST_NAME", "playlistName": t }));
     }
     if let Some(d) = description.filter(|d| !d.is_empty()) {
-        actions.push(json!({ "action": "ACTION_SET_PLAYLIST_DESCRIPTION", "playlistDescription": d }));
+        actions
+            .push(json!({ "action": "ACTION_SET_PLAYLIST_DESCRIPTION", "playlistDescription": d }));
     }
     if let Some(p) = privacy.filter(|p| !p.is_empty()) {
         actions.push(json!({ "action": "ACTION_SET_PLAYLIST_PRIVACY", "playlistPrivacy": p }));
@@ -494,7 +680,9 @@ pub async fn remove_playlist_items(
         })
         .collect();
     if actions.is_empty() {
-        return Err(message("Cannot remove songs, because setVideoId is missing"));
+        return Err(message(
+            "Cannot remove songs, because setVideoId is missing",
+        ));
     }
     api.post(
         "browse/edit_playlist",
@@ -607,10 +795,16 @@ pub async fn set_playlist_thumbnail(
     let start = session(
         http.post("https://music.youtube.com/playlist_image_upload/playlist_custom_thumbnail"),
     )
-    .header("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+    .header(
+        "Content-Type",
+        "application/x-www-form-urlencoded;charset=utf-8",
+    )
     .header("X-Goog-Upload-Command", "start")
     .header("X-Goog-Upload-Protocol", "resumable")
-    .header("X-Goog-Upload-Header-Content-Length", bytes.len().to_string())
+    .header(
+        "X-Goog-Upload-Header-Content-Length",
+        bytes.len().to_string(),
+    )
     .body(Vec::new())
     .send()
     .await?;
@@ -622,7 +816,10 @@ pub async fn set_playlist_thumbnail(
         .ok_or_else(|| message(format!("cover upload refused: HTTP {}", start.status())))?;
 
     let upload = session(http.post(&upload_url))
-        .header("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+        .header(
+            "Content-Type",
+            "application/x-www-form-urlencoded;charset=utf-8",
+        )
         .header("X-Goog-Upload-Command", "upload, finalize")
         .header("X-Goog-Upload-Offset", "0")
         .body(bytes)
@@ -667,8 +864,12 @@ pub async fn delete_playlist(api: &dyn Browse, playlist_id: &str) -> Result<(), 
     Ok(())
 }
 
-pub async fn fetch_library_ids(api: Arc<dyn Browse>) -> Result<(LibraryIds, Vec<MediaItem>), NetError> {
-    let playlists = library::library_playlists(api.clone()).await.unwrap_or_default();
+pub async fn fetch_library_ids(
+    api: Arc<dyn Browse>,
+) -> Result<(LibraryIds, Vec<MediaItem>), NetError> {
+    let playlists = library::library_playlists(api.clone())
+        .await
+        .unwrap_or_default();
     let albums = library::library_albums(api).await.unwrap_or_default();
     let mut ids = LibraryIds::default();
     ids.playlists.extend(playlists.iter().map(|p| p.id.clone()));
@@ -687,10 +888,16 @@ pub fn editable_playlists(playlists: &[MediaItem], account_name: Option<&str>) -
         .iter()
         .filter(|p| {
             let pid = p.id.as_str();
-            if !(pid.starts_with("PL") || pid.starts_with("VL")) || ["LM", "SE", "VLLM"].contains(&pid) {
+            if !(pid.starts_with("PL") || pid.starts_with("VL"))
+                || ["LM", "SE", "VLLM"].contains(&pid)
+            {
                 return false;
             }
-            let author = p.artists.first().map(|a| a.name.to_lowercase()).unwrap_or_default();
+            let author = p
+                .artists
+                .first()
+                .map(|a| a.name.to_lowercase())
+                .unwrap_or_default();
             author.is_empty() || author == "you" || (!user.is_empty() && author == user)
         })
         .cloned()
@@ -702,7 +909,11 @@ pub fn is_own_playlist(
     playlist_id: &str,
     account_name: Option<&str>,
 ) -> bool {
-    let pid = if playlist_id.is_empty() { details.id.as_str() } else { playlist_id };
+    let pid = if playlist_id.is_empty() {
+        details.id.as_str()
+    } else {
+        playlist_id
+    };
     owns_playlist(
         pid,
         details.author.first().map(|a| a.name.as_str()),
@@ -717,7 +928,9 @@ pub fn owns_playlist(
     collaborators: Option<&str>,
     account_name: Option<&str>,
 ) -> bool {
-    let Some(user_name) = account_name.filter(|n| !n.is_empty()) else { return false };
+    let Some(user_name) = account_name.filter(|n| !n.is_empty()) else {
+        return false;
+    };
     if ["LM", "SE", "VLLM"].contains(&playlist_id)
         || !(playlist_id.starts_with("PL") || playlist_id.starts_with("VL"))
     {
@@ -739,7 +952,11 @@ fn normalize_browse_playlist_id(playlist_id: &str) -> Option<String> {
     if pid.is_empty() {
         return None;
     }
-    Some(if pid.starts_with("VL") { pid.to_owned() } else { format!("VL{pid}") })
+    Some(if pid.starts_with("VL") {
+        pid.to_owned()
+    } else {
+        format!("VL{pid}")
+    })
 }
 
 pub async fn playlist_added_dates(
@@ -753,13 +970,16 @@ pub async fn playlist_added_dates(
     let mut response = api.post("browse", json!({ "browseId": browse_id })).await?;
     for _ in 0..MAX_METRIC_PAGES {
         for item in walk_key(&response, "playlistItemData") {
-            if let (Some(vid), Some(added)) =
-                (str_at(item, "/videoId"), item.get("voteSortValue").and_then(Value::as_i64))
-            {
+            if let (Some(vid), Some(added)) = (
+                str_at(item, "/videoId"),
+                item.get("voteSortValue").and_then(Value::as_i64),
+            ) {
                 dates.entry(vid.to_owned()).or_insert(added);
             }
         }
-        let Some(token) = continuation_token_for_rows(&response, &[MRLIR]) else { break };
+        let Some(token) = continuation_token_for_rows(&response, &[MRLIR]) else {
+            break;
+        };
         response = match api.post("browse", json!({ "continuation": token })).await {
             Ok(r) => r,
             Err(err) => {
@@ -793,7 +1013,9 @@ fn harvest_view_counts(response: &Value, out: &mut SortMetric) {
         if str_at(lockup, "/contentType") != Some("LOCKUP_CONTENT_TYPE_VIDEO") {
             continue;
         }
-        let Some(vid) = str_at(lockup, "/contentId") else { continue };
+        let Some(vid) = str_at(lockup, "/contentId") else {
+            continue;
+        };
         if out.contains_key(vid) {
             continue;
         }
@@ -810,7 +1032,9 @@ fn harvest_view_counts(response: &Value, out: &mut SortMetric) {
         }
     }
     for item in walk_key(response, "playlistVideoRenderer") {
-        let Some(vid) = str_at(item, "/videoId") else { continue };
+        let Some(vid) = str_at(item, "/videoId") else {
+            continue;
+        };
         if out.contains_key(vid) {
             continue;
         }
@@ -825,13 +1049,10 @@ fn harvest_view_counts(response: &Value, out: &mut SortMetric) {
 
 fn sapisid_hash(cookie: &str, origin: &str) -> Option<String> {
     use sha1::{Digest, Sha1};
-    let sapisid = cookie
-        .split(';')
-        .map(str::trim)
-        .find_map(|p| {
-            p.strip_prefix("__Secure-3PAPISID=")
-                .or_else(|| p.strip_prefix("SAPISID="))
-        })?;
+    let sapisid = cookie.split(';').map(str::trim).find_map(|p| {
+        p.strip_prefix("__Secure-3PAPISID=")
+            .or_else(|| p.strip_prefix("SAPISID="))
+    })?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
@@ -888,7 +1109,9 @@ pub async fn playlist_view_counts(
     };
     for _ in 0..MAX_METRIC_PAGES {
         harvest_view_counts(&response, &mut views);
-        let Some(token) = continuation_token_for_rows(&response, &["lockupViewModel", "playlistVideoRenderer"]) else {
+        let Some(token) =
+            continuation_token_for_rows(&response, &["lockupViewModel", "playlistVideoRenderer"])
+        else {
             break;
         };
         if let Some(map) = body.as_object_mut() {
@@ -913,7 +1136,12 @@ pub async fn playlist_view_counts(
 async fn fetch_continuation(api: &dyn Browse, token: Option<String>) -> Vec<MediaItem> {
     Continuation::browse(api, token)
         .pages(MAX_CONTINUATION_PAGES)
-        .collect(|entries| entries.iter().filter_map(|e| parse_channel_item(e)).collect())
+        .collect(|entries| {
+            entries
+                .iter()
+                .filter_map(|e| parse_channel_item(e))
+                .collect()
+        })
         .await
         .items
 }
@@ -930,8 +1158,15 @@ pub async fn raw_parse_channel_content(
     let response = api.post("browse", body).await?;
     let mut items = Vec::new();
     for section in array_at(&response, SINGLE_SECTIONS) {
-        for key in ["gridRenderer", "musicShelfRenderer", "musicPlaylistShelfRenderer", "musicCarouselShelfRenderer"] {
-            let Some(renderer) = section.get(key) else { continue };
+        for key in [
+            "gridRenderer",
+            "musicShelfRenderer",
+            "musicPlaylistShelfRenderer",
+            "musicCarouselShelfRenderer",
+        ] {
+            let Some(renderer) = section.get(key) else {
+                continue;
+            };
             let entries = if renderer.get("items").is_some() {
                 array_at(renderer, "/items")
             } else {
@@ -956,7 +1191,9 @@ pub async fn raw_parse_playlist(
     let mut items = Vec::new();
     for section in array_at(&response, SECONDARY_SECTIONS) {
         for key in ["musicPlaylistShelfRenderer", "musicShelfRenderer"] {
-            let Some(renderer) = section.get(key) else { continue };
+            let Some(renderer) = section.get(key) else {
+                continue;
+            };
             for raw in array_at(renderer, "/contents") {
                 match item_continuation_token(raw) {
                     Some(token) => items.extend(fetch_continuation(api, Some(token)).await),
@@ -1031,6 +1268,162 @@ pub fn track_search_text(track: &Track) -> (String, String, String) {
     (
         track.title.to_lowercase(),
         track.artist.to_lowercase(),
-        track.album.as_ref().map(|a| a.name.to_lowercase()).unwrap_or_default(),
+        track
+            .album
+            .as_ref()
+            .map(|a| a.name.to_lowercase())
+            .unwrap_or_default(),
     )
+}
+
+#[derive(Default, Serialize)]
+pub struct SectionPage {
+    pub items: Vec<MediaItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SectionArgs {
+    #[serde(default)]
+    pub browse_id: Option<String>,
+    #[serde(default)]
+    pub params: Option<String>,
+    #[serde(default)]
+    pub continuation: Option<String>,
+}
+
+pub async fn browse_section_page(
+    api: &dyn Browse,
+    args: &SectionArgs,
+) -> Result<SectionPage, NetError> {
+    let mut body = json!({});
+    if let Some(c) = args.continuation.as_deref().filter(|s| !s.is_empty()) {
+        body["continuation"] = json!(c);
+    } else {
+        let b = args
+            .browse_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| NetError::Message("browse_id required for the first page".into()))?;
+        body["browseId"] = json!(b);
+        if let Some(p) = args.params.as_deref().filter(|s| !s.is_empty()) {
+            body["params"] = json!(p);
+        }
+    }
+    let response = api.post("browse", body).await?;
+    Ok(extract_section_page(&response))
+}
+
+fn extract_section_page(response: &Value) -> SectionPage {
+    let mut items: Vec<MediaItem> = Vec::new();
+    let mut token: Option<String> = find_continuation_token(response);
+
+    for section in array_at(response, SINGLE_SECTIONS)
+        .iter()
+        .chain(array_at(response, SECONDARY_SECTIONS).iter())
+    {
+        harvest_section(section, &mut items, &mut token);
+    }
+
+    if items.is_empty() {
+        for section in walk_sections(response) {
+            harvest_section(section, &mut items, &mut token);
+        }
+    }
+
+    if token.is_none() {
+        for action in array_at(response, "/onResponseReceivedActions") {
+            for raw in array_at(action, "/appendContinuationItemsAction/continuationItems") {
+                if let Some(t) = item_continuation_token(raw) {
+                    token = Some(t);
+                    continue;
+                }
+                if let Some(item) = parse_channel_item(raw) {
+                    items.push(item);
+                }
+            }
+        }
+    }
+
+    SectionPage {
+        items,
+        continuation: token,
+    }
+}
+
+fn find_continuation_token(root: &Value) -> Option<String> {
+    for node in walk_key(root, "continuationItemRenderer") {
+        if let Some(t) = owned_at(node, "/continuationEndpoint/continuationCommand/token") {
+            return Some(t);
+        }
+    }
+    for node in walk_key(root, "nextContinuationData") {
+        if let Some(t) = owned_at(node, "/continuation") {
+            return Some(t);
+        }
+    }
+    for node in walk_key(root, "nextRadioContinuationData") {
+        if let Some(t) = owned_at(node, "/continuation") {
+            return Some(t);
+        }
+    }
+    None
+}
+
+fn harvest_section(section: &Value, items: &mut Vec<MediaItem>, token: &mut Option<String>) {
+    const KEYS: [&str; 4] = [
+        "gridRenderer",
+        "musicShelfRenderer",
+        "musicPlaylistShelfRenderer",
+        "musicCarouselShelfRenderer",
+    ];
+    for key in KEYS {
+        let Some(renderer) = section.get(key) else {
+            continue;
+        };
+        let entries = if renderer.get("items").is_some() {
+            array_at(renderer, "/items")
+        } else {
+            array_at(renderer, "/contents")
+        };
+        for raw in entries {
+            if let Some(t) = item_continuation_token(raw) {
+                *token = Some(t);
+                continue;
+            }
+            if let Some(item) = parse_channel_item(raw) {
+                items.push(item);
+            }
+        }
+        if token.is_none() {
+            if let Some(t) = next_continuation(renderer) {
+                *token = Some(t);
+            }
+        }
+    }
+}
+
+fn walk_sections(root: &Value) -> Vec<&Value> {
+    const KEYS: [&str; 4] = [
+        "gridRenderer",
+        "musicShelfRenderer",
+        "musicPlaylistShelfRenderer",
+        "musicCarouselShelfRenderer",
+    ];
+    let mut out: Vec<&Value> = Vec::new();
+    let mut stack: Vec<&Value> = vec![root];
+    while let Some(node) = stack.pop() {
+        match node {
+            Value::Object(map) => {
+                if KEYS.iter().any(|k| map.contains_key(*k)) {
+                    out.push(node);
+                }
+                stack.extend(map.values());
+            }
+            Value::Array(items) => stack.extend(items.iter()),
+            _ => {}
+        }
+    }
+    out
 }

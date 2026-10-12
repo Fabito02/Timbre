@@ -1,37 +1,96 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $TimbreTrackCard : Button {
-  styles ["card-btn", "flat"]
+template $TimbreTrackCard: Button {
+  styles [
+    "card-btn",
+    "flat",
+  ]
 
   Box {
     orientation: vertical;
     spacing: 12;
-    Picture image_cover {
-      can-shrink: true;
-      content-fit: cover;
-      width-request: 150;
-      height-request: 150;
-      valign: center;
-      halign: center;
-      styles ["card-cover-img"]
+
+    Box {
+      Overlay {
+        Picture image_cover {
+          can-shrink: true;
+          content-fit: cover;
+          width-request: 140;
+          height-request: 140;
+          valign: center;
+          halign: center;
+
+          styles [
+            "card-cover-img",
+          ]
+        }
+
+        [overlay]
+        Adw.Bin play_overlay {
+          halign: center;
+          valign: center;
+
+          styles [
+            "play-overlay",
+          ]
+
+          Image {
+            icon-name: "media-playback-start-symbolic";
+            pixel-size: 22;
+
+            styles [
+              "play-overlay-icon",
+            ]
+          }
+        }
+
+        [overlay]
+        Adw.Bin {
+          halign: end;
+          valign: end;
+  
+          styles [
+            "album-overlay",
+          ]
+  
+          Image {
+            icon-name: "media-optical-symbolic";
+            pixel-size: 16;
+  
+            styles [
+              "album-overlay-icon",
+            ]
+          }
+        }
+      }
     }
 
     Box {
       orientation: vertical;
       spacing: 2;
-      hexpand: true;
+      width-request: 140;
       valign: center;
 
       Label label_title {
         xalign: 0.0;
         ellipsize: end;
-        styles ["heading"]
+        max-width-chars: 20;
+
+        styles [
+          "heading",
+        ]
       }
+
       Label label_artist {
         xalign: 0.0;
         ellipsize: end;
-        styles ["caption", "dim-label"]
+        max-width-chars: 20;
+
+        styles [
+          "caption",
+          "dim-label",
+        ]
       }
     }
   }

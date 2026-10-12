@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::browse::Browse;
 use super::items::{
-    array_at, detect_kind, is_year, last_thumbnail_url, owned_at, parse_album_card,
-    parse_song_row, parse_video_card, str_at, MRLIR, MTRIR, THUMBNAIL_RENDERER, THUMBNAILS,
+    MRLIR, MTRIR, THUMBNAIL_RENDERER, THUMBNAILS, array_at, detect_kind, is_year,
+    last_thumbnail_url, owned_at, parse_album_card, parse_song_row, parse_video_card, str_at,
 };
-use crate::net::media::{ItemKind, MediaItem, Person};
 use crate::net::NetError;
+use crate::net::media::{ItemKind, MediaItem, Person};
 
 const SECTIONS: &str = "/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents";
 const CAROUSEL_BROWSE_ID: &str = "/musicCarouselShelfRenderer/header/musicCarouselShelfBasicHeaderRenderer/title/runs/0/navigationEndpoint/browseEndpoint/browseId";
@@ -102,11 +102,15 @@ pub async fn load_explore(api: Arc<dyn Browse>, country: String) -> Result<Explo
 }
 
 pub async fn get_explore(api: &dyn Browse) -> Result<ExploreFeed, NetError> {
-    let response = api.post("browse", json!({ "browseId": "FEmusic_explore" })).await?;
+    let response = api
+        .post("browse", json!({ "browseId": "FEmusic_explore" }))
+        .await?;
     Ok(parse_explore(&response))
 }
 
-pub async fn get_mood_categories(api: &dyn Browse) -> Result<Vec<(String, Vec<Category>)>, NetError> {
+pub async fn get_mood_categories(
+    api: &dyn Browse,
+) -> Result<Vec<(String, Vec<Category>)>, NetError> {
     let response = api
         .post("browse", json!({ "browseId": "FEmusic_moods_and_genres" }))
         .await?;
@@ -122,7 +126,10 @@ pub async fn get_charts(api: &dyn Browse, country: &str) -> Result<Charts, NetEr
     Ok(parse_charts(&response, country))
 }
 
-pub async fn get_category_page(api: &dyn Browse, params: &str) -> Result<Vec<CategorySection>, NetError> {
+pub async fn get_category_page(
+    api: &dyn Browse,
+    params: &str,
+) -> Result<Vec<CategorySection>, NetError> {
     let body = json!({ "browseId": "FEmusic_moods_and_genres_category", "params": params });
     let response = api.post("browse", body).await?;
     Ok(parse_category_page(&response))
@@ -139,7 +146,9 @@ pub fn section(sections: &[(String, Vec<Category>)], name: &str) -> Vec<Category
 pub fn parse_explore(response: &Value) -> ExploreFeed {
     let mut feed = ExploreFeed::default();
     for shelf in array_at(response, SECTIONS) {
-        let Some(browse_id) = str_at(shelf, CAROUSEL_BROWSE_ID) else { continue };
+        let Some(browse_id) = str_at(shelf, CAROUSEL_BROWSE_ID) else {
+            continue;
+        };
         let contents = array_at(shelf, "/musicCarouselShelfRenderer/contents");
         match browse_id {
             "FEmusic_new_releases_albums" => {
@@ -176,7 +185,10 @@ pub fn parse_mood_categories(response: &Value) -> Vec<(String, Vec<Category>)> {
     array_at(response, SECTIONS)
         .iter()
         .filter_map(|shelf| {
-            let title = owned_at(shelf, "/gridRenderer/header/gridHeaderRenderer/title/runs/0/text")?;
+            let title = owned_at(
+                shelf,
+                "/gridRenderer/header/gridHeaderRenderer/title/runs/0/text",
+            )?;
             let items = array_at(shelf, "/gridRenderer/items")
                 .iter()
                 .filter_map(parse_category)
@@ -206,7 +218,9 @@ pub fn parse_charts(response: &Value, country: &str) -> Charts {
     }
 
     for (i, name) in names.iter().enumerate() {
-        let Some(shelf) = shelves.get(i + 1) else { continue };
+        let Some(shelf) = shelves.get(i + 1) else {
+            continue;
+        };
         let contents = array_at(shelf, "/musicCarouselShelfRenderer/contents");
         if *name == "artists" {
             charts.artists = contents
@@ -266,7 +280,13 @@ fn parse_category_item(entry: &Value, section_title: &str) -> Option<MediaItem> 
                 let endpoint = r
                     .pointer("/navigationEndpoint")
                     .or_else(|| r.pointer("/title/runs/0/navigationEndpoint"));
-                (r, owned_at(r, "/title/runs/0/text")?, endpoint, THUMBNAIL_RENDERER, "/subtitle/runs")
+                (
+                    r,
+                    owned_at(r, "/title/runs/0/text")?,
+                    endpoint,
+                    THUMBNAIL_RENDERER,
+                    "/subtitle/runs",
+                )
             }
             (None, None) => return None,
         };
@@ -326,13 +346,22 @@ fn parse_category_item(entry: &Value, section_title: &str) -> Option<MediaItem> 
 
 fn parse_category(entry: &Value) -> Option<Category> {
     Some(Category {
-        title: owned_at(entry, "/musicNavigationButtonRenderer/buttonText/runs/0/text")?,
-        params: owned_at(entry, "/musicNavigationButtonRenderer/clickCommand/browseEndpoint/params")?,
+        title: owned_at(
+            entry,
+            "/musicNavigationButtonRenderer/buttonText/runs/0/text",
+        )?,
+        params: owned_at(
+            entry,
+            "/musicNavigationButtonRenderer/clickCommand/browseEndpoint/params",
+        )?,
     })
 }
 
 fn parse_chart_playlist(data: &Value) -> Option<MediaItem> {
-    let browse_id = str_at(data, "/title/runs/0/navigationEndpoint/browseEndpoint/browseId")?;
+    let browse_id = str_at(
+        data,
+        "/title/runs/0/navigationEndpoint/browseEndpoint/browseId",
+    )?;
     Some(MediaItem {
         kind: ItemKind::Playlist,
         id: browse_id.trim_start_matches("VL").to_owned(),
@@ -351,11 +380,10 @@ fn parse_chart_artist(data: &Value) -> ChartArtist {
             "/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text",
         )
         .unwrap_or_default(),
-        subscribers: str_at(
+        subscribers: owned_at(
             data,
             "/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text",
-        )
-        .map(|text| text.split(' ').next().unwrap_or_default().to_owned()),
+        ),
         thumb: last_thumbnail_url(array_at(data, THUMBNAILS)),
         ..MediaItem::default()
     };
@@ -371,23 +399,71 @@ fn parse_chart_artist(data: &Value) -> ChartArtist {
 }
 
 const COUNTRY_NAMES: &[(&str, &str)] = &[
-    ("ZZ", "Global"), ("AR", "Argentina"), ("AU", "Australia"), ("AT", "Austria"),
-    ("BE", "Belgium"), ("BO", "Bolivia"), ("BR", "Brazil"), ("CA", "Canada"),
-    ("CL", "Chile"), ("CO", "Colombia"), ("CR", "Costa Rica"), ("CZ", "Czechia"),
-    ("DK", "Denmark"), ("DO", "Dominican Republic"), ("EC", "Ecuador"),
-    ("EG", "Egypt"), ("SV", "El Salvador"), ("EE", "Estonia"), ("FI", "Finland"),
-    ("FR", "France"), ("DE", "Germany"), ("GT", "Guatemala"), ("HN", "Honduras"),
-    ("HU", "Hungary"), ("IS", "Iceland"), ("IN", "India"), ("ID", "Indonesia"),
-    ("IE", "Ireland"), ("IL", "Israel"), ("IT", "Italy"), ("JP", "Japan"),
-    ("KE", "Kenya"), ("LU", "Luxembourg"), ("MX", "Mexico"), ("NL", "Netherlands"),
-    ("NZ", "New Zealand"), ("NI", "Nicaragua"), ("NG", "Nigeria"), ("NO", "Norway"),
-    ("PA", "Panama"), ("PY", "Paraguay"), ("PE", "Peru"), ("PH", "Philippines"),
-    ("PL", "Poland"), ("PT", "Portugal"), ("RO", "Romania"), ("RU", "Russia"),
-    ("SA", "Saudi Arabia"), ("RS", "Serbia"), ("ZA", "South Africa"),
-    ("KR", "South Korea"), ("ES", "Spain"), ("SE", "Sweden"), ("CH", "Switzerland"),
-    ("TZ", "Tanzania"), ("TR", "Turkey"), ("UG", "Uganda"), ("UA", "Ukraine"),
-    ("AE", "UAE"), ("GB", "United Kingdom"), ("US", "United States"),
-    ("UY", "Uruguay"), ("VE", "Venezuela"), ("VN", "Vietnam"), ("ZW", "Zimbabwe"),
+    ("ZZ", "Global"),
+    ("AR", "Argentina"),
+    ("AU", "Australia"),
+    ("AT", "Austria"),
+    ("BE", "Belgium"),
+    ("BO", "Bolivia"),
+    ("BR", "Brazil"),
+    ("CA", "Canada"),
+    ("CL", "Chile"),
+    ("CO", "Colombia"),
+    ("CR", "Costa Rica"),
+    ("CZ", "Czechia"),
+    ("DK", "Denmark"),
+    ("DO", "Dominican Republic"),
+    ("EC", "Ecuador"),
+    ("EG", "Egypt"),
+    ("SV", "El Salvador"),
+    ("EE", "Estonia"),
+    ("FI", "Finland"),
+    ("FR", "France"),
+    ("DE", "Germany"),
+    ("GT", "Guatemala"),
+    ("HN", "Honduras"),
+    ("HU", "Hungary"),
+    ("IS", "Iceland"),
+    ("IN", "India"),
+    ("ID", "Indonesia"),
+    ("IE", "Ireland"),
+    ("IL", "Israel"),
+    ("IT", "Italy"),
+    ("JP", "Japan"),
+    ("KE", "Kenya"),
+    ("LU", "Luxembourg"),
+    ("MX", "Mexico"),
+    ("NL", "Netherlands"),
+    ("NZ", "New Zealand"),
+    ("NI", "Nicaragua"),
+    ("NG", "Nigeria"),
+    ("NO", "Norway"),
+    ("PA", "Panama"),
+    ("PY", "Paraguay"),
+    ("PE", "Peru"),
+    ("PH", "Philippines"),
+    ("PL", "Poland"),
+    ("PT", "Portugal"),
+    ("RO", "Romania"),
+    ("RU", "Russia"),
+    ("SA", "Saudi Arabia"),
+    ("RS", "Serbia"),
+    ("ZA", "South Africa"),
+    ("KR", "South Korea"),
+    ("ES", "Spain"),
+    ("SE", "Sweden"),
+    ("CH", "Switzerland"),
+    ("TZ", "Tanzania"),
+    ("TR", "Turkey"),
+    ("UG", "Uganda"),
+    ("UA", "Ukraine"),
+    ("AE", "UAE"),
+    ("GB", "United Kingdom"),
+    ("US", "United States"),
+    ("UY", "Uruguay"),
+    ("VE", "Venezuela"),
+    ("VN", "Vietnam"),
+    ("ZW", "Zimbabwe"),
 ];
 
 pub fn country_options(codes: &[String]) -> Vec<(String, String)> {
@@ -404,7 +480,11 @@ pub fn country_options(codes: &[String]) -> Vec<(String, String)> {
         .collect();
     options.sort_by(|a, b| {
         let key = |(code, name): &(String, String)| {
-            if code == "ZZ" { String::new() } else { name.clone() }
+            if code == "ZZ" {
+                String::new()
+            } else {
+                name.clone()
+            }
         };
         key(a).cmp(&key(b))
     });

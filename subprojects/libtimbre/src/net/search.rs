@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::browse::Browse;
-use crate::net::media::{ItemKind, MediaItem, Named, Person};
 use crate::net::NetError;
+use crate::net::media::{ItemKind, MediaItem, Named, Person};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[allow(dead_code)]
@@ -59,13 +59,13 @@ pub async fn search(
         body["params"] = json!(filter.params());
     }
     let response = client.post("search", body).await?;
-    Ok(parse_search_response(&response, filter.map(SearchFilter::kind)))
+    Ok(parse_search_response(
+        &response,
+        filter.map(SearchFilter::kind),
+    ))
 }
 
-pub async fn search_all(
-    client: Arc<dyn Browse>,
-    query: String,
-) -> Result<SearchResults, NetError> {
+pub async fn search_all(client: Arc<dyn Browse>, query: String) -> Result<SearchResults, NetError> {
     let filters = [
         None,
         Some(SearchFilter::Songs),
@@ -163,7 +163,9 @@ pub fn parse_search_response(response: &Value, filter_kind: Option<ItemKind>) ->
             }
             continue;
         }
-        let Some(shelf) = section.get("musicShelfRenderer") else { continue };
+        let Some(shelf) = section.get("musicShelfRenderer") else {
+            continue;
+        };
         let category = shelf
             .pointer("/title/runs/0/text")
             .and_then(Value::as_str)
@@ -172,7 +174,9 @@ pub fn parse_search_response(response: &Value, filter_kind: Option<ItemKind>) ->
         if is_skipped_category(category) {
             continue;
         }
-        let Some(contents) = shelf.get("contents").and_then(Value::as_array) else { continue };
+        let Some(contents) = shelf.get("contents").and_then(Value::as_array) else {
+            continue;
+        };
         for entry in contents {
             if let Some(renderer) = entry.get("musicResponsiveListItemRenderer") {
                 if let Some(item) = parse_list_item(renderer, shelf_kind) {
@@ -233,7 +237,8 @@ fn is_explicit(renderer: &Value) -> bool {
         .and_then(Value::as_array)
         .map(|badges| {
             badges.iter().any(|b| {
-                b.pointer("/musicInlineBadgeRenderer/icon/iconType").and_then(Value::as_str)
+                b.pointer("/musicInlineBadgeRenderer/icon/iconType")
+                    .and_then(Value::as_str)
                     == Some("MUSIC_EXPLICIT_BADGE")
             })
         })
@@ -275,10 +280,16 @@ fn watch_video_id(renderer: &Value) -> Option<(String, Option<String>)> {
     let video_id = renderer
         .pointer("/playlistItemData/videoId")
         .and_then(Value::as_str)
-        .or_else(|| endpoint.and_then(|e| e.get("videoId")).and_then(Value::as_str))?
+        .or_else(|| {
+            endpoint
+                .and_then(|e| e.get("videoId"))
+                .and_then(Value::as_str)
+        })?
         .to_owned();
     let video_type = endpoint
-        .and_then(|e| e.pointer("/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType"))
+        .and_then(|e| {
+            e.pointer("/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType")
+        })
         .and_then(Value::as_str)
         .map(str::to_owned);
     Some((video_id, video_type))
@@ -297,7 +308,9 @@ fn browse_target(renderer: &Value) -> Option<(String, Option<String>)> {
 fn is_duration(text: &str) -> bool {
     let parts: Vec<&str> = text.trim().split(':').collect();
     (2..=3).contains(&parts.len())
-        && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 fn parse_duration(text: &str) -> Option<u32> {
@@ -344,7 +357,8 @@ fn parse_list_item(renderer: &Value, shelf_kind: Option<ItemKind>) -> Option<Med
         (None, Some((id, page_type))) => {
             if id.starts_with("MPRE") || page_type.as_deref() == Some("MUSIC_PAGE_TYPE_ALBUM") {
                 ItemKind::Album
-            } else if id.starts_with("UC") || page_type.as_deref() == Some("MUSIC_PAGE_TYPE_ARTIST") {
+            } else if id.starts_with("UC") || page_type.as_deref() == Some("MUSIC_PAGE_TYPE_ARTIST")
+            {
                 ItemKind::Artist
             } else if id.starts_with("VL")
                 || id.starts_with("PL")
@@ -381,12 +395,18 @@ fn parse_list_item(renderer: &Value, shelf_kind: Option<ItemKind>) -> Option<Med
                 } else if id.is_some() || item.artists.is_empty() {
                     item.artists.push(Person { name: text, id });
                 } else if kind == ItemKind::Song && item.album.is_none() {
-                    item.album = Some(Named { name: text, id: None });
+                    item.album = Some(Named {
+                        name: text,
+                        id: None,
+                    });
                 }
             }
         }
         ItemKind::Album => {
-            item.id = browse.as_ref().map(|(id, _)| id.clone()).unwrap_or_default();
+            item.id = browse
+                .as_ref()
+                .map(|(id, _)| id.clone())
+                .unwrap_or_default();
             for (text, id) in runs {
                 if is_year(&text) {
                     item.year = Some(text.trim().to_owned());
@@ -399,7 +419,10 @@ fn parse_list_item(renderer: &Value, shelf_kind: Option<ItemKind>) -> Option<Med
             }
         }
         ItemKind::Artist => {
-            item.id = browse.as_ref().map(|(id, _)| id.clone()).unwrap_or_default();
+            item.id = browse
+                .as_ref()
+                .map(|(id, _)| id.clone())
+                .unwrap_or_default();
             item.subscribers = runs
                 .into_iter()
                 .map(|(t, _)| t)
@@ -413,7 +436,12 @@ fn parse_list_item(renderer: &Value, shelf_kind: Option<ItemKind>) -> Option<Med
             for (text, id) in runs {
                 let low = text.to_lowercase();
                 if low.contains("song") || low.contains("track") || low.contains("view") {
-                    item.count = Some(text.split_whitespace().next().unwrap_or_default().to_owned());
+                    item.count = Some(
+                        text.split_whitespace()
+                            .next()
+                            .unwrap_or_default()
+                            .to_owned(),
+                    );
                     if low.contains("view") {
                         item.views = Some(text);
                     }
@@ -430,7 +458,10 @@ fn parse_list_item(renderer: &Value, shelf_kind: Option<ItemKind>) -> Option<Med
 }
 
 fn parse_card_shelf(card: &Value) -> Option<MediaItem> {
-    let title = card.pointer("/title/runs/0/text").and_then(Value::as_str)?.to_owned();
+    let title = card
+        .pointer("/title/runs/0/text")
+        .and_then(Value::as_str)?
+        .to_owned();
     let on_tap = card
         .pointer("/title/runs/0/navigationEndpoint")
         .or_else(|| card.get("onTap"))?;
@@ -461,13 +492,20 @@ fn parse_card_shelf(card: &Value) -> Option<MediaItem> {
         .and_then(Value::as_str)
         .map(str::to_owned);
 
-    let mut item = MediaItem { title, thumb, ..MediaItem::default() };
+    let mut item = MediaItem {
+        title,
+        thumb,
+        ..MediaItem::default()
+    };
     let type_word = subtitle.first().and_then(|(t, _)| kind_from_type_word(t));
     let mut runs = subtitle;
     if type_word.is_some() {
         runs.remove(0);
     }
-    if let Some(video_id) = on_tap.pointer("/watchEndpoint/videoId").and_then(Value::as_str) {
+    if let Some(video_id) = on_tap
+        .pointer("/watchEndpoint/videoId")
+        .and_then(Value::as_str)
+    {
         let video_type = on_tap
             .pointer("/watchEndpoint/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType")
             .and_then(Value::as_str);
@@ -489,7 +527,9 @@ fn parse_card_shelf(card: &Value) -> Option<MediaItem> {
             }
         }
     } else {
-        let browse_id = on_tap.pointer("/browseEndpoint/browseId").and_then(Value::as_str)?;
+        let browse_id = on_tap
+            .pointer("/browseEndpoint/browseId")
+            .and_then(Value::as_str)?;
         let page_type = on_tap
             .pointer("/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
             .and_then(Value::as_str);
@@ -566,7 +606,10 @@ mod tests {
         assert_eq!(item.kind, ItemKind::Song);
         assert_eq!(item.id, "fJ9rUzIMcZQ");
         assert_eq!(item.artists_text(), "Queen");
-        assert_eq!(item.album.as_ref().map(|a| a.name.as_str()), Some("A Night at the Opera"));
+        assert_eq!(
+            item.album.as_ref().map(|a| a.name.as_str()),
+            Some("A Night at the Opera")
+        );
         assert_eq!(item.duration_seconds, Some(355));
         assert!(item.explicit);
     }
@@ -575,7 +618,10 @@ mod tests {
     #[ignore]
     async fn live_dump_card() {
         let client = YTMusicClient::builder().build().unwrap();
-        let response = client.post("search", json!({ "query": "queen" })).await.expect("search");
+        let response = client
+            .post("search", json!({ "query": "queen" }))
+            .await
+            .expect("search");
         let sections = response
             .pointer("/contents/tabbedSearchResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents")
             .and_then(Value::as_array)
@@ -587,9 +633,15 @@ mod tests {
                     .expect("card item");
                 println!(
                     "FLEX1 {}",
-                    serde_json::to_string_pretty(first.pointer("/flexColumns").unwrap_or(&Value::Null)).unwrap()
+                    serde_json::to_string_pretty(
+                        first.pointer("/flexColumns").unwrap_or(&Value::Null)
+                    )
+                    .unwrap()
                 );
-                println!("KEYS {:?}", first.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                println!(
+                    "KEYS {:?}",
+                    first.as_object().map(|o| o.keys().collect::<Vec<_>>())
+                );
             }
         }
     }
@@ -613,7 +665,10 @@ mod tests {
     async fn live_search() {
         let client = Arc::new(YTMusicClient::builder().build().unwrap());
         let results = search_all(client, "queen".into()).await.expect("search");
-        println!("top: {:?}", results.top_result.as_ref().map(|t| (t.kind, &t.title)));
+        println!(
+            "top: {:?}",
+            results.top_result.as_ref().map(|t| (t.kind, &t.title))
+        );
         for item in &results.items {
             println!(
                 "{:?} {:<40} {:<30} {:?} {:?}",

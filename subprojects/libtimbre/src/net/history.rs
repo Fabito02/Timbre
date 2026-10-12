@@ -2,13 +2,13 @@ use std::sync::{Arc, LazyLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::context::Paths;
-use crate::net::browse::Browse;
-use crate::net::items::{array_at, history_feedback_token, owned_at, parse_playlist_item, MRLIR};
-use crate::net::media::{HttpAuth, LikeStatus, Named, Person, Track, VideoId};
 use crate::net::NetError;
+use crate::net::browse::Browse;
+use crate::net::items::{MRLIR, array_at, history_feedback_token, owned_at, parse_playlist_item};
+use crate::net::media::{HttpAuth, LikeStatus, Named, Person, Track, VideoId};
 
 const UNDATED: &str = "Recently";
 const CLIENT_NAME: &str = "WEB_REMIX";
@@ -26,7 +26,9 @@ pub struct HistoryEntry {
 }
 
 pub async fn get_history(api: Arc<dyn Browse>) -> Result<Vec<HistoryEntry>, NetError> {
-    let response = api.post("browse", json!({ "browseId": "FEmusic_history" })).await?;
+    let response = api
+        .post("browse", json!({ "browseId": "FEmusic_history" }))
+        .await?;
     Ok(parse_history(&response))
 }
 
@@ -37,11 +39,15 @@ pub fn parse_history(response: &Value) -> Vec<HistoryEntry> {
     );
     let mut entries = Vec::new();
     for section in sections {
-        let Some(shelf) = section.get("musicShelfRenderer") else { continue };
+        let Some(shelf) = section.get("musicShelfRenderer") else {
+            continue;
+        };
         let played = owned_at(shelf, "/title/runs/0/text").unwrap_or_else(|| UNDATED.to_owned());
         for row in array_at(shelf, "/contents") {
             let Some(data) = row.get(MRLIR) else { continue };
-            let Some(track) = parse_playlist_item(data, false, false) else { continue };
+            let Some(track) = parse_playlist_item(data, false, false) else {
+                continue;
+            };
             if track.video_id.0.is_empty() {
                 continue;
             }
@@ -75,7 +81,8 @@ pub async fn remove_history_items(api: &dyn Browse, tokens: Vec<String>) -> Resu
     if tokens.is_empty() {
         return Ok(());
     }
-    api.post("feedback", json!({ "feedbackTokens": tokens })).await?;
+    api.post("feedback", json!({ "feedbackTokens": tokens }))
+        .await?;
     Ok(())
 }
 
@@ -87,7 +94,9 @@ pub async fn record_play(
 ) -> Result<Track, NetError> {
     let song = api.post("player", json!({ "videoId": video_id })).await?;
     let Some(url) = owned_at(&song, "/playbackTracking/videostatsPlaybackUrl/baseUrl") else {
-        return Err(NetError::Message(format!("{video_id} has no playback tracker")));
+        return Err(NetError::Message(format!(
+            "{video_id} has no playback tracker"
+        )));
     };
     let separator = if url.contains('?') { '&' } else { '?' };
     let url = format!("{url}{separator}ver=2&c={CLIENT_NAME}&cpn={}", cpn());
@@ -132,7 +141,10 @@ fn track_from_player(song: &Value, video_id: &str) -> Track {
     let artists = if author.is_empty() {
         Vec::new()
     } else {
-        vec![Person { name: author.clone(), id: owned_at(details, "/channelId") }]
+        vec![Person {
+            name: author.clone(),
+            id: owned_at(details, "/channelId"),
+        }]
     };
     Track {
         video_id: VideoId(video_id.to_owned()),

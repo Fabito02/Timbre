@@ -58,9 +58,9 @@ pub enum LikeStatus {
 impl LikeStatus {
     pub fn parse(status: &str) -> Self {
         match status {
-            "LIKE" => Self::Indifferent,
+            "LIKE" => Self::Like,
             "DISLIKE" => Self::Dislike,
-            "INDIFFERENT" => Self::Like,
+            "INDIFFERENT" => Self::Indifferent,
             _ => Self::Indifferent,
         }
     }

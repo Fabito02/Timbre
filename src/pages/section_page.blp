@@ -1,0 +1,63 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreSectionPage: Adw.NavigationPage {
+  Gtk.Stack stack {
+    vexpand: true;
+
+    Gtk.StackPage {
+      name: "loading";
+
+      child: Gtk.Box {
+        orientation: vertical;
+        vexpand: true;
+        halign: center;
+        valign: center;
+
+        Gtk.Spinner {
+          spinning: true;
+          width-request: 32;
+          height-request: 32;
+        }
+      };
+    }
+
+    Gtk.StackPage {
+      name: "content";
+
+      child: Gtk.ScrolledWindow scroller {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        vexpand: true;
+
+        child: Adw.Clamp {
+          maximum-size: 1080;
+          tightening-threshold: 720;
+
+          child: Adw.WrapBox wrap {
+            orientation: horizontal;
+            child-spacing: 12;
+            line-spacing: 12;
+            align: 0.5;
+            halign: fill;
+            valign: start;
+            margin-top: 24;
+            margin-bottom: 24;
+            margin-start: 18;
+            margin-end: 18;
+          };
+        };
+      };
+    }
+
+    Gtk.StackPage {
+      name: "empty";
+
+      child: Adw.StatusPage empty_page {
+        icon-name: "folder-symbolic";
+        title: _("Nothing here");
+        description: _("This section has no items to show.");
+      };
+    }
+  }
+}

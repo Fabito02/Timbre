@@ -4,7 +4,9 @@ gnome = import('gnome')
 cargo = find_program('cargo', required: true)
 blueprint_compiler = find_program('blueprint-compiler', required: true)
 
-cargo_options = ['--manifest-path', meson.project_source_root() / 'subprojects/libtimbre/Cargo.toml']
+cargo_options = [
+  '--manifest-path', meson.project_source_root() / 'subprojects/libtimbre/Cargo.toml',
+]
 cargo_target_dir = meson.project_source_root() / 'subprojects/libtimbre/target'
 
 if get_option('buildtype') == 'release'
@@ -14,17 +16,14 @@ else
   cargo_out_dir = cargo_target_dir / 'debug'
 endif
 
-libtimbre_target = custom_target('cargo-build-libtimbre',
+libtimbre_target = custom_target(
+  'cargo-build-libtimbre',
   build_by_default: true,
   build_always_stale: true,
   output: 'libtimbre.so',
   command: [
-    'sh', '-c',
-    '@0@ build @1@ && cp @2@/libtimbre.so @OUTPUT@'.format(
-      cargo.full_path(),
-      ' '.join(cargo_options),
-      cargo_out_dir
-    )
+    'sh',
+    '-c', '@0@ build @1@ && cp @2@/libtimbre.so @OUTPUT@'.format(cargo.full_path(), ' '.join(cargo_options), cargo_out_dir),
   ],
 )
 
@@ -54,11 +53,12 @@ foreach bp : blueprints
     'blueprint-compile-' + ui_filename,
     input: bp,
     output: ui_filename,
-    command: [blueprint_compiler, 'compile', '--output', '@OUTPUT@', '@INPUT@']
+    command: [blueprint_compiler, 'compile', '--output', '@OUTPUT@', '@INPUT@'],
   )
 endforeach
 
-timbre_resources = gnome.compile_resources('timbre-resources',
+timbre_resources = gnome.compile_resources(
+  'timbre-resources',
   'timbre.gresource.xml',
   c_name: 'timbre',
   dependencies: compiled_ui,
@@ -82,7 +82,8 @@ timbre_deps = [
   dependency('webkitgtk-6.0'),
 ]
 
-executable('timbre',
+executable(
+  'timbre',
   timbre_sources,
   timbre_resources,
   dependencies: timbre_deps,

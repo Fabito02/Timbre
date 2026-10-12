@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::browse::{Browse, Continuation};
+use crate::net::NetError;
 use crate::net::items::library_sections;
 use crate::net::media::{ItemKind, MediaItem, Person};
-use crate::net::NetError;
 
 const MAX_PAGES: usize = 40;
 
@@ -39,7 +39,12 @@ pub async fn library_subscriptions(api: Arc<dyn Browse>) -> Result<Vec<MediaItem
 }
 
 pub async fn upload_albums(api: Arc<dyn Browse>) -> Result<Vec<MediaItem>, NetError> {
-    let entries = browse_all(&api, "FEmusic_library_privately_owned_releases", Container::Grid).await?;
+    let entries = browse_all(
+        &api,
+        "FEmusic_library_privately_owned_releases",
+        Container::Grid,
+    )
+    .await?;
     Ok(entries
         .iter()
         .filter_map(|r| parse_two_row(r, ItemKind::Album))
@@ -47,7 +52,12 @@ pub async fn upload_albums(api: Arc<dyn Browse>) -> Result<Vec<MediaItem>, NetEr
 }
 
 pub async fn upload_artists(api: Arc<dyn Browse>) -> Result<Vec<MediaItem>, NetError> {
-    let entries = browse_all(&api, "FEmusic_library_privately_owned_artists", Container::Shelf).await?;
+    let entries = browse_all(
+        &api,
+        "FEmusic_library_privately_owned_artists",
+        Container::Shelf,
+    )
+    .await?;
     Ok(entries.iter().filter_map(parse_artist_row).collect())
 }
 
@@ -64,9 +74,9 @@ async fn browse_all(
     let mut entries = Vec::new();
     let mut token = None;
     for section in library_sections(&response) {
-        let node = section
-            .get(container_key)
-            .or_else(|| section.pointer(&format!("/itemSectionRenderer/contents/0/{container_key}")));
+        let node = section.get(container_key).or_else(|| {
+            section.pointer(&format!("/itemSectionRenderer/contents/0/{container_key}"))
+        });
         if let Some(node) = node {
             entries.extend(
                 node.get(items_key)
@@ -138,8 +148,13 @@ fn count_from_text(text: &str) -> Option<String> {
 
 pub(crate) fn parse_two_row(entry: &Value, kind: ItemKind) -> Option<MediaItem> {
     let renderer = entry.get("musicTwoRowItemRenderer")?;
-    let title = renderer.pointer("/title/runs/0/text").and_then(Value::as_str)?.to_owned();
-    let browse_id = renderer.pointer("/navigationEndpoint/browseEndpoint/browseId").and_then(Value::as_str)?;
+    let title = renderer
+        .pointer("/title/runs/0/text")
+        .and_then(Value::as_str)?
+        .to_owned();
+    let browse_id = renderer
+        .pointer("/navigationEndpoint/browseEndpoint/browseId")
+        .and_then(Value::as_str)?;
     let id = if kind == ItemKind::Playlist {
         browse_id.trim_start_matches("VL").to_owned()
     } else {
@@ -150,7 +165,10 @@ pub(crate) fn parse_two_row(entry: &Value, kind: ItemKind) -> Option<MediaItem> 
         kind,
         id,
         title,
-        thumb: last_thumbnail(renderer, "/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails"),
+        thumb: last_thumbnail(
+            renderer,
+            "/thumbnailRenderer/musicThumbnailRenderer/thumbnail/thumbnails",
+        ),
         ..MediaItem::default()
     };
     item.playlist_id = renderer
@@ -211,7 +229,10 @@ fn parse_artist_row(entry: &Value) -> Option<MediaItem> {
         id,
         title: name,
         subscribers,
-        thumb: last_thumbnail(renderer, "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails"),
+        thumb: last_thumbnail(
+            renderer,
+            "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails",
+        ),
         ..MediaItem::default()
     })
 }

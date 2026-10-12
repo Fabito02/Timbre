@@ -46,7 +46,9 @@ async fn mirror(
     path: &Path,
     url: &str,
 ) -> anyhow::Result<bool> {
-    let Some(dir) = path.parent() else { return Ok(false) };
+    let Some(dir) = path.parent() else {
+        return Ok(false);
+    };
     tokio::fs::create_dir_all(dir).await?;
     let sidecar = path.with_extension("jpg.url");
     if let Ok(meta) = tokio::fs::metadata(path).await {
@@ -93,7 +95,10 @@ mod tests {
 
         let http = reqwest::Client::new();
         mirror(&http, None, &path, url).await.expect("same cover");
-        assert_eq!(std::fs::read(&path).unwrap(), b"the picture the listener chose");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"the picture the listener chose"
+        );
     }
 
     #[test]

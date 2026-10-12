@@ -1,5 +1,5 @@
 utils_sources = files(
-  'image_loader.vala',
   'image_binding.vala',
+  'image_loader.vala',
   'memory.vala',
 )

@@ -48,7 +48,6 @@ namespace Timbre.Utils {
             this.auth_cookie = cookie;
         }
 
-        // ─── Cache ────────────────────────────────────────────────
         public Gdk.Texture? lookup (string key) {
             var entry = this.cache.lookup (key);
             if (entry == null) return null;
@@ -232,7 +231,6 @@ namespace Timbre.Utils {
             }
         }
 
-        // ─── Static helpers ────────────────────────────────────
         public static string get_high_res_url (string url, int target_size) {
             if (url == null || url.length == 0) return url;
 
@@ -300,7 +298,6 @@ namespace Timbre.Utils {
                 || url.contains ("ggpht.com");
         }
 
-        // ─── Disk cache ───────────────────────────────────────
         private GLib.Bytes? read_file_bytes (string path) {
             try {
                 var file = GLib.File.new_for_path (path);
@@ -334,7 +331,7 @@ namespace Timbre.Utils {
                 var dest = GLib.File.new_for_path (path);
                 tmp_file.move (dest, GLib.FileCopyFlags.OVERWRITE, null, null);
             } catch (Error e) {
-                
+
             }
         }
     }

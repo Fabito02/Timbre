@@ -93,11 +93,18 @@ impl Caches {
     }
 
     pub fn cached_tracks(&self, playlist_id: &str) -> Option<Vec<Track>> {
-        self.playlist_tracks.lock().unwrap().get(playlist_id).cloned()
+        self.playlist_tracks
+            .lock()
+            .unwrap()
+            .get(playlist_id)
+            .cloned()
     }
 
     pub fn set_cached_tracks(&self, playlist_id: &str, tracks: Vec<Track>) {
-        self.playlist_tracks.lock().unwrap().insert(playlist_id.to_owned(), tracks);
+        self.playlist_tracks
+            .lock()
+            .unwrap()
+            .insert(playlist_id.to_owned(), tracks);
     }
 
     pub fn drop_cached_tracks(&self, playlist_id: &str) {
@@ -120,7 +127,10 @@ impl Caches {
     }
 
     pub fn drop_sort_metrics(&self, browse_id: &str) {
-        self.sort_metrics.lock().unwrap().retain(|(_, b), _| b != browse_id);
+        self.sort_metrics
+            .lock()
+            .unwrap()
+            .retain(|(_, b), _| b != browse_id);
     }
 
     pub fn library_ids(&self) -> Option<LibraryIds> {
@@ -205,13 +215,21 @@ pub struct PlaylistDiskCache {
 
 impl PlaylistDiskCache {
     pub fn new(paths: &Paths) -> Self {
-        Self { dir: paths.data_dir.join("playlist_cache") }
+        Self {
+            dir: paths.data_dir.join("playlist_cache"),
+        }
     }
 
     fn path(&self, playlist_id: &str) -> PathBuf {
         let safe: String = playlist_id
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         self.dir.join(format!("{safe}.json"))
     }
@@ -238,7 +256,10 @@ impl PlaylistDiskCache {
         if Self::rejects(&entry.playlist_id) {
             return;
         }
-        let existing_count = self.get(&entry.playlist_id).map(|c| c.tracks.len()).unwrap_or(0);
+        let existing_count = self
+            .get(&entry.playlist_id)
+            .map(|c| c.tracks.len())
+            .unwrap_or(0);
         let new_count = entry.tracks.len();
         let is_full_fetch = entry.track_count.is_some_and(|c| new_count as u32 >= c);
         if existing_count > new_count && !is_full_fetch {

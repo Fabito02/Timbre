@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::context::Paths;
 use crate::net::media::{HttpAuth, StreamInfo, VideoId};
@@ -14,7 +14,8 @@ const CLIENT_ID: &str = "101";
 const CLIENT_VERSION: &str = "0.1";
 const CLIENT_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 const LANDING_URL: &str = "https://music.youtube.com/";
-const LANDING_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0";
+const LANDING_USER_AGENT: &str =
+    "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const VISITOR_TTL: Duration = Duration::from_secs(6 * 3600);
 const PROBE_OFFSET: u64 = 200_000;
@@ -48,7 +49,9 @@ fn audio_formats(response: &Value) -> Vec<Format> {
                 return None;
             }
             if f.get("isDrc").and_then(Value::as_bool).unwrap_or(false)
-                || f.pointer("/audioTrack/audioIsDefault").and_then(Value::as_bool) == Some(false)
+                || f.pointer("/audioTrack/audioIsDefault")
+                    .and_then(Value::as_bool)
+                    == Some(false)
             {
                 return None;
             }
@@ -106,8 +109,9 @@ fn player_body(video_id: &str, visitor: &str) -> Value {
 }
 
 fn visitor_from_landing(html: &str) -> Option<String> {
-    static PATTERN: std::sync::LazyLock<Regex> =
-        std::sync::LazyLock::new(|| Regex::new(r#""VISITOR_DATA":"([^"]+)""#).expect("static regex"));
+    static PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r#""VISITOR_DATA":"([^"]+)""#).expect("static regex")
+    });
     PATTERN.captures(html).map(|c| c[1].to_owned())
 }
 

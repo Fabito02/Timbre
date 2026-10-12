@@ -3,9 +3,9 @@ use std::path::Path;
 
 use serde_json::json;
 
+use super::NetError;
 use super::browse::{Browse, Continuation};
 use super::items::{array_at, library_sections, next_continuation, parse_uploaded_items};
-use super::NetError;
 use crate::net::media::Track;
 
 pub const SUPPORTED: [&str; 5] = ["mp3", "m4a", "wma", "flac", "ogg"];
@@ -35,17 +35,28 @@ pub async fn upload_song(
         .to_owned();
     let size = tokio::fs::metadata(file).await?.len();
     if size >= SIZE_LIMIT {
-        return Err(NetError::Message(format!("{name} is larger than the 300MB limit.")));
+        return Err(NetError::Message(format!(
+            "{name} is larger than the 300MB limit."
+        )));
     }
 
-    let authuser = headers.get("X-Goog-AuthUser").map(String::as_str).unwrap_or("0");
+    let authuser = headers
+        .get("X-Goog-AuthUser")
+        .map(String::as_str)
+        .unwrap_or("0");
     let session = |mut request: reqwest::RequestBuilder| {
         for (key, value) in headers.iter().filter(|(key, _)| {
-            !matches!(key.as_str(), "Content-Type" | "Content-Encoding" | "Content-Length")
+            !matches!(
+                key.as_str(),
+                "Content-Type" | "Content-Encoding" | "Content-Length"
+            )
         }) {
             request = request.header(key, value);
         }
-        request.header("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+        request.header(
+            "Content-Type",
+            "application/x-www-form-urlencoded;charset=utf-8",
+        )
     };
 
     let start = session(http.post(format!(
@@ -83,7 +94,9 @@ pub async fn upload_song(
     if status.is_success() {
         Ok(())
     } else {
-        Err(NetError::Message(format!("the upload failed: HTTP {status}")))
+        Err(NetError::Message(format!(
+            "the upload failed: HTTP {status}"
+        )))
     }
 }
 

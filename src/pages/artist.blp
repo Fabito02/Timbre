@@ -1,0 +1,183 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreArtistPage: Adw.NavigationPage {
+  child: Adw.ViewStack stack {
+    vexpand: true;
+
+    Adw.ViewStackPage {
+      name: "loading";
+
+      child: Box {
+        valign: center;
+        halign: center;
+
+        Adw.Spinner {
+          width-request: 32;
+          height-request: 32;
+        }
+      };
+    }
+
+    Adw.ViewStackPage {
+      name: "content";
+
+      child: ScrolledWindow scroll {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        vexpand: true;
+
+        Adw.Clamp {
+          maximum-size: 1024;
+          tightening-threshold: 600;
+
+          Box content_box {
+            orientation: vertical;
+            margin-top: 12;
+            margin-bottom: 24;
+            margin-start: 12;
+            margin-end: 12;
+
+            Overlay header_overlay {
+              hexpand: true;
+              height-request: 260;
+
+              Picture banner_picture {
+                content-fit: cover;
+                can-shrink: true;
+                hexpand: true;
+                vexpand: true;
+                halign: fill;
+                valign: fill;
+
+                styles [
+                  "banner-top-rounded",
+                ]
+              }
+
+              [overlay]
+              Box banner_scrim {
+                hexpand: true;
+                vexpand: true;
+
+                styles [
+                  "banner-scrim",
+                ]
+              }
+
+              [overlay]
+              Box info_box {
+                orientation: vertical;
+                spacing: 4;
+                margin-start: 16;
+                margin-end: 16;
+                margin-bottom: 24;
+                margin-top: 160;
+                valign: end;
+                halign: fill;
+
+                Label label_name {
+                  halign: start;
+                  xalign: 0;
+                  wrap: true;
+                  wrap-mode: word_char;
+
+                  styles [
+                    "title-1",
+                  ]
+                }
+
+                Label label_subscribers {
+                  halign: start;
+
+                  styles [
+                    "caption",
+                    "dim-label",
+                  ]
+                }
+
+                Box actions {
+                  orientation: horizontal;
+                  spacing: 12;
+                  margin-top: 8;
+                  valign: center;
+
+                  Button button_play {
+                    label: _("Play");
+
+                    styles [
+                      "suggested-action",
+                      "pill",
+                    ]
+                  }
+
+                  Button button_shuffle {
+                    icon-name: "media-playlist-shuffle-symbolic";
+                    tooltip-text: _("Shuffle");
+
+                    styles [
+                      "circular",
+                    ]
+                  }
+
+                  Button button_radio {
+                    icon-name: "triangular-antenna-symbolic";
+                    tooltip-text: _("Start Radio");
+
+                    styles [
+                      "circular",
+                    ]
+                  }
+
+                  Button button_subscribe {
+                    icon-name: "non-starred-symbolic";
+                    tooltip-text: _("Subscribe");
+
+                    styles [
+                      "circular",
+                      "flat",
+                    ]
+                  }
+                }
+              }
+            }
+
+            Box description_box {
+              orientation: vertical;
+              spacing: 4;
+              margin-start: 16;
+              margin-end: 16;
+              margin-bottom: 16;
+
+              Label label_description {
+                halign: start;
+                xalign: 0;
+                wrap: true;
+                wrap-mode: word_char;
+
+                styles [
+                  "body",
+                ]
+              }
+
+              Label label_read_more {
+                halign: start;
+                use-markup: true;
+
+                styles [
+                  "caption",
+                ]
+              }
+            }
+
+            Box sections_box {
+              orientation: vertical;
+              spacing: 32;
+              margin-top: 12;
+            }
+          }
+        }
+      };
+    }
+  };
+}

@@ -146,7 +146,10 @@ impl AudioPlayer {
             .map_err(|e| anyhow::anyhow!("Failed to open default audio sink: {e:?}"))?;
         sink.log_on_drop(false);
         let player = Player::connect_new(&sink.mixer());
-        Ok(AudioRig { _sink: sink, player })
+        Ok(AudioRig {
+            _sink: sink,
+            player,
+        })
     }
 
     pub fn store(&self) -> &Arc<AudioStore> {
@@ -304,7 +307,9 @@ impl AudioPlayer {
                         bytes = entry.downloaded_bytes,
                         "playing from disk (complete)"
                     );
-                    return self.play_local_file(my_gen, &path, &entry, duration, info).await;
+                    return self
+                        .play_local_file(my_gen, &path, &entry, duration, info)
+                        .await;
                 }
                 if entry.is_resumable() {
                     let current_itag = info.and_then(|i| i.format_id.as_deref());
@@ -328,7 +333,9 @@ impl AudioPlayer {
                             "resuming from partial"
                         );
                         return self
-                            .play_partial(my_gen, &entry, kind, vid, url, user_agent, info, duration)
+                            .play_partial(
+                                my_gen, &entry, kind, vid, url, user_agent, info, duration,
+                            )
                             .await;
                     }
                 }
@@ -381,9 +388,10 @@ impl AudioPlayer {
         }
 
         let is_opus = content_type.contains("webm");
-        let bitrate_bps = info
-            .and_then(|i| i.bitrate)
-            .or_else(|| info.and_then(|i| i.format_id.as_deref()).and_then(bitrate_for_itag));
+        let bitrate_bps = info.and_then(|i| i.bitrate).or_else(|| {
+            info.and_then(|i| i.format_id.as_deref())
+                .and_then(bitrate_for_itag)
+        });
         let estimated = duration.or_else(|| estimate_duration(content_length, bitrate_bps));
 
         *self.current_url.lock().unwrap() = Some(url.to_string());
@@ -447,7 +455,11 @@ impl AudioPlayer {
             artist: info.and_then(|i| i.uploader.clone()),
             thumb: info.and_then(|i| i.thumbnail.clone()),
             ext: info.and_then(|i| i.ext.clone()).or_else(|| {
-                Some(if content_type.contains("webm") { "webm".into() } else { "m4a".into() })
+                Some(if content_type.contains("webm") {
+                    "webm".into()
+                } else {
+                    "m4a".into()
+                })
             }),
             mime: Some(content_type.to_owned()),
             itag: info.and_then(|i| i.format_id.clone()),
@@ -456,7 +468,11 @@ impl AudioPlayer {
             uri: Some(url.to_owned()),
             ..AudioEntry::default()
         };
-        match self.store.open_writer(StoreKind::Cache, vid.as_str(), meta).await {
+        match self
+            .store
+            .open_writer(StoreKind::Cache, vid.as_str(), meta)
+            .await
+        {
             Ok(writer) => Some(writer),
             Err(err) => {
                 tracing::warn!(%err, %vid, "cache writer open failed, playing without cache");
@@ -483,11 +499,12 @@ impl AudioPlayer {
         *self.current_url.lock().unwrap() = Some(format!("file://{}", path.display()));
         *self.current_user_agent.lock().unwrap() = None;
 
-        let bitrate_bps = info
-            .and_then(|i| i.bitrate)
-            .or_else(|| info.and_then(|i| i.format_id.as_deref()).and_then(bitrate_for_itag));
-        let estimated = duration
-            .or_else(|| estimate_duration(Some(entry.downloaded_bytes), bitrate_bps));
+        let bitrate_bps = info.and_then(|i| i.bitrate).or_else(|| {
+            info.and_then(|i| i.format_id.as_deref())
+                .and_then(bitrate_for_itag)
+        });
+        let estimated =
+            duration.or_else(|| estimate_duration(Some(entry.downloaded_bytes), bitrate_bps));
         self.set_duration(estimated);
 
         self.set_stats(StreamStats {
@@ -507,14 +524,12 @@ impl AudioPlayer {
         if is_opus {
             let source = OpusSource::from_file(path)
                 .map_err(|e| anyhow::anyhow!("opus source (local): {e}"))?;
-            let total_dur = source.total_duration().or(estimated);
-            self.append_source(source, my_gen, total_dur, true)
+            self.append_source(source, my_gen, estimated, true)
         } else {
             let file = File::open(path).with_context(|| format!("open {}", path.display()))?;
             let source = Decoder::try_from(BufReader::new(file))
                 .map_err(|e| anyhow::anyhow!("decode local cache: {e:?}"))?;
-            let total_dur = source.total_duration().or(estimated);
-            self.append_source(source, my_gen, total_dur, true)
+            self.append_source(source, my_gen, estimated, true)
         }
     }
 
@@ -567,9 +582,10 @@ impl AudioPlayer {
             .unwrap_or(false);
         *self.current_is_opus.lock().unwrap() = is_opus;
 
-        let bitrate_bps = info
-            .and_then(|i| i.bitrate)
-            .or_else(|| info.and_then(|i| i.format_id.as_deref()).and_then(bitrate_for_itag));
+        let bitrate_bps = info.and_then(|i| i.bitrate).or_else(|| {
+            info.and_then(|i| i.format_id.as_deref())
+                .and_then(bitrate_for_itag)
+        });
         let estimated = duration.or_else(|| {
             entry
                 .expected_size
@@ -597,15 +613,15 @@ impl AudioPlayer {
         self.spawn_resume_task(url, &ua, writer, my_gen);
 
         if is_opus {
-            let probe = tokio::task::spawn_blocking(move || OpusSource::from_source(Box::new(reader)));
+            let probe =
+                tokio::task::spawn_blocking(move || OpusSource::from_source(Box::new(reader)));
             let source = match tokio::time::timeout(PROBE_TIMEOUT, probe).await {
                 Ok(Ok(Ok(s))) => s,
                 Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("opus source (partial): {e}")),
                 Ok(Err(e)) => return Err(anyhow::anyhow!("opus probe task failed: {e}")),
                 Err(_) => return Err(anyhow::anyhow!("opus probe timed out")),
             };
-            let total_dur = source.total_duration().or(estimated);
-            self.append_source(source, my_gen, total_dur, true)
+            self.append_source(source, my_gen, estimated, true)
         } else {
             let decode = tokio::task::spawn_blocking(move || {
                 Decoder::try_from(BufReader::new(reader))
@@ -614,8 +630,7 @@ impl AudioPlayer {
             let source = decode
                 .await
                 .map_err(|e| anyhow::anyhow!("decode task failed: {e}"))??;
-            let total_dur = source.total_duration().or(estimated);
-            self.append_source(source, my_gen, total_dur, true)
+            self.append_source(source, my_gen, estimated, true)
         }
     }
 
@@ -776,7 +791,11 @@ impl AudioPlayer {
             Ok(Ok(Ok(source))) => source,
             Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("opus source: {e}")),
             Ok(Err(join_err)) => return Err(anyhow::anyhow!("opus probe task failed: {join_err}")),
-            Err(_) => return Err(anyhow::anyhow!("opus probe timed out after {PROBE_TIMEOUT:?}")),
+            Err(_) => {
+                return Err(anyhow::anyhow!(
+                    "opus probe timed out after {PROBE_TIMEOUT:?}"
+                ));
+            }
         };
         let probe_ms = probe_started.elapsed();
 
@@ -796,8 +815,7 @@ impl AudioPlayer {
             );
         }
 
-        let total_dur = source.total_duration().or(known_duration);
-        self.append_source(source, my_gen, total_dur, false)
+        self.append_source(source, my_gen, known_duration, false)
     }
 
     async fn play_streaming(
@@ -841,8 +859,7 @@ impl AudioPlayer {
 
         tracing::debug!(buffered_bytes = buffered, gen = my_gen, "decoder ready");
 
-        let total_dur = source.total_duration().or(known_duration);
-        self.append_source(source, my_gen, total_dur, false)
+        self.append_source(source, my_gen, known_duration, false)
     }
 
     pub fn play_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
@@ -854,8 +871,8 @@ impl AudioPlayer {
     }
 
     fn play_file_inner(&self, path: &Path) -> Result<()> {
-        let file = File::open(path)
-            .with_context(|| format!("Failed to open file: {}", path.display()))?;
+        let file =
+            File::open(path).with_context(|| format!("Failed to open file: {}", path.display()))?;
         let reader = BufReader::new(file);
         let source = Decoder::try_from(reader)
             .map_err(|e| anyhow::anyhow!("Failed to decode local file: {e:?}"))?;
@@ -1130,8 +1147,7 @@ impl AudioPlayer {
         let decode = tokio::task::spawn_blocking(
             move || -> Result<Decoder<BufReader<StreamReader>>, String> {
                 let reader = BufReader::new(StreamReader::new(decode_buffer));
-                let mut source =
-                    Decoder::try_from(reader).map_err(|e| format!("decode: {e:?}"))?;
+                let mut source = Decoder::try_from(reader).map_err(|e| format!("decode: {e:?}"))?;
                 skip_samples(&mut source, skip);
                 Ok(source)
             },
@@ -1150,13 +1166,7 @@ impl AudioPlayer {
         self.install_seeked_source(source, my_gen, target, was_paused)
     }
 
-    fn spawn_resume_task(
-        &self,
-        url: &str,
-        user_agent: &str,
-        mut writer: AudioWriter,
-        my_gen: u64,
-    ) {
+    fn spawn_resume_task(&self, url: &str, user_agent: &str, mut writer: AudioWriter, my_gen: u64) {
         let client = self.client.clone();
         let generation = self.generation.clone();
         let url = url.to_owned();
@@ -1172,7 +1182,9 @@ impl AudioPlayer {
                     return;
                 }
 
-                match resume_once(&client, &url, &user_agent, &mut writer, &generation, my_gen).await {
+                match resume_once(&client, &url, &user_agent, &mut writer, &generation, my_gen)
+                    .await
+                {
                     Ok(true) => {
                         match writer.finish(true).await {
                             Ok(entry) => tracing::debug!(
@@ -1390,7 +1402,10 @@ async fn resume_once(
 
     let status = response.status();
     if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
-        return Ok(writer.meta().expected_size.is_some_and(|s| saved_offset >= s));
+        return Ok(writer
+            .meta()
+            .expected_size
+            .is_some_and(|s| saved_offset >= s));
     }
     if status.is_server_error() || is_transient_http(status) {
         return Err(ResumeError::Transient(format!("HTTP {status}")));
@@ -1623,7 +1638,10 @@ fn skip_samples<S: Source>(source: &mut S, target: Duration) {
 
 impl PlaybackPosition {
     fn new() -> Self {
-        Self { start_instant: None, accumulated: Duration::ZERO }
+        Self {
+            start_instant: None,
+            accumulated: Duration::ZERO,
+        }
     }
 
     fn reset(&mut self) {
