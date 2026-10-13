@@ -98,13 +98,8 @@ namespace Timbre.HomeSection {
         var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
         box.append (build_header (page, section, true));
 
-        var scroll = new Gtk.ScrolledWindow () {
-            hscrollbar_policy = Gtk.PolicyType.AUTOMATIC,
-            vscrollbar_policy = Gtk.PolicyType.NEVER,
-            hexpand = true,
-            overlay_scrolling = true,
-            css_classes = { "home-speed-scroll" }
-        };
+        var scroll_box = new Timbre.Utils.HorizontalScrollBox ();
+        scroll_box.add_css_class ("home-speed-scroll");
 
         var wrap = new Adw.WrapBox () {
             orientation = Gtk.Orientation.VERTICAL,
@@ -143,8 +138,8 @@ namespace Timbre.HomeSection {
             wrap.append (tile);
         }
 
-        scroll.child = wrap;
-        box.append (scroll);
+        scroll_box.set_content (wrap);
+        box.append (scroll_box);
         parent.append (box);
 
         fix_dial_height (wrap, rows);
@@ -180,13 +175,8 @@ namespace Timbre.HomeSection {
         var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
         box.append (build_header (page, section, true));
 
-        var scroll = new Gtk.ScrolledWindow () {
-            hscrollbar_policy = Gtk.PolicyType.AUTOMATIC,
-            vscrollbar_policy = Gtk.PolicyType.NEVER,
-            hexpand = true,
-            overlay_scrolling = true,
-            css_classes = { "home-card-strip" }
-        };
+        var scroll_box = new Timbre.Utils.HorizontalScrollBox ();
+        scroll_box.add_css_class ("home-card-strip");
 
         var strip = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
         strip.margin_start = SPEED_DIAL_BLEED;
@@ -217,8 +207,8 @@ namespace Timbre.HomeSection {
             strip.append (card);
         }
 
-        scroll.child = strip;
-        box.append (scroll);
+        scroll_box.set_content (strip);
+        box.append (scroll_box);
         parent.append (box);
     }
 }

@@ -16,4 +16,5 @@ widgets_sources = files(
   'theme_selector.vala',
   'track_card.vala',
   'track_row.vala',
+  'horizontal_scroll_box.vala',
 )
