@@ -1,11 +1,13 @@
 namespace Timbre {
     public class SettingsWindow : Adw.PreferencesDialog {
         private unowned Timbre.Player player;
+        private unowned Timbre.HomePage home;
         private string cookies_path;
 
-        public SettingsWindow (Timbre.Player player, string cookies_path) {
+        public SettingsWindow (Timbre.Player player, string cookies_path, Timbre.HomePage home) {
             this.player = player;
             this.cookies_path = cookies_path;
+            this.home = home;
             this.build_ui ();
         }
 
@@ -36,6 +38,7 @@ namespace Timbre {
                     login_row.subtitle = "Account connected.";
                     login_btn.label = "Connected";
                     login_btn.sensitive = false;
+                    this.home.refresh ();
                 });
                 login_win.present (this);
             });

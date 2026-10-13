@@ -85,10 +85,17 @@ namespace Timbre {
             this.update_nav_buttons ();
 
             this.notify["is-active"].connect (() => {
+                message ("is-active changed: %s", this.is_active.to_string ());
                 this.player.set_active (this.is_active);
             });
 
             this.setup_mpris ();
+        }
+
+        public void open_preferences () {
+            var settings_win = new Timbre.SettingsWindow (
+                this.player, this.cookies_path, this.home_page);
+            settings_win.present (this);
         }
 
         private void setup_mpris () {

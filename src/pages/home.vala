@@ -44,7 +44,7 @@ namespace Timbre {
             this.load_home_data (true);
         }
 
-        private void load_home_data (bool force) {
+        public void load_home_data (bool force) {
             if (this.player == null) return;
             if (this.loading) return;
             if (this.loaded && !force) return;

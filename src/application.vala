@@ -170,7 +170,8 @@ public class Timbre.Application : Adw.Application {
     }
 
     private void on_preferences_action () {
-        var settings_win = new Timbre.SettingsWindow (this._player, this.cookies_path);
-        settings_win.present (this.active_window);
+        var win = this.active_window as Timbre.Window;
+        if (win == null) return;
+        win.open_preferences ();
     }
 }
