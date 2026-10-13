@@ -1344,15 +1344,18 @@ impl AudioPlayer {
     }
 
     pub fn is_finished(&self) -> bool {
-        if let Some(false) = self.with_player(|p| p.empty()) {
+        let (empty, pos) = match self.with_player(|p| (p.empty(), ())) {
+            Some((empty, _)) => (empty, self.position.lock().unwrap().elapsed()),
+            None => return false,
+        };
+        if !empty {
             return false;
         }
-        let pos = self.position.lock().unwrap().elapsed();
         if pos == Duration::ZERO {
             return false;
         }
         match *self.total_duration.lock().unwrap() {
-            Some(total) => pos + Duration::from_millis(500) >= total,
+            Some(total) => pos + Duration::from_secs(2) >= total,
             None => true,
         }
     }
