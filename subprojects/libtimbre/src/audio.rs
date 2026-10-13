@@ -20,10 +20,9 @@ use opus_source::OpusSource;
 use store::{AudioEntry, AudioStore, AudioWriter, StoreKind};
 
 const DEFAULT_UA: &str = "Mozilla/5.0";
-const PRE_BUFFER_THRESHOLD: usize = 32 * 1024;
-const PRE_BUFFER_TIMEOUT: Duration = Duration::from_secs(5);
-const PRE_BUFFER_MIN: usize = 4 * 1024;
-const PRE_BUFFER_POLL: Duration = Duration::from_millis(20);
+const PRE_BUFFER_THRESHOLD: usize = 1 * 1024; 
+const PRE_BUFFER_TIMEOUT: Duration = Duration::from_secs(3);
+const PRE_BUFFER_POLL: Duration = Duration::from_millis(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(8);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -724,7 +723,7 @@ impl AudioPlayer {
     async fn wait_for_prebuffer(&self, buffer: &StreamBuffer, my_gen: u64) -> Result<usize> {
         let started = Instant::now();
         loop {
-            if self.generation.load(Ordering::SeqCst) != my_gen {
+            if self.generation.load(Ordering::Acquire) != my_gen {
                 buffer.cancel();
                 return Err(anyhow::anyhow!("superseded by a newer play request"));
             }
@@ -739,17 +738,18 @@ impl AudioPlayer {
                 return Ok(len);
             }
             if started.elapsed() >= PRE_BUFFER_TIMEOUT {
-                if len < PRE_BUFFER_MIN {
+                if len == 0 {
                     return Err(anyhow::anyhow!(
-                        "stream stalled: only {len} bytes in {:?}",
+                        "stream stalled: zero bytes received in {:?}",
                         started.elapsed()
                     ));
                 }
-                tracing::debug!(
+
+                tracing::warn!(
                     bytes = len,
                     waited_ms = started.elapsed().as_millis() as u64,
                     gen = my_gen,
-                    "pre-buffer deadline reached"
+                    "pre-buffer deadline reached, starting playback with partial buffer"
                 );
                 return Ok(len);
             }
