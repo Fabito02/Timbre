@@ -16,6 +16,7 @@ namespace Timbre {
         private uint slider_unlock_id = 0;
         private double pending_seek_target = -1.0;
         private bool loading_track = false;
+        private bool radio_loading = false;
 
         private string current_track_id = "";
         private int like_fetch_gen = 0;
@@ -405,7 +406,7 @@ namespace Timbre {
             this.is_playing = false;
             this.button_play_pause.icon_name = "media-playback-start-symbolic";
             this.loading_track = true;
-        
+
             if (track.duration_secs == 0) {
                 this.pending_track = track;
                 this.like_fetch_gen++;
@@ -415,7 +416,7 @@ namespace Timbre {
             }
             this.start_playback (track, track.duration_secs);
         }
-        
+
         private void fetch_and_play (Timbre.TrackItem track, int gen) {
             this.player.get_watch_playlist (track.id, "", (json, error) => {
                 Idle.add (() => {
@@ -671,34 +672,34 @@ namespace Timbre {
 
         private bool update_ui_tick () {
             if (this.player == null) return true;
-
+        
             if (this.loading_track) return true;
-
+        
             int state = this.player.get_state ();
             bool backend_playing = (state == 1);
             if (backend_playing != this.is_playing) {
-                bool was_playing = this.is_playing;
                 this.is_playing = backend_playing;
                 this.button_play_pause.icon_name = this.is_playing
                     ? "media-playback-pause-symbolic"
                     : "media-playback-start-symbolic";
-
-                if (was_playing && !this.is_playing
-                    && this.pending_seek_target < 0.0
-                    && this.player.is_finished ()
-                    && this.queue.has_next ()) {
-                    this.queue.next ();
+        
+                if (this.player.is_finished ()) {
+                    if (this.queue.has_next ()) {
+                        this.queue.next ();
+                    } else {
+                        this.play_radio_from_current ();
+                    }
                 }
             }
-
+        
             this.settle_pending_seek ();
-
+        
             if (this.slider_locked) return true;
-
+        
             double current_pos = this.player.get_position ();
             this.set_slider_silently (current_pos);
             this.label_time_current.label = format_time (current_pos);
-
+        
             double effective = this.metadata_duration;
             if (effective > 0.0
                 && Math.fabs (this.adjustment_progress.upper - effective) > 0.5) {
@@ -706,8 +707,80 @@ namespace Timbre {
                 this.adjustment_progress.upper = effective;
                 this.label_time_total.label = format_time (effective);
             }
-
+        
             return true;
+        }
+        
+        private void play_radio_from_current () {
+            if (this.radio_loading) return;
+        
+            string seed = this.current_track_id;
+            if (seed.length == 0) return;
+        
+            this.radio_loading = true;
+        
+            this.player.get_radio (seed, (json, error) => {
+                Idle.add (() => {
+                    this.radio_loading = false;
+        
+                    if (error != null) {
+                        warning ("radio: %s", (string) error);
+                        Timbre.string_free (error);
+                        if (json != null) Timbre.string_free (json);
+                        return GLib.Source.REMOVE;
+                    }
+        
+                    var tracks = this.parse_radio_tracks ((string) json);
+                    Timbre.string_free (json);
+        
+                    if (tracks.length > 0) {
+                        this.queue.play_list (tracks, 1);
+                    }
+                    return GLib.Source.REMOVE;
+                });
+            });
+        }
+        
+        private GenericArray<TrackItem> parse_radio_tracks (string json_str) {
+            var tracks = new GenericArray<TrackItem> ();
+            try {
+                var parser = new Json.Parser ();
+                parser.load_from_data (json_str);
+                var root = parser.get_root ();
+                if (root == null || root.get_node_type () != Json.NodeType.OBJECT) {
+                    return tracks;
+                }
+                var obj = root.get_object ();
+                if (!obj.has_member ("tracks")) return tracks;
+        
+                var arr = obj.get_array_member ("tracks");
+                foreach (unowned Json.Node node in arr.get_elements ()) {
+                    if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                    var wrapper = node.get_object ();
+                    if (!wrapper.has_member ("track")) continue;
+                    var t = wrapper.get_object_member ("track");
+        
+                    string vid = "";
+                    if (t.has_member ("video_id") && !t.get_null_member ("video_id"))
+                        vid = t.get_string_member ("video_id");
+                    if (vid.length == 0) continue;
+        
+                    string title = t.has_member ("title") && !t.get_null_member ("title")
+                        ? t.get_string_member ("title") : "";
+                    string artist = t.has_member ("artist") && !t.get_null_member ("artist")
+                        ? t.get_string_member ("artist") : "";
+                    string? thumb = t.has_member ("thumb") && !t.get_null_member ("thumb")
+                        ? t.get_string_member ("thumb") : null;
+                    uint64 dur = t.has_member ("duration_seconds") && !t.get_null_member ("duration_seconds")
+                        ? (uint64) t.get_int_member ("duration_seconds") : 0;
+        
+                    tracks.add (new Timbre.TrackItem.with_data (
+                        vid, title, artist, dur, thumb));
+                }
+            } catch (Error e) {
+                debug ("parse_radio_tracks: %s", e.message);
+            }
+            return tracks;
         }
 
         [GtkCallback]
