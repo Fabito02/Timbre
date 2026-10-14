@@ -78,10 +78,8 @@ namespace Timbre {
             this.cookies_path = app.cookies_path;
             this.queue = new Timbre.QueueManager ();
 
-            // ─── ViewSwitcher: stack setada em runtime (não no .blp) ─────
             this.switcher.stack = this.main_stack;
             this.switcher_bar.stack = this.main_stack;
-            // ─────────────────────────────────────────────────────────────
 
             this.search_page.set_player (this.player);
             this.home_page.set_player (this.player);
@@ -283,6 +281,7 @@ namespace Timbre {
 
         [GtkCallback]
         public void open_fullscreen_clicked () {
+            this.bottom_bar_revealer.reveal_child = false;
             this.fullscreen_revealer.visible = true;
             this.fullscreen_revealer.can_target = true;
 
@@ -295,6 +294,7 @@ namespace Timbre {
 
         [GtkCallback]
         public void close_fullscreen_clicked () {
+        this.bottom_bar_revealer.reveal_child = true;
             this.fullscreen_revealer.can_target = false;
             this.fullscreen_revealer.reveal_child = false;
         }
