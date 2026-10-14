@@ -45,7 +45,9 @@ template $TimbreWindow: Adw.ApplicationWindow {
 
   Adw.Breakpoint {
     condition ("max-width: 700sp")
+
     setters {
+      header_bar.title-widget: null;
       switcher_bar.reveal: true;
     }
   }
@@ -157,7 +159,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
     content: Overlay {
       Adw.ToolbarView {
         [top]
-        Adw.HeaderBar {
+        Adw.HeaderBar header_bar {
           [start]
           Button button_back {
             icon-name: "go-previous-symbolic";
@@ -172,11 +174,10 @@ template $TimbreWindow: Adw.ApplicationWindow {
             active: bind searchbar.search-mode-enabled bidirectional;
           }
 
-          [title]
-          Adw.ViewSwitcher switcher {
+          title-widget: Adw.ViewSwitcher switcher {
             stack: main_stack;
             policy: wide;
-          }
+          };
 
           [end]
           MenuButton primary_menu_btn {
