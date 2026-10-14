@@ -11,17 +11,23 @@ template $TimbreTrackRow: ListBoxRow {
     margin-start: 6;
     margin-end: 6;
 
-    Picture image_cover {
-      can-shrink: true;
-      content-fit: cover;
-      width-request: 48;
-      height-request: 48;
-      valign: center;
-      halign: center;
+    Overlay {
+      Box {
+        width-request: 48;
+        height-request: 48;
+      }
 
-      styles [
-        "row-cover-img",
-      ]
+      [overlay]
+      Picture image_cover {
+        can-shrink: true;
+        content-fit: contain;
+        halign: fill;
+        valign: fill;
+
+        styles [
+          "row-cover-img",
+        ]
+      }
     }
 
     Box {

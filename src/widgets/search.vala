@@ -143,7 +143,7 @@ namespace Timbre {
             }
 
             if (albums.length > 0 || videos.length > 0 || episodes.length > 0) {
-                var p = this.make_tab (group, _("Other results"), "media-optical-symbolic", "others");
+                var p = this.make_tab (group, _("Other results"), "tape-symbolic", "others");
                 if (albums.length > 0)   this.add_section (p, _("Albums"), albums, false);
                 if (videos.length > 0)   this.add_section (p, _("Videos"), videos, false);
                 if (episodes.length > 0) this.add_section (p, _("More results"), episodes, false);

@@ -33,6 +33,8 @@ namespace Timbre {
 
         [GtkChild] private unowned Adw.OverlaySplitView split_view;
         [GtkChild] private unowned Gtk.ToggleButton button_toggle_queue;
+        [GtkChild] private unowned Gtk.Button button_open_fullscreen;
+        [GtkChild] private unowned Gtk.Button button_close_fullscreen;
         [GtkChild] private unowned Gtk.ListView queue_list;
         [GtkChild] private unowned Gtk.Label label_queue_count;
         [GtkChild] private unowned Gtk.Button button_clear_queue;
@@ -40,6 +42,7 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Label label_current_title;
         [GtkChild] private unowned Gtk.Label label_current_artist;
         [GtkChild] private unowned Gtk.Picture image_cover;
+        [GtkChild] private unowned Gtk.Picture image_fullscreen;
         [GtkChild] private unowned Gtk.Box like_slot;
 
         [GtkChild] private unowned Gtk.SearchBar searchbar;
@@ -47,12 +50,15 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.SearchEntry searchentry;
         [GtkChild] private unowned Adw.ViewStack main_stack;
         [GtkChild] private unowned Adw.NavigationView navigation_view;
+        [GtkChild] private unowned Gtk.Revealer bottom_bar_revealer;
+        [GtkChild] private unowned Gtk.Revealer fullscreen_revealer;
 
         [GtkChild] private unowned Timbre.SearchPage search_page;
         [GtkChild] private unowned Timbre.HomePage home_page;
 
         private Gtk.SingleSelection queue_selection;
         private Timbre.Utils.ImageBinding cover_binding;
+        private Timbre.Utils.ImageBinding cover_fullscreen_binding;
         private Timbre.LikeButton? bar_like_btn = null;
         public Timbre.Services.Mpris? mpris { get; private set; default = null; }
 
@@ -74,7 +80,8 @@ namespace Timbre {
 
             this.searchbar.key_capture_widget = this;
 
-            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 50);
+            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
+            this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 512);
 
             this.bar_like_btn = new Timbre.LikeButton (this.player);
             this.like_slot.append (this.bar_like_btn);
@@ -83,13 +90,20 @@ namespace Timbre {
             this.setup_queue_view ();
             this.setup_search ();
             this.update_nav_buttons ();
-
-            this.notify["is-active"].connect (() => {
-                message ("is-active changed: %s", this.is_active.to_string ());
-                this.player.set_active (this.is_active);
-            });
-
             this.setup_mpris ();
+
+            this.fullscreen_revealer.notify.connect ((pspec) => {
+                if (pspec.name == "child-revealed") {
+                    if (!this.fullscreen_revealer.reveal_child && !this.fullscreen_revealer.child_revealed) {
+                        this.fullscreen_revealer.visible = false;
+                        
+                        this.cover_fullscreen_binding.load (null);
+                        
+                        Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
+                        Timbre.Utils.trim_memory ();
+                    }
+                }
+            });
         }
 
         public void open_preferences () {
@@ -242,6 +256,24 @@ namespace Timbre {
             });
         }
 
+        [GtkCallback]
+        public void open_fullscreen_clicked () {
+            this.fullscreen_revealer.visible = true;
+            this.fullscreen_revealer.can_target = true;
+        
+            if (this.pending_track != null) {
+                this.cover_fullscreen_binding.load (this.pending_track.thumbnail_url);
+            }
+        
+            this.fullscreen_revealer.reveal_child = true;
+        }
+        
+        [GtkCallback]
+        public void close_fullscreen_clicked () {
+            this.fullscreen_revealer.can_target = false;
+            this.fullscreen_revealer.reveal_child = false;
+        }
+
         private void setup_queue_view () {
             this.queue_selection = new Gtk.SingleSelection (this.queue.store);
             this.queue_selection.autoselect = false;
@@ -319,6 +351,7 @@ namespace Timbre {
                     this.label_time_total.label = "0:00";
                     this.adjustment_progress.value = 0.0;
                     this.cover_binding.load (null);
+                    this.cover_fullscreen_binding.load (null);
 
                     this.current_track_id = "";
                     this.like_fetch_gen++;
@@ -440,6 +473,7 @@ namespace Timbre {
                     if (json != null) Timbre.string_free (json);
                     if (error != null) Timbre.string_free (error);
                     this.start_playback (track, dur);
+                    bottom_bar_revealer.reveal_child = true;
                     return GLib.Source.REMOVE;
                 });
             });
@@ -448,7 +482,9 @@ namespace Timbre {
         private void start_playback (Timbre.TrackItem track, uint64 duration) {
             message ("start_playback: id=%s dur=%lu title=%s".printf (
                 track.id, (ulong) duration, track.title));
-
+        
+            this.pending_track = track;
+        
             if (this.slider_unlock_id != 0) {
                 GLib.Source.remove (this.slider_unlock_id);
                 this.slider_unlock_id = 0;
@@ -456,15 +492,20 @@ namespace Timbre {
             this.slider_locked = false;
             this.pending_seek_target = -1.0;
             this.loading_track = true;
-
+        
             this.metadata_duration = (duration > 0)
                 ? (double) duration
                 : 0.0;
-
+        
             this.label_current_title.label = track.title;
             this.label_current_artist.label = track.artist;
+            
             this.cover_binding.load (track.thumbnail_url);
-
+            
+            if (this.fullscreen_revealer.visible) {
+                this.cover_fullscreen_binding.load (track.thumbnail_url);
+            }
+        
             this.set_slider_silently (0.0);
             this.label_time_current.label = "0:00";
             if (duration > 0) {
@@ -525,6 +566,8 @@ namespace Timbre {
                     if (need_metadata_fetch && my_fetch_gen == this.like_fetch_gen) {
                         this.fetch_track_metadata (track_id, my_fetch_gen);
                     }
+                    
+                    bottom_bar_revealer.reveal_child = true;
                     return GLib.Source.REMOVE;
                 });
             });

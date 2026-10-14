@@ -89,16 +89,13 @@ scale.playback-bar:hover slider {
 
 /* covers and shapes */
 
-.cover-bar-img {
-    border-radius: 8px;
-}
-
 .cover-bar-container {
     border-radius: 8px;
 }
 
-.row-cover-img {
+.row-cover-img, .cover-bar-img {
     border-radius: 8px;
+    background-color: #00000060;
 }
 
 .card-btn {
@@ -108,6 +105,7 @@ scale.playback-bar:hover slider {
 
 .card-cover-img {
     border-radius: 12px;
+    background-color: #00000060;
 }
 
 .search-bar {
@@ -252,10 +250,23 @@ picture.image-placeholder {
 }
 
 .banner-scrim {
-    background: linear-gradient(
-        to bottom,
-        transparent 0%,
-        transparent 40%,
-        rgba(0, 0, 0, 0.55) 100%
-    );
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    alpha(var(--window-bg-color), 0.05) 15%,
+    alpha(var(--window-bg-color), 0.2) 35%,
+    alpha(var(--window-bg-color), 0.5) 60%,
+    alpha(var(--window-bg-color), 0.8) 82%,
+    var(--window-bg-color) 100%
+  );
+}
+
+/* fullscreen player */
+
+.fullscreen_overlay_background {
+    background-color: @window_bg_color;
+}
+
+.fullscreen-img {
+    
 }

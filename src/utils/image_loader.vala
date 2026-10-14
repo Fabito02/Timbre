@@ -19,8 +19,10 @@ namespace Timbre.Utils {
             return instance;
         }
 
-        private const int MAX_TEXTURE_CACHE = 12;
-        private const int64 SOFT_TTL_USEC = 45 * 1000 * 1000;   // 45s
+        private const int MAX_TEXTURE_CACHE = 8;
+        private const int64 HARD_MEMORY_LIMIT = 16 * 1024 * 1024;
+        private int64 current_cache_bytes = 0;
+        private const int64 SOFT_TTL_USEC = 10 * 1000 * 1000;   // 10s
         private const int TRIM_INTERVAL_SEC = 15;
 
         private GLib.HashTable<string, CacheEntry> cache;
@@ -57,28 +59,51 @@ namespace Timbre.Utils {
             return entry.texture;
         }
 
+        private int64 texture_bytes (Gdk.Texture tex) {
+            int w = tex.get_width ();
+            int h = tex.get_height ();
+            return (int64) w * h * 4;
+        }
+
         private void store (string key, Gdk.Texture tex) {
             int64 now = GLib.get_monotonic_time ();
+            int64 bytes = texture_bytes (tex);
+
             if (this.cache.contains (key)) {
+                var old = this.cache.lookup (key);
+                this.current_cache_bytes -= texture_bytes (old.texture);
                 this.cache.replace (key, new CacheEntry (tex, now));
                 this.lru_order.remove (key);
                 this.lru_order.push_tail (key);
+                this.current_cache_bytes += bytes;
                 return;
             }
-            while (this.cache.size () >= MAX_TEXTURE_CACHE
+
+            while ((this.current_cache_bytes + bytes > HARD_MEMORY_LIMIT
+                    || this.cache.size () >= MAX_TEXTURE_CACHE)
                    && !this.lru_order.is_empty ()) {
                 var oldest = this.lru_order.pop_head ();
-                this.cache.remove (oldest);
+                var old = this.cache.lookup (oldest);
+                if (old != null) {
+                    this.current_cache_bytes -= texture_bytes (old.texture);
+                    this.cache.remove (oldest);
+                }
             }
+
             this.cache.insert (key, new CacheEntry (tex, now));
             this.lru_order.push_tail (key);
+            this.current_cache_bytes += bytes;
             this.schedule_trim ();
         }
 
         public void forget (string url, int target_size, int scale) {
-            string upgraded = get_high_res_url (url, target_size);
+            string upgraded = get_high_res_url (url, target_size, scale);
             string key = "%s@%dx%d".printf (upgraded, target_size, scale);
             if (this.cache.contains (key)) {
+                var old = this.cache.lookup (key);
+                if (old != null) {
+                    this.current_cache_bytes -= texture_bytes (old.texture);
+                }
                 this.cache.remove (key);
                 this.lru_order.remove (key);
             }
@@ -110,6 +135,10 @@ namespace Timbre.Utils {
 
             for (int i = 0; i < to_remove.length; i++) {
                 var k = to_remove.get (i);
+                var old = this.cache.lookup (k);
+                if (old != null) {
+                    this.current_cache_bytes -= texture_bytes (old.texture);
+                }
                 this.cache.remove (k);
                 this.lru_order.remove (k);
             }
@@ -123,12 +152,20 @@ namespace Timbre.Utils {
             while (this.cache.size () > target
                    && !this.lru_order.is_empty ()) {
                 var oldest = this.lru_order.pop_head ();
+                var old = this.cache.lookup (oldest);
+                if (old != null) {
+                    this.current_cache_bytes -= texture_bytes (old.texture);
+                }
                 this.cache.remove (oldest);
             }
         }
 
         public int cache_size () {
             return (int) this.cache.size ();
+        }
+
+        public int64 cache_bytes () {
+            return this.current_cache_bytes;
         }
 
         public async Gdk.Texture? load_texture_async (
@@ -140,8 +177,11 @@ namespace Timbre.Utils {
         ) {
             if (cancel != null && cancel.is_cancelled ()) return null;
 
-            string upgraded = get_high_res_url (url, target_size);
-            string key = "%s@%dx%d".printf (upgraded, target_size, scale_factor);
+            int effective_scale = scale_factor < 1 ? 1 : scale_factor;
+
+            string upgraded = get_high_res_url (url, target_size, effective_scale);
+            
+            string key = "%s@%dx%d".printf (upgraded, target_size, effective_scale);
 
             var cached = this.lookup (key);
             if (cached != null) return cached;
@@ -152,7 +192,7 @@ namespace Timbre.Utils {
                 if (cancel != null && cancel.is_cancelled ()) return null;
 
                 var tex = yield this.fetch_one_async (
-                    candidate, target_size, scale_factor, cancel);
+                    candidate, target_size, effective_scale, cancel);
                 if (tex != null) {
                     this.store (key, tex);
                     return tex;
@@ -169,7 +209,7 @@ namespace Timbre.Utils {
         ) {
             try {
                 GLib.Bytes? blob = null;
-
+        
                 if (url.has_prefix ("file://")) {
                     string path = url.substring (7);
                     int q = path.index_of_char ('?');
@@ -186,79 +226,68 @@ namespace Timbre.Utils {
                         blob = yield this.session.send_and_read_async (
                             msg, Priority.DEFAULT, cancel);
                         if (msg.status_code != 200) return null;
+                        
                         this.write_disk_cache (url, blob);
                     }
                 }
-
+        
                 if (blob == null || blob.get_size () == 0) return null;
-
+        
                 var stream = new MemoryInputStream.from_bytes (blob);
                 var original = yield new Gdk.Pixbuf.from_stream_async (stream, cancel);
                 if (original == null) return null;
-
-                int tw = target_size * scale_factor;
+        
+                int th = target_size * scale_factor;
+        
                 int w = original.get_width ();
                 int h = original.get_height ();
                 if (w <= 0 || h <= 0) return null;
-
-                double s = double.max (tw / (double) w, tw / (double) h);
-                int nw = (int) (w * s);
-                int nh = (int) (h * s);
-
-                Gdk.Pixbuf? scaled = original.scale_simple (
-                    nw, nh, Gdk.InterpType.BILINEAR);
-                if (scaled == null) return null;
-
-                if (nw != nh) {
-                    int size = int.min (nw, nh);
-                    int x_off = (nw - size) / 2;
-                    int y_off = (nh - size) / 2;
-
-                    var cropped = new Gdk.Pixbuf (
-                        Gdk.Colorspace.RGB,
-                        scaled.get_has_alpha (),
-                        scaled.get_bits_per_sample (),
-                        size, size
-                    );
-                    scaled.copy_area (x_off, y_off, size, size, cropped, 0, 0);
-                    return Gdk.Texture.for_pixbuf (cropped);
+        
+                if (h > th) {
+                    double s = (double) th / (double) h;
+                    int nh = th;
+                    int nw = int.max (1, (int) (w * s));
+        
+                    var scaled = original.scale_simple (
+                        nw, nh, Gdk.InterpType.BILINEAR);
+                    original = null;
+                    if (scaled == null) return null;
+                    return Gdk.Texture.for_pixbuf (scaled);
                 }
-
-                return Gdk.Texture.for_pixbuf (scaled);
+        
+                return Gdk.Texture.for_pixbuf (original);
             } catch (Error e) {
                 debug ("ImageLoader: %s → %s", url, e.message);
                 return null;
             }
         }
 
-        public static string get_high_res_url (string url, int target_size) {
-            if (url == null || url.length == 0) return url;
-
-            if (url.contains ("i.ytimg.com")) {
-                string[] quals = { "default", "mqdefault", "hqdefault", "sddefault", "maxresdefault" };
-                foreach (var q in quals) {
-                    if (url.contains ("/" + q + ".jpg") || url.contains ("/" + q + ".webp")) {
-                        return url.replace ("/" + q + ".", "/maxresdefault.");
-                    }
-                }
-                return url;
-            }
+        public static string get_high_res_url (string url, int target_size, int scale_factor = 1) {
+            int real_pixels = target_size * scale_factor;
+            int min_res = int.max (real_pixels, 512);
 
             if (url.contains ("googleusercontent.com") || url.contains ("ggpht.com")) {
-                int dim = (target_size > 0) ? target_size * 2 : 544;
                 try {
-                    var re = new GLib.Regex ("([=-])w\\d+-h\\d+");
-                    if (re.match (url)) {
-                        return re.replace (url, url.length, 0,
-                                           "\\1w%d-h%d".printf (dim, dim));
-                    }
-                    var re2 = new GLib.Regex ("([=-])s\\d+");
-                    if (re2.match (url)) {
-                        return re2.replace (url, url.length, 0,
-                                            "\\1s%d".printf (dim));
-                    }
-                } catch (Error e) { /* ignore */ }
+                    var r1 = new GLib.Regex ("([-=])w\\d+-h\\d+");
+                    string res1 = r1.replace (url, -1, 0, "\\1w%d-h%d".printf (min_res, min_res));
+                    
+                    var r2 = new GLib.Regex ("([-=])s\\d+");
+                    string res2 = r2.replace (res1, -1, 0, "\\1s%d".printf (min_res));
+                    
+                    return res2;
+                } catch (Error e) {
+                    return url;
+                }
             }
+
+            if (url.contains ("i.ytimg.com/vi/")) {
+                int last_slash = url.last_index_of_char ('/');
+                if (last_slash > 0) {
+                    string base_path = url.substring (0, last_slash + 1);
+                    return base_path + "maxresdefault.jpg";
+                }
+            }
+
             return url;
         }
 

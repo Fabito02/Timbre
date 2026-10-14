@@ -53,6 +53,11 @@ namespace Timbre.Utils {
         }
 
         public void load (string? url) {
+            if (url == null) {
+                this.current_url = null;
+                this.picture.set_paintable (null);
+                return;
+            }
             if (this.picture_destroyed) return;
             if (this.current_url == url) return;
             this.current_url = url;

@@ -13,7 +13,10 @@
     <file alias="widgets/search.ui" compressed="true">search.ui</file>
     <file alias="widgets/track_row.ui" compressed="true">track_row.ui</file>
     <file alias="widgets/track_card.ui" compressed="true">track_card.ui</file>
-    <file alias="widgets/home_speed_tile.ui" compressed="true">home_speed_tile.ui</file>
+    <file
+            alias="widgets/home_speed_tile.ui"
+            compressed="true"
+        >home_speed_tile.ui</file>
     <file
             alias="widgets/theme_selector.ui"
             compressed="true"
@@ -51,5 +54,9 @@
             alias="icons/scalable/actions/music-artist-symbolic.svg"
             preprocess="xml-stripblanks"
         >../data/icons/hicolor/actions/music-artist-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/tape-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/tape-symbolic.svg</file>
   </gresource>
 </gresources>

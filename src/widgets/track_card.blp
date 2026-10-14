@@ -11,7 +11,7 @@ template $TimbreTrackCard: Button {
     orientation: vertical;
     spacing: 12;
 
-    Box {
+    Adw.Bin {
       Overlay {
         Picture image_cover {
           can-shrink: true;
@@ -49,15 +49,15 @@ template $TimbreTrackCard: Button {
         Adw.Bin {
           halign: end;
           valign: end;
-  
+
           styles [
             "album-overlay",
           ]
-  
+
           Image {
             icon-name: "media-optical-symbolic";
-            pixel-size: 16;
-  
+            pixel-size: 18;
+
             styles [
               "album-overlay-icon",
             ]
