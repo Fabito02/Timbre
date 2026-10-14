@@ -15,23 +15,17 @@ namespace Timbre.HomeSection {
         };
 
         if (section.strapline_thumb != null && section.strapline_thumb.length > 0) {
+            var class = (section.kind == "hero_dial") ? "home-section-user-cover" : "home-section-artist-cover";
             var pic = new Gtk.Picture () {
                 width_request = 32, height_request = 32,
                 content_fit = Gtk.ContentFit.COVER,
                 valign = Gtk.Align.CENTER,
-                css_classes = { "home-section-cover" }
+                css_classes = { class }
             };
             var b = new Timbre.Utils.ImageBinding (pic, 32);
             attach_binding (pic, b);
             header.append (pic);
             b.load (section.strapline_thumb);
-        } else if (HomeParser.section_icon (section.title) != null) {
-            var img = new Gtk.Image.from_icon_name (HomeParser.section_icon (section.title)) {
-                pixel_size = 20,
-                valign = Gtk.Align.CENTER,
-                css_classes = { "home-section-icon" }
-            };
-            header.append (img);
         }
 
         var text_col = new Gtk.Box (Gtk.Orientation.VERTICAL, 2) {

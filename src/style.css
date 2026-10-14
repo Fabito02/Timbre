@@ -150,8 +150,12 @@ picture.image-placeholder {
     text-transform: uppercase;
 }
 
-.home-section-cover {
+.home-section-user-cover {
     border-radius: 8px;
+}
+
+.home-section-artist-cover {
+    border-radius: 50%;
 }
 
 .home-speed-tile {

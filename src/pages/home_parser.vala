@@ -6,7 +6,6 @@ namespace Timbre.HomeParser {
         var parser = new Json.Parser ();
         try {
             parser.load_from_data (json_data);
-            message ("home json: %s", json_data);
         } catch (Error e) {
             warning ("home json: %s", e.message);
             return list;
@@ -105,15 +104,5 @@ namespace Timbre.HomeParser {
             item.thumbnail_url = obj.get_string_member ("thumb");
 
         return item;
-    }
-
-    public string? section_icon (string title) {
-        string t = title.down ();
-        if (t.contains ("trending"))  return "trending-symbolic";
-        if (t.contains ("new"))       return "starred-symbolic";
-        if (t.contains ("mood"))      return "emoji-people-symbolic";
-        if (t.contains ("forgotten")) return "document-open-recent-symbolic";
-        if (t.contains ("listen"))    return "audio-headphones-symbolic";
-        return null;
     }
 }
