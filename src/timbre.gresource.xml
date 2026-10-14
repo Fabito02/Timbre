@@ -7,6 +7,7 @@
     <file preprocess="xml-stripblanks">shortcuts-dialog.ui</file>
     <file alias="pages/home.ui" compressed="true">home.ui</file>
     <file alias="pages/artist.ui" compressed="true">artist.ui</file>
+    <file alias="pages/library.ui" compressed="true">library.ui</file>
     <file alias="pages/collection.ui" compressed="true">collection.ui</file>
     <file alias="pages/section_page.ui" compressed="true">section_page.ui</file>
 

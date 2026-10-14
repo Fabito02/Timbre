@@ -6,6 +6,7 @@ namespace Timbre.HomeParser {
         var parser = new Json.Parser ();
         try {
             parser.load_from_data (json_data);
+            message ("home json: %s", json_data);
         } catch (Error e) {
             warning ("home json: %s", e.message);
             return list;

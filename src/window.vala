@@ -53,6 +53,10 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Revealer bottom_bar_revealer;
         [GtkChild] private unowned Gtk.Revealer fullscreen_revealer;
 
+        [GtkChild] private unowned Adw.ViewSwitcher switcher;
+        [GtkChild] private unowned Adw.ViewSwitcherBar switcher_bar;
+        [GtkChild] private unowned Timbre.LibraryPage library_page;
+
         [GtkChild] private unowned Timbre.SearchPage search_page;
         [GtkChild] private unowned Timbre.HomePage home_page;
 
@@ -74,8 +78,14 @@ namespace Timbre {
             this.cookies_path = app.cookies_path;
             this.queue = new Timbre.QueueManager ();
 
+            // ─── ViewSwitcher: stack setada em runtime (não no .blp) ─────
+            this.switcher.stack = this.main_stack;
+            this.switcher_bar.stack = this.main_stack;
+            // ─────────────────────────────────────────────────────────────
+
             this.search_page.set_player (this.player);
             this.home_page.set_player (this.player);
+            this.library_page.set_player (this.player);
             this.main_stack.visible_child_name = "home";
 
             this.searchbar.key_capture_widget = this;
@@ -89,6 +99,7 @@ namespace Timbre {
             this.setup_navigation ();
             this.setup_queue_view ();
             this.setup_search ();
+            this.setup_switcher ();
             this.update_nav_buttons ();
             this.setup_mpris ();
 
@@ -96,9 +107,9 @@ namespace Timbre {
                 if (pspec.name == "child-revealed") {
                     if (!this.fullscreen_revealer.reveal_child && !this.fullscreen_revealer.child_revealed) {
                         this.fullscreen_revealer.visible = false;
-                        
+
                         this.cover_fullscreen_binding.load (null);
-                        
+
                         Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                         Timbre.Utils.trim_memory ();
                     }
@@ -134,6 +145,20 @@ namespace Timbre {
             });
 
             this.mpris.start ();
+        }
+
+        private void setup_switcher () {
+            this.searchbar.notify["search-mode-enabled"].connect (this.update_switcher_visibility);
+            this.switcher_bar.notify["reveal"].connect (this.update_switcher_visibility);
+
+            this.update_switcher_visibility ();
+        }
+
+        private void update_switcher_visibility () {
+            bool search_on = this.searchbar.search_mode_enabled;
+            bool bar_on = this.switcher_bar.reveal;
+
+            this.switcher.visible = !search_on && !bar_on;
         }
 
         private void open_collection (string id, string type_name,
@@ -260,14 +285,14 @@ namespace Timbre {
         public void open_fullscreen_clicked () {
             this.fullscreen_revealer.visible = true;
             this.fullscreen_revealer.can_target = true;
-        
+
             if (this.pending_track != null) {
                 this.cover_fullscreen_binding.load (this.pending_track.thumbnail_url);
             }
-        
+
             this.fullscreen_revealer.reveal_child = true;
         }
-        
+
         [GtkCallback]
         public void close_fullscreen_clicked () {
             this.fullscreen_revealer.can_target = false;
@@ -374,7 +399,9 @@ namespace Timbre {
             });
 
             this.searchbar.notify["search-mode-enabled"].connect (() => {
-                this.main_stack.visible_child_name = this.searchbar.search_mode_enabled ? "search" : "home";
+                bool on = this.searchbar.search_mode_enabled;
+                this.main_stack.visible_child_name = on ? "search" : "home";
+                this.update_switcher_visibility ();
             });
 
             this.searchentry.search_changed.connect (() => {
@@ -482,9 +509,9 @@ namespace Timbre {
         private void start_playback (Timbre.TrackItem track, uint64 duration) {
             message ("start_playback: id=%s dur=%lu title=%s".printf (
                 track.id, (ulong) duration, track.title));
-        
+
             this.pending_track = track;
-        
+
             if (this.slider_unlock_id != 0) {
                 GLib.Source.remove (this.slider_unlock_id);
                 this.slider_unlock_id = 0;
@@ -492,20 +519,20 @@ namespace Timbre {
             this.slider_locked = false;
             this.pending_seek_target = -1.0;
             this.loading_track = true;
-        
+
             this.metadata_duration = (duration > 0)
                 ? (double) duration
                 : 0.0;
-        
+
             this.label_current_title.label = track.title;
             this.label_current_artist.label = track.artist;
-            
+
             this.cover_binding.load (track.thumbnail_url);
-            
+
             if (this.fullscreen_revealer.visible) {
                 this.cover_fullscreen_binding.load (track.thumbnail_url);
             }
-        
+
             this.set_slider_silently (0.0);
             this.label_time_current.label = "0:00";
             if (duration > 0) {
@@ -566,7 +593,7 @@ namespace Timbre {
                     if (need_metadata_fetch && my_fetch_gen == this.like_fetch_gen) {
                         this.fetch_track_metadata (track_id, my_fetch_gen);
                     }
-                    
+
                     bottom_bar_revealer.reveal_child = true;
                     return GLib.Source.REMOVE;
                 });
@@ -722,9 +749,9 @@ namespace Timbre {
 
         private bool update_ui_tick () {
             if (this.player == null) return true;
-        
+
             if (this.loading_track) return true;
-        
+
             int state = this.player.get_state ();
             bool backend_playing = (state == 1);
             if (backend_playing != this.is_playing) {
@@ -732,7 +759,7 @@ namespace Timbre {
                 this.button_play_pause.icon_name = this.is_playing
                     ? "media-playback-pause-symbolic"
                     : "media-playback-start-symbolic";
-        
+
                 if (this.player.is_finished ()) {
                     if (this.queue.has_next ()) {
                         this.queue.next ();
@@ -741,15 +768,15 @@ namespace Timbre {
                     }
                 }
             }
-        
+
             this.settle_pending_seek ();
-        
+
             if (this.slider_locked) return true;
-        
+
             double current_pos = this.player.get_position ();
             this.set_slider_silently (current_pos);
             this.label_time_current.label = format_time (current_pos);
-        
+
             double effective = this.metadata_duration;
             if (effective > 0.0
                 && Math.fabs (this.adjustment_progress.upper - effective) > 0.5) {
@@ -757,32 +784,32 @@ namespace Timbre {
                 this.adjustment_progress.upper = effective;
                 this.label_time_total.label = format_time (effective);
             }
-        
+
             return true;
         }
-        
+
         private void play_radio_from_current () {
             if (this.radio_loading) return;
-        
+
             string seed = this.current_track_id;
             if (seed.length == 0) return;
-        
+
             this.radio_loading = true;
-        
+
             this.player.get_radio (seed, (json, error) => {
                 Idle.add (() => {
                     this.radio_loading = false;
-        
+
                     if (error != null) {
                         warning ("radio: %s", (string) error);
                         Timbre.string_free (error);
                         if (json != null) Timbre.string_free (json);
                         return GLib.Source.REMOVE;
                     }
-        
+
                     var tracks = this.parse_radio_tracks ((string) json);
                     Timbre.string_free (json);
-        
+
                     if (tracks.length > 0) {
                         this.queue.play_list (tracks, 1);
                     }
@@ -790,7 +817,7 @@ namespace Timbre {
                 });
             });
         }
-        
+
         private GenericArray<TrackItem> parse_radio_tracks (string json_str) {
             var tracks = new GenericArray<TrackItem> ();
             try {
@@ -802,19 +829,19 @@ namespace Timbre {
                 }
                 var obj = root.get_object ();
                 if (!obj.has_member ("tracks")) return tracks;
-        
+
                 var arr = obj.get_array_member ("tracks");
                 foreach (unowned Json.Node node in arr.get_elements ()) {
                     if (node.get_node_type () != Json.NodeType.OBJECT) continue;
                     var wrapper = node.get_object ();
                     if (!wrapper.has_member ("track")) continue;
                     var t = wrapper.get_object_member ("track");
-        
+
                     string vid = "";
                     if (t.has_member ("video_id") && !t.get_null_member ("video_id"))
                         vid = t.get_string_member ("video_id");
                     if (vid.length == 0) continue;
-        
+
                     string title = t.has_member ("title") && !t.get_null_member ("title")
                         ? t.get_string_member ("title") : "";
                     string artist = t.has_member ("artist") && !t.get_null_member ("artist")
@@ -823,7 +850,7 @@ namespace Timbre {
                         ? t.get_string_member ("thumb") : null;
                     uint64 dur = t.has_member ("duration_seconds") && !t.get_null_member ("duration_seconds")
                         ? (uint64) t.get_int_member ("duration_seconds") : 0;
-        
+
                     tracks.add (new Timbre.TrackItem.with_data (
                         vid, title, artist, dur, thumb));
                 }

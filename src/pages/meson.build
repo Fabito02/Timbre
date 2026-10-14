@@ -3,6 +3,7 @@ pages_blueprints = files(
   'collection.blp',
   'home.blp',
   'section_page.blp',
+  'library.blp',
 )
 
 pages_sources = files(
@@ -13,4 +14,5 @@ pages_sources = files(
   'home_section.vala',
   'section_page.vala',
   'section_parser.vala',
+  'library.vala',
 )

@@ -1,0 +1,44 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreLibraryPage : Adw.NavigationPage {
+  title: _("Library");
+
+  Gtk.Stack stack {
+    transition-type: crossfade;
+    vexpand: true;
+
+    Gtk.StackPage {
+      name: "content";
+
+      child: Gtk.Box content_box {
+        orientation: vertical;
+        spacing: 24;
+        margin-top: 24;
+        margin-bottom: 24;
+        margin-start: 12;
+        margin-end: 12;
+      };
+    }
+
+    Gtk.StackPage {
+      name: "placeholder";
+
+      child: Adw.StatusPage {
+        icon-name: "folder-symbolic";
+        title: _("Library");
+        description: _("Nothing here yet.");
+      };
+    }
+
+    Gtk.StackPage {
+      name: "status";
+
+      child: Adw.StatusPage status_page {
+        icon-name: "folder-symbolic";
+        title: _("Library");
+        description: _("Nothing to show.");
+      };
+    }
+  }
+}
