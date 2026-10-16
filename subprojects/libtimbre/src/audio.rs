@@ -16,20 +16,31 @@ use serde::Serialize;
 use crate::context::Paths;
 use crate::net::media::{StreamInfo, VideoId};
 use crate::stream_reader::{StreamBuffer, StreamReader};
-use opus_source::OpusSource;
+use opus_source::{Mp4SparseSource, OpusSource};
 use store::{AudioEntry, AudioStore, AudioWriter, StoreKind};
 
 const DEFAULT_UA: &str = "Mozilla/5.0";
-const PRE_BUFFER_THRESHOLD: usize = 1 * 1024; 
+const PRE_BUFFER_THRESHOLD: usize = 1024;
 const PRE_BUFFER_TIMEOUT: Duration = Duration::from_secs(3);
 const PRE_BUFFER_POLL: Duration = Duration::from_millis(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(8);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const PROBE_SLOW_WARN: Duration = Duration::from_millis(500);
-const SEEK_RANGE_MAX_BYTES: u64 = 64 * 1024 * 1024;
-const SEEK_RANGE_HEADROOM: u64 = 512 * 1024;
+
 const RESUME_BACKOFF_MS: [u64; 6] = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+
+const OPUS_HEADER_WINDOW: u64 = 64 * 1024;
+const OPUS_WINDOW_PRE: u64 = 256 * 1024;
+const OPUS_WINDOW_POST: u64 = 8 * 1024 * 1024;
+
+const M4A_HEADER_MAX: u64 = 4 * 1024 * 1024;
+const M4A_WINDOW_PRE: u64 = 1024 * 1024;
+const M4A_WINDOW_POST: u64 = 8 * 1024 * 1024;
+
+const TAIL_CHUNK: u64 = 4 * 1024 * 1024;
+
+const CLUSTER_ID: [u8; 4] = [0x1F, 0x43, 0xB6, 0x75];
 
 fn bitrate_for_itag(itag: &str) -> Option<u64> {
     match itag {
@@ -44,8 +55,48 @@ fn bitrate_for_itag(itag: &str) -> Option<u64> {
     }
 }
 
+fn itag_compatible(saved: Option<&str>, current: Option<&str>) -> bool {
+    match (saved, current) {
+        (Some(a), Some(b)) => a == b,
+        _ => true,
+    }
+}
+
 fn is_transient_http(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 408 | 409 | 425 | 429)
+}
+
+fn first_cluster_offset(data: &[u8]) -> Option<usize> {
+    data.windows(4).position(|w| w == CLUSTER_ID)
+}
+
+fn mp4_header_end(data: &[u8]) -> Option<u64> {
+    let mut off: u64 = 0;
+    while off + 8 <= data.len() as u64 {
+        let i = off as usize;
+        let raw_size =
+            u32::from_be_bytes(data[i..i + 4].try_into().ok()?) as u64;
+        let kind = &data[i + 4..i + 8];
+        if raw_size == 0 {
+            return None;
+        }
+        let size = if raw_size == 1 {
+            if off + 16 > data.len() as u64 {
+                return None;
+            }
+            u64::from_be_bytes(data[i + 8..i + 16].try_into().ok()?)
+        } else {
+            raw_size
+        };
+        if size < 8 {
+            return None;
+        }
+        if kind == b"moov" {
+            return Some(off + size);
+        }
+        off += size;
+    }
+    None
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -59,6 +110,7 @@ pub struct StreamStats {
     pub sample_rate_hz: Option<u32>,
     pub channels: Option<u16>,
     pub duration_seconds: Option<f64>,
+    pub content_length_bytes: Option<u64>,
     pub from_cache: bool,
     pub is_local: bool,
 }
@@ -298,7 +350,10 @@ impl AudioPlayer {
 
         if let Some(vid) = video_id {
             if let Some((kind, entry)) = self.store.lookup(vid.as_str()).await {
-                if entry.is_playable() {
+                let current_itag = info.and_then(|i| i.format_id.as_deref());
+                let compatible = itag_compatible(entry.itag.as_deref(), current_itag);
+
+                if entry.is_playable() && compatible {
                     let path = self.store.bin_path(kind, vid.as_str());
                     tracing::debug!(
                         %vid,
@@ -310,33 +365,31 @@ impl AudioPlayer {
                         .play_local_file(my_gen, &path, &entry, duration, info)
                         .await;
                 }
-                if entry.is_resumable() {
-                    let current_itag = info.and_then(|i| i.format_id.as_deref());
-                    let compatible = match (entry.itag.as_deref(), current_itag) {
-                        (Some(a), Some(b)) => a == b,
-                        _ => true,
-                    };
-                    if !compatible {
-                        tracing::debug!(
-                            %vid,
-                            saved = ?entry.itag,
-                            new = current_itag,
-                            "format changed, dropping partial"
-                        );
-                        self.store.remove(vid.as_str()).await;
-                    } else {
-                        tracing::debug!(
-                            %vid,
-                            ?kind,
-                            bytes = entry.downloaded_bytes,
-                            "resuming from partial"
-                        );
-                        return self
-                            .play_partial(
-                                my_gen, &entry, kind, vid, url, user_agent, info, duration,
-                            )
-                            .await;
-                    }
+
+                if entry.is_resumable() && compatible {
+                    tracing::debug!(
+                        %vid,
+                        ?kind,
+                        bytes = entry.downloaded_bytes,
+                        "resuming from partial"
+                    );
+                    return self
+                        .play_partial(
+                            my_gen, &entry, kind, vid, url, user_agent, info, duration,
+                        )
+                        .await;
+                }
+
+                if !compatible && kind == StoreKind::Cache {
+                    tracing::debug!(
+                        %vid,
+                        saved = ?entry.itag,
+                        new = current_itag,
+                        playable = entry.is_playable(),
+                        resumable = entry.is_resumable(),
+                        "cached format differs, dropping entry"
+                    );
+                    self.store.remove(vid.as_str()).await;
                 }
             }
         }
@@ -408,6 +461,7 @@ impl AudioPlayer {
             sample_rate_hz: info.and_then(|i| i.sample_rate),
             channels: info.and_then(|i| i.channels),
             duration_seconds: estimated.map(|d| d.as_secs_f64()),
+            content_length_bytes: content_length,
             from_cache: info.is_some_and(|i| i.from_cache),
             is_local: false,
         });
@@ -516,6 +570,7 @@ impl AudioPlayer {
             sample_rate_hz: None,
             channels: None,
             duration_seconds: estimated.map(|d| d.as_secs_f64()),
+            content_length_bytes: Some(entry.downloaded_bytes),
             from_cache: true,
             is_local: true,
         });
@@ -566,6 +621,8 @@ impl AudioPlayer {
         meta.user_agent = Some(ua.clone());
         meta.uri = Some(url.to_owned());
 
+        let expected_bytes = entry.expected_size;
+
         let (reader, writer, _growth) = self
             .store
             .open_resumable(kind, video_id.as_str(), meta)
@@ -605,6 +662,7 @@ impl AudioPlayer {
             sample_rate_hz: info.and_then(|i| i.sample_rate),
             channels: info.and_then(|i| i.channels),
             duration_seconds: estimated.map(|d| d.as_secs_f64()),
+            content_length_bytes: expected_bytes,
             from_cache: false,
             is_local: false,
         });
@@ -744,7 +802,6 @@ impl AudioPlayer {
                         started.elapsed()
                     ));
                 }
-
                 tracing::warn!(
                     bytes = len,
                     waited_ms = started.elapsed().as_millis() as u64,
@@ -893,6 +950,7 @@ impl AudioPlayer {
             sample_rate_hz: Some(source.sample_rate().get()),
             channels: Some(source.channels().get()),
             duration_seconds: total_dur.map(|d| d.as_secs_f64()),
+            content_length_bytes: std::fs::metadata(path).ok().map(|m| m.len()),
             is_local: true,
             ..StreamStats::default()
         });
@@ -953,31 +1011,52 @@ impl AudioPlayer {
             .unwrap()
             .clone()
             .unwrap_or_else(|| DEFAULT_UA.to_owned());
-        let bitrate_bps = self.stats.lock().unwrap().bitrate_kbps.map(|k| k * 1000);
 
-        if let Some(bps) = bitrate_bps.filter(|b| *b > 0 && target.as_secs_f64() >= 2.0) {
-            let target_offset = (target.as_secs_f64() * bps as f64 / 8.0) as u64;
-            let end = target_offset.saturating_add(SEEK_RANGE_HEADROOM);
-            if end <= SEEK_RANGE_MAX_BYTES {
-                match self
-                    .try_seek_range(&current_url, &ua, target, is_opus, my_gen, was_paused, end)
-                    .await
-                {
-                    Ok(true) => return Ok(()),
-                    Ok(false) => tracing::debug!(
-                        "seek: range path declined, falling back to streaming from 0"
-                    ),
-                    Err(e) => tracing::debug!(
-                        %e,
-                        "seek: range path failed, falling back to streaming from 0"
-                    ),
-                }
+        let (resolver_bitrate, total, dur) = {
+            let stats = self.stats.lock().unwrap();
+            (
+                stats.bitrate_kbps.map(|k| k * 1000),
+                stats.content_length_bytes,
+                stats.duration_seconds,
+            )
+        };
+        let bitrate = match (total, dur) {
+            (Some(t), Some(d)) if t > 0 && d > 1.0 => Some(((t as f64 * 8.0) / d) as u64),
+            _ => resolver_bitrate,
+        };
+
+        if let (Some(bps), Some(total)) = (bitrate.filter(|b| *b > 0), total) {
+            let target_bytes = (target.as_secs_f64() * bps as f64 / 8.0) as u64;
+            let outcome = if is_opus {
+                self.seek_window_opus(
+                    &current_url,
+                    &ua,
+                    target,
+                    target_bytes,
+                    total,
+                    my_gen,
+                    was_paused,
+                )
+                .await
             } else {
-                tracing::debug!(
-                    end,
-                    "seek: target too far for range path, using slow fallback"
-                );
+                self.seek_window_m4a(
+                    &current_url,
+                    &ua,
+                    target,
+                    target_bytes,
+                    total,
+                    my_gen,
+                    was_paused,
+                )
+                .await
+            };
+            match outcome {
+                Ok(true) => return Ok(()),
+                Ok(false) => tracing::debug!("seek: window path declined, using slow fallback"),
+                Err(e) => tracing::debug!(%e, "seek: window path failed, using slow fallback"),
             }
+        } else {
+            tracing::debug!("seek: no bitrate/size known, using slow fallback");
         }
 
         self.seek_remote_from_zero(&current_url, &ua, target, is_opus, my_gen, was_paused)
@@ -1007,55 +1086,202 @@ impl AudioPlayer {
         self.install_seeked_source(source, my_gen, target, was_paused)
     }
 
-    async fn try_seek_range(
+    async fn seek_window_opus(
         &self,
         url: &str,
         ua: &str,
         target: Duration,
-        is_opus: bool,
+        target_bytes: u64,
+        total_bytes: u64,
         my_gen: u64,
         was_paused: bool,
-        end: u64,
     ) -> Result<bool> {
-        let request_started = Instant::now();
-        let response = self
-            .client
-            .get(url)
-            .header("User-Agent", ua)
-            .header("Range", format!("bytes=0-{end}"))
-            .send()
-            .await
-            .context("seek range: request failed")?;
-
-        let status = response.status();
-        if status != reqwest::StatusCode::PARTIAL_CONTENT && !status.is_success() {
+        if target_bytes < OPUS_WINDOW_PRE {
             return Ok(false);
         }
 
-        let bytes = response.bytes().await?.to_vec();
-        tracing::debug!(
-            bytes = bytes.len(),
-            elapsed_ms = request_started.elapsed().as_millis() as u64,
-            ?target,
-            "seek: range downloaded"
-        );
+        let fetch_started = Instant::now();
+
+        let raw_header = fetch_range(&self.client, url, ua, 0, OPUS_HEADER_WINDOW).await?;
+        let header_end = first_cluster_offset(&raw_header).unwrap_or(raw_header.len());
+        let header = &raw_header[..header_end];
+
+        let mut window_start = target_bytes.saturating_sub(OPUS_WINDOW_PRE);
+        let mut window_end = target_bytes
+            .saturating_add(OPUS_WINDOW_POST)
+            .min(total_bytes);
+        if window_start >= window_end {
+            window_end = total_bytes;
+            window_start = window_end.saturating_sub(OPUS_WINDOW_PRE + OPUS_WINDOW_POST);
+        }
+        if window_start >= window_end {
+            return Ok(false);
+        }
+        let raw_window = fetch_range(&self.client, url, ua, window_start, window_end).await?;
+        let skip = first_cluster_offset(&raw_window).unwrap_or(0);
+        let window = &raw_window[skip..];
+        if window.is_empty() {
+            return Ok(false);
+        }
 
         if self.generation.load(Ordering::SeqCst) != my_gen {
             return Err(anyhow::anyhow!("superseded by a newer play request"));
         }
 
-        if is_opus {
-            let mut source = OpusSource::from_bytes(bytes)
-                .map_err(|e| anyhow::anyhow!("opus source (seek range): {e}"))?;
-            let landed = demuxer_seek_or_skip(&mut source, target, "range");
-            self.install_seeked_source(source, my_gen, landed, was_paused)?;
-            return Ok(true);
+        tracing::debug!(
+            header_bytes = header.len(),
+            window_bytes = window.len(),
+            window_start,
+            window_end,
+            fetch_ms = fetch_started.elapsed().as_millis() as u64,
+            ?target,
+            gen = my_gen,
+            "seek: opus window fetched"
+        );
+
+        let mut combined = Vec::with_capacity(header.len() + window.len());
+        combined.extend_from_slice(header);
+        combined.extend_from_slice(window);
+
+        let buffer = StreamBuffer::new();
+        buffer.append(&combined);
+        *self.active_buffer.lock().unwrap() = Some(buffer.clone());
+
+        spawn_window_tail(
+            self.client.clone(),
+            url.to_owned(),
+            ua.to_owned(),
+            buffer.clone(),
+            window_end,
+            total_bytes,
+            my_gen,
+            self.generation.clone(),
+        );
+
+        let probe_started = Instant::now();
+        let probe_buffer = buffer.clone();
+        let probe = tokio::task::spawn_blocking(move || OpusSource::from_stream(probe_buffer));
+        let mut source = match tokio::time::timeout(PROBE_TIMEOUT, probe).await {
+            Ok(Ok(Ok(s))) => s,
+            Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("opus source (window): {e}")),
+            Ok(Err(e)) => return Err(anyhow::anyhow!("opus probe task failed: {e}")),
+            Err(_) => return Err(anyhow::anyhow!("opus probe timed out")),
+        };
+
+        let landed_raw = source.landed_time();
+        let mut landed = landed_raw.unwrap_or(target);
+
+        if landed < target {
+            let to_skip = target - landed;
+            skip_samples(&mut source, to_skip);
+            landed = target;
         }
 
-        let mut source = Decoder::try_from(std::io::Cursor::new(bytes))
-            .map_err(|e| anyhow::anyhow!("decode seek range: {e:?}"))?;
-        skip_samples(&mut source, target);
-        self.install_seeked_source(source, my_gen, target, was_paused)?;
+        tracing::debug!(
+            probe_ms = probe_started.elapsed().as_millis() as u64,
+            ?landed_raw,
+            ?landed,
+            ?target,
+            gen = my_gen,
+            "seek: opus window probed"
+        );
+
+        self.install_seeked_source(source, my_gen, landed, was_paused)?;
+        Ok(true)
+    }
+
+    async fn seek_window_m4a(
+        &self,
+        url: &str,
+        ua: &str,
+        target: Duration,
+        target_bytes: u64,
+        total_bytes: u64,
+        my_gen: u64,
+        was_paused: bool,
+    ) -> Result<bool> {
+        if target_bytes < M4A_WINDOW_PRE {
+            return Ok(false);
+        }
+
+        let fetch_started = Instant::now();
+
+        let probe_end = 512 * 1024u64.min(total_bytes);
+        let probe = fetch_range(&self.client, url, ua, 0, probe_end).await?;
+        let header_end = mp4_header_end(&probe).unwrap_or(0);
+        if header_end == 0 {
+            return Ok(false);
+        }
+        let header = if header_end <= probe.len() as u64 {
+            probe[..header_end as usize].to_vec()
+        } else if header_end <= M4A_HEADER_MAX {
+            fetch_range(&self.client, url, ua, 0, header_end).await?
+        } else {
+            return Ok(false);
+        };
+
+        let mut window_start = target_bytes.saturating_sub(M4A_WINDOW_PRE);
+        let mut window_end = target_bytes
+            .saturating_add(M4A_WINDOW_POST)
+            .min(total_bytes);
+        if window_start >= window_end {
+            window_end = total_bytes;
+            window_start = window_end.saturating_sub(M4A_WINDOW_PRE + M4A_WINDOW_POST);
+        }
+        if window_start >= window_end {
+            return Ok(false);
+        }
+        let window = fetch_range(&self.client, url, ua, window_start, window_end).await?;
+        if window.is_empty() {
+            return Ok(false);
+        }
+
+        if self.generation.load(Ordering::SeqCst) != my_gen {
+            return Err(anyhow::anyhow!("superseded by a newer play request"));
+        }
+
+        tracing::debug!(
+            header_bytes = header.len(),
+            window_bytes = window.len(),
+            window_start,
+            window_end,
+            fetch_ms = fetch_started.elapsed().as_millis() as u64,
+            ?target,
+            gen = my_gen,
+            "seek: m4a window fetched"
+        );
+
+        let tail = StreamBuffer::new();
+        let tail_start = window_start + window.len() as u64;
+        *self.active_buffer.lock().unwrap() = Some(tail.clone());
+        spawn_window_tail(
+            self.client.clone(),
+            url.to_owned(),
+            ua.to_owned(),
+            tail.clone(),
+            tail_start,
+            total_bytes,
+            my_gen,
+            self.generation.clone(),
+        );
+
+        let source = Mp4SparseSource::new(header, window, window_start, tail, Some(total_bytes));
+        let decode = tokio::task::spawn_blocking(move || {
+            let reader = BufReader::new(source);
+            Decoder::try_from(reader).map_err(|e| format!("decode m4a window: {e:?}"))
+        });
+        let mut decoder = match tokio::time::timeout(PROBE_TIMEOUT, decode).await {
+            Ok(Ok(Ok(d))) => d,
+            Ok(Ok(Err(e))) => return Err(anyhow::anyhow!("{e}")),
+            Ok(Err(e)) => return Err(anyhow::anyhow!("decode task failed: {e}")),
+            Err(_) => return Err(anyhow::anyhow!("m4a window decode timed out")),
+        };
+
+        if let Err(e) = decoder.try_seek(target) {
+            return Err(anyhow::anyhow!("m4a window seek: {e:?}"));
+        }
+
+        self.install_seeked_source(decoder, my_gen, target, was_paused)?;
         Ok(true)
     }
 
@@ -1178,7 +1404,6 @@ impl AudioPlayer {
                 if generation.load(Ordering::SeqCst) != my_gen {
                     writer.cancel_growth();
                     let _ = writer.finish(false).await;
-                    tracing::debug!(gen = my_gen, "resume: cancelled before attempt");
                     return;
                 }
 
@@ -1186,31 +1411,16 @@ impl AudioPlayer {
                     .await
                 {
                     Ok(true) => {
-                        match writer.finish(true).await {
-                            Ok(entry) => tracing::debug!(
-                                gen = my_gen,
-                                bytes = entry.downloaded_bytes,
-                                "resume: complete"
-                            ),
-                            Err(err) => tracing::warn!(%err, "resume finalize failed"),
-                        }
+                        let _ = writer.finish(true).await;
                         return;
                     }
                     Ok(false) => {
-                        match writer.finish(false).await {
-                            Ok(entry) => tracing::debug!(
-                                gen = my_gen,
-                                bytes = entry.downloaded_bytes,
-                                "resume: stream ended short"
-                            ),
-                            Err(err) => tracing::warn!(%err, "resume finalize failed"),
-                        }
+                        let _ = writer.finish(false).await;
                         return;
                     }
                     Err(ResumeError::Cancelled) => {
                         writer.cancel_growth();
                         let _ = writer.finish(false).await;
-                        tracing::debug!(gen = my_gen, "resume: cancelled mid-stream");
                         return;
                     }
                     Err(ResumeError::Permanent(e)) => {
@@ -1385,6 +1595,102 @@ fn demuxer_seek_or_skip(source: &mut OpusSource, target: Duration, context: &str
     }
 }
 
+async fn fetch_range(
+    client: &reqwest::Client,
+    url: &str,
+    user_agent: &str,
+    start: u64,
+    end: u64,
+) -> Result<Vec<u8>> {
+    if end <= start {
+        return Ok(Vec::new());
+    }
+    let response = client
+        .get(url)
+        .header("User-Agent", user_agent)
+        .header("Range", format!("bytes={}-{}", start, end - 1))
+        .send()
+        .await
+        .with_context(|| format!("range fetch {start}-{end}"))?;
+
+    let status = response.status();
+    if status != reqwest::StatusCode::PARTIAL_CONTENT {
+        anyhow::bail!("range {start}-{end}: HTTP {status} (expected 206)");
+    }
+    let bytes = response.bytes().await?;
+    Ok(bytes.to_vec())
+}
+
+fn spawn_window_tail(
+    client: reqwest::Client,
+    url: String,
+    user_agent: String,
+    buffer: StreamBuffer,
+    start_offset: u64,
+    total: u64,
+    my_gen: u64,
+    generation: Arc<AtomicU64>,
+) {
+    tokio::spawn(async move {
+        let mut offset = start_offset;
+        let mut attempt = 0usize;
+        while offset < total {
+            if generation.load(Ordering::SeqCst) != my_gen || buffer.is_cancelled() {
+                return;
+            }
+            let end = (offset + TAIL_CHUNK).min(total);
+            let requested = end - offset;
+            let response = client
+                .get(&url)
+                .header("User-Agent", &user_agent)
+                .header("Range", format!("bytes={}-{}", offset, end - 1))
+                .send()
+                .await;
+
+            match response {
+                Ok(r) if r.status() == reqwest::StatusCode::PARTIAL_CONTENT => {
+                    match r.bytes().await {
+                        Ok(bytes) if !bytes.is_empty() => {
+                            let received = bytes.len() as u64;
+                            buffer.append(&bytes);
+                            offset += received;
+                            attempt = 0;
+                            if received < requested {
+                                continue;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+                Ok(r) if r.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE => break,
+                Ok(r) if r.status().is_server_error() || is_transient_http(r.status()) => {
+                    attempt += 1;
+                    if attempt > 10 {
+                        break;
+                    }
+                    let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    continue;
+                }
+                Ok(r) => {
+                    tracing::warn!(status = %r.status(), "window tail: giving up");
+                    break;
+                }
+                Err(e) => {
+                    attempt += 1;
+                    if attempt > 10 {
+                        break;
+                    }
+                    let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
+                    tracing::debug!(%e, attempt, delay_ms = delay, "window tail: retrying");
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                }
+            }
+        }
+        buffer.finish();
+    });
+}
+
 async fn resume_once(
     client: &reqwest::Client,
     url: &str,
@@ -1485,11 +1791,11 @@ fn spawn_download_task(
             let response = if let Some(r) = next_response.take() {
                 r
             } else {
-                let saved_offset = writer.as_ref().map(|w| w.downloaded_bytes()).unwrap_or(0);
+                let already = buffer.current_len() as u64;
                 let req = client
                     .get(&url)
                     .header("User-Agent", &user_agent)
-                    .header("Range", format!("bytes={saved_offset}-"));
+                    .header("Range", format!("bytes={already}-"));
                 match req.send().await {
                     Ok(r) => {
                         let status = r.status();
@@ -1503,18 +1809,12 @@ fn spawn_download_task(
                         }
                         if status.is_server_error() || is_transient_http(status) {
                             attempt += 1;
-                            let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
-                            tracing::debug!(
-                                %status,
-                                attempt,
-                                delay_ms = delay,
-                                "download: transient http, retrying"
-                            );
+                            let delay =
+                                RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
                             tokio::time::sleep(Duration::from_millis(delay)).await;
                             continue;
                         }
                         if !status.is_success() {
-                            tracing::warn!(%status, "download: fatal http, giving up");
                             buffer.set_error(format!("HTTP {status}"));
                             if let Some(mut w) = writer.take() {
                                 let _ = w.finish(false).await;
@@ -1526,33 +1826,30 @@ fn spawn_download_task(
                     Err(e) => {
                         attempt += 1;
                         let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
-                        tracing::debug!(
-                            %e,
-                            attempt,
-                            delay_ms = delay,
-                            "download: fetch failed, retrying"
-                        );
+                        tracing::debug!(%e, attempt, delay_ms = delay, "download: fetch failed");
                         tokio::time::sleep(Duration::from_millis(delay)).await;
                         continue;
                     }
                 }
             };
 
-            let saved_offset = writer.as_ref().map(|w| w.downloaded_bytes()).unwrap_or(0);
             let status = response.status();
-            let wire_start = if status == reqwest::StatusCode::PARTIAL_CONTENT {
-                saved_offset
-            } else {
-                0
-            };
+            let expected_len = response.content_length();
+            let wire_start = buffer.current_len() as u64;
             if let Some(w) = writer.as_mut() {
-                if let Some(len) = response.content_length() {
-                    w.set_expected_size(Some(len + wire_start));
+                if let Some(len) = expected_len {
+                    let total = if status == reqwest::StatusCode::PARTIAL_CONTENT {
+                        wire_start + len
+                    } else {
+                        len
+                    };
+                    w.set_expected_size(Some(total));
                 }
             }
 
             let mut stream = response.bytes_stream();
             let mut pos = wire_start;
+            let mut iter_bytes: u64 = 0;
             let mut err: Option<String> = None;
             while let Some(chunk) = stream.next().await {
                 if generation.load(Ordering::SeqCst) != my_gen || buffer.is_cancelled() {
@@ -1567,12 +1864,20 @@ fn spawn_download_task(
                 }
                 match chunk {
                     Ok(bytes) => {
-                        buffer.append(&bytes);
+                        let already = buffer.current_len() as u64;
+                        let skip = if pos < already {
+                            (already - pos).min(bytes.len() as u64) as usize
+                        } else {
+                            0
+                        };
+                        buffer.append(&bytes[skip..]);
+                        iter_bytes += bytes.len() as u64;
                         if let Some(w) = writer.as_mut() {
                             let end = pos + bytes.len() as u64;
-                            if end > saved_offset {
-                                let skip = saved_offset.saturating_sub(pos) as usize;
-                                if let Err(e) = w.write(&bytes[skip..]).await {
+                            let wpos = w.downloaded_bytes();
+                            if end > wpos {
+                                let wskip = wpos.saturating_sub(pos) as usize;
+                                if let Err(e) = w.write(&bytes[wskip..]).await {
                                     tracing::warn!(%e, "download: write failed, dropping writer");
                                     writer = None;
                                 }
@@ -1583,6 +1888,17 @@ fn spawn_download_task(
                     Err(e) => {
                         err = Some(e.to_string());
                         break;
+                    }
+                }
+            }
+
+            if err.is_none() {
+                if let Some(expected) = expected_len {
+                    if iter_bytes < expected {
+                        err = Some(format!(
+                            "stream truncated: {} of {} bytes",
+                            iter_bytes, expected
+                        ));
                     }
                 }
             }
@@ -1603,7 +1919,8 @@ fn spawn_download_task(
 
             let expected = writer.as_ref().and_then(|w| w.meta().expected_size);
             let downloaded = writer.as_ref().map(|w| w.downloaded_bytes()).unwrap_or(0);
-            let is_complete = expected.is_some_and(|e| downloaded >= e);
+            let is_complete = expected.is_some_and(|e| downloaded >= e)
+                || expected_len.map(|e| iter_bytes >= e).unwrap_or(false);
             buffer.finish();
             if let Some(mut w) = writer.take() {
                 let _ = w.finish(is_complete).await;

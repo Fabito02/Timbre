@@ -49,15 +49,8 @@ impl Read for StreamingMediaSource {
             return Ok(0);
         }
         let mut inner = self.buffer.inner.lock().unwrap();
-        let mut waited = false;
         loop {
             if inner.cancelled {
-                tracing::debug!(
-                    cursor = self.cursor,
-                    wanted = buf.len(),
-                    buffered = inner.data.len(),
-                    "streaming source: cancelled during read"
-                );
                 return Ok(0);
             }
             if let Some(err) = &inner.error {
@@ -69,34 +62,10 @@ impl Read for StreamingMediaSource {
                 let to_copy = available.min(buf.len());
                 buf[..to_copy].copy_from_slice(&inner.data[cursor..cursor + to_copy]);
                 self.cursor += to_copy as u64;
-                if waited {
-                    tracing::debug!(
-                        cursor = self.cursor,
-                        wanted = buf.len(),
-                        got = to_copy,
-                        buffered = inner.data.len(),
-                        "streaming source: read served after wait"
-                    );
-                }
                 return Ok(to_copy);
             }
             if inner.is_finished {
-                tracing::debug!(
-                    cursor = self.cursor,
-                    wanted = buf.len(),
-                    buffered = inner.data.len(),
-                    "streaming source: EOF"
-                );
                 return Ok(0);
-            }
-            if !waited {
-                tracing::debug!(
-                    cursor = self.cursor,
-                    wanted = buf.len(),
-                    buffered = inner.data.len(),
-                    "streaming source: blocking for more bytes"
-                );
-                waited = true;
             }
             inner = self.buffer.cvar.wait(inner).unwrap();
         }
@@ -105,7 +74,6 @@ impl Read for StreamingMediaSource {
 
 impl Seek for StreamingMediaSource {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        tracing::debug!(?pos, cursor = self.cursor, "streaming source: seek");
         match pos {
             SeekFrom::Start(n) => {
                 self.wait_until(n)?;
@@ -153,8 +121,6 @@ pub struct OpusSource {
     total_duration: Option<Duration>,
     pre_skip: usize,
     packets_seen: u64,
-    // First packet after a demuxer seek; refill consumes it before asking
-    // the demuxer for more, so the packet where the seek landed is kept.
     pending_packet: Option<Packet>,
 }
 
@@ -236,9 +202,26 @@ impl OpusSource {
         Ok(landed)
     }
 
-    fn build(reader: Box<dyn MediaSource>) -> Result<Self, String> {
-        tracing::debug!("opus: starting probe");
+    pub fn landed_time(&mut self) -> Option<Duration> {
+        if self.pending_packet.is_none() {
+            if let Ok(p) = self.format.next_packet() {
+                self.pending_packet = Some(p);
+            }
+        }
+        let packet = self.pending_packet.as_ref()?;
+        let ts = packet.ts();
+        self.format
+            .tracks()
+            .iter()
+            .find(|t| t.id == self.track_id)
+            .and_then(|t| t.codec_params.time_base)
+            .map(|tb| {
+                let t = tb.calc_time(ts);
+                Duration::from_secs_f64(t.seconds as f64 + t.frac)
+            })
+    }
 
+    fn build(reader: Box<dyn MediaSource>) -> Result<Self, String> {
         let mss = MediaSourceStream::new(reader, Default::default());
         let mut hint = Hint::new();
         hint.with_extension("webm");
@@ -258,21 +241,11 @@ impl OpusSource {
         let sample_rate_u32 = track.codec_params.sample_rate.unwrap_or(48_000);
         let channels_u16 = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
 
-        tracing::debug!(
-            track_id,
-            sample_rate = sample_rate_u32,
-            channels = channels_u16,
-            n_frames = ?track.codec_params.n_frames,
-            "opus: probe returned track info"
-        );
-
         let sample_rate = NonZeroU32::new(sample_rate_u32)
             .ok_or_else(|| "invalid sample rate".to_owned())?;
         let channels = NonZeroU16::new(channels_u16)
             .ok_or_else(|| "invalid channel count".to_owned())?;
 
-        // Symphonia's WebM reader exposes the Segment `Duration` element
-        // (milliseconds) through `n_frames`; 156021 means 156.021 s.
         let total_duration = track
             .codec_params
             .n_frames
@@ -333,10 +306,7 @@ impl OpusSource {
                     self.pcm_len = samples_per_channel * channels;
                     return self.pcm_len > self.pcm_cursor;
                 }
-                Err(e) => {
-                    tracing::debug!(%e, "opus: skipping malformed packet");
-                    continue;
-                }
+                Err(_) => continue,
             }
         }
     }
@@ -353,7 +323,6 @@ impl Iterator for OpusSource {
                 return Some(sample);
             }
             if !self.refill() {
-                tracing::debug!(packets_seen = self.packets_seen, "opus: iterator exhausted");
                 return None;
             }
         }
@@ -372,5 +341,124 @@ impl Source for OpusSource {
     }
     fn total_duration(&self) -> Option<Duration> {
         self.total_duration
+    }
+}
+
+pub struct Mp4SparseSource {
+    header: Vec<u8>,
+    window: Vec<u8>,
+    window_start: u64,
+    tail_buffer: StreamBuffer,
+    tail_start: u64,
+    cursor: u64,
+    total_len: Option<u64>,
+}
+
+impl Mp4SparseSource {
+    pub fn new(
+        header: Vec<u8>,
+        window: Vec<u8>,
+        window_start: u64,
+        tail_buffer: StreamBuffer,
+        total_len: Option<u64>,
+    ) -> Self {
+        let tail_start = window_start + window.len() as u64;
+        Self {
+            header,
+            window,
+            window_start,
+            tail_buffer,
+            tail_start,
+            cursor: 0,
+            total_len,
+        }
+    }
+}
+
+impl Read for Mp4SparseSource {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let pos = self.cursor;
+        let hlen = self.header.len() as u64;
+        let wend = self.window_start + self.window.len() as u64;
+
+        if pos < hlen {
+            let end = hlen.min(pos + buf.len() as u64);
+            let n = (end - pos) as usize;
+            buf[..n].copy_from_slice(&self.header[pos as usize..end as usize]);
+            self.cursor += n as u64;
+            return Ok(n);
+        }
+        if pos >= self.window_start && pos < wend {
+            let off = (pos - self.window_start) as usize;
+            let available = self.window.len() - off;
+            let n = available.min(buf.len());
+            buf[..n].copy_from_slice(&self.window[off..off + n]);
+            self.cursor += n as u64;
+            return Ok(n);
+        }
+        if pos < self.window_start {
+            let end = self.window_start.min(pos + buf.len() as u64);
+            let n = (end - pos) as usize;
+            buf[..n].fill(0);
+            self.cursor += n as u64;
+            return Ok(n);
+        }
+
+        let tpos = (pos - self.tail_start) as usize;
+        let mut inner = self.tail_buffer.inner.lock().unwrap();
+        loop {
+            if inner.cancelled {
+                return Ok(0);
+            }
+            if let Some(ref err) = inner.error {
+                return Err(io::Error::other(err.clone()));
+            }
+            if tpos < inner.data.len() {
+                let available = inner.data.len() - tpos;
+                let n = available.min(buf.len());
+                buf[..n].copy_from_slice(&inner.data[tpos..tpos + n]);
+                drop(inner);
+                self.cursor += n as u64;
+                return Ok(n);
+            }
+            if inner.is_finished {
+                return Ok(0);
+            }
+            inner = self.tail_buffer.cvar.wait(inner).unwrap();
+        }
+    }
+}
+
+impl Seek for Mp4SparseSource {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let target = match pos {
+            SeekFrom::Start(n) => n as i64,
+            SeekFrom::Current(delta) => (self.cursor as i64)
+                .checked_add(delta)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek overflow"))?,
+            SeekFrom::End(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "seek from end not supported on a sparse source",
+                ));
+            }
+        };
+        if target < 0 {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start"));
+        }
+        self.cursor = target as u64;
+        Ok(self.cursor)
+    }
+}
+
+impl MediaSource for Mp4SparseSource {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> Option<u64> {
+        self.total_len
     }
 }
