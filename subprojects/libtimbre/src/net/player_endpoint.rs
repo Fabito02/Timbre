@@ -70,8 +70,27 @@ fn audio_formats(response: &Value) -> Vec<Format> {
         .collect()
 }
 
+fn quality_score(format: &Format) -> f64 {
+    let bps = format.bitrate as f64;
+    let factor = if format.is_opus() {
+        if bps <= 64_000.0 {
+            2.0
+        } else if bps >= 256_000.0 {
+            0.85
+        } else {
+            let t = (bps - 64_000.0) / (256_000.0 - 64_000.0);
+            2.0 + t * (0.85 - 2.0)
+        }
+    } else {
+        1.0
+    };
+    bps * factor
+}
+
 fn pick_format(formats: &[Format]) -> Option<&Format> {
-    formats.iter().max_by_key(|f| (f.is_opus(), f.bitrate))
+    formats.iter().max_by(|a, b| {
+        quality_score(a).partial_cmp(&quality_score(b)).unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 fn refusal(response: &Value) -> Option<String> {
