@@ -40,9 +40,9 @@
             preprocess="xml-stripblanks"
         >../data/icons/hicolor/actions/music-queue-symbolic.svg</file>
     <file
-            alias="icons/scalable/actions/compass2-symbolic.svg"
+            alias="icons/scalable/actions/compass-symbolic.svg"
             preprocess="xml-stripblanks"
-        >../data/icons/hicolor/actions/compass2-symbolic.svg</file>
+        >../data/icons/hicolor/actions/compass-symbolic.svg</file>
     <file
             alias="icons/scalable/actions/triangular-antenna-symbolic.svg"
             preprocess="xml-stripblanks"
