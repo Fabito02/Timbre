@@ -210,12 +210,14 @@ picture.image-placeholder {
 }
 
 .play-overlay,
-.album-overlay {
+.album-overlay,
+.live-overlay,
+.explicit-badge {
     opacity: 0;
 }
 
-.song .play-overlay-icon,
-.album .album-overlay-icon {
+.play-overlay-icon,
+.album-overlay-icon {
     background-color: #00000070;
     border-radius: 50%;
     padding: 8px;
@@ -223,8 +225,8 @@ picture.image-placeholder {
     margin: 6px;
 }
 
-.song .play-overlay-icon-speed-tile,
-.album .album-overlay-icon-speed-tile {
+.play-overlay-icon-speed-tile,
+.album-overlay-icon-speed-tile {
     background-color: #00000070;
     border-radius: 50%;
     padding: 6px;
@@ -233,8 +235,26 @@ picture.image-placeholder {
 }
 
 .song .play-overlay,
-.album .album-overlay {
+.album .album-overlay,
+.live .live-overlay,
+.explicit .explicit-badge {
     opacity: 1;
+}
+
+.live-overlay {
+    background-color: #ED333B;
+    padding: 4px 6px;
+    border-radius: 8px;
+    margin: 6px
+}
+
+.explicit-badge {
+    font-size: 0.85em;
+    font-weight: bolder;
+    background-color: alpha(@window_fg_color, 0.3);
+    color: @window_fg_color;
+    border-radius: 2px;
+    padding: 2px 4px;
 }
 
 @keyframes skeleton-pulse {

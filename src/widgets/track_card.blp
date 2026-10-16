@@ -63,6 +63,30 @@ template $TimbreTrackCard: Button {
             ]
           }
         }
+
+        [overlay]
+        Box live_overlay {
+          orientation: horizontal;
+          halign: end;
+          valign: end;
+
+          styles [
+            "live-overlay",
+          ]
+
+          Image {
+            icon-name: "radio-wave-symbolic";
+            pixel-size: 14;
+            margin-end: 4;
+
+            styles [
+              "live-overlay-icon",
+            ]
+          }
+          Label {
+            label: _("Live");
+          }
+        }
       }
     }
 
@@ -72,14 +96,26 @@ template $TimbreTrackCard: Button {
       width-request: 140;
       valign: center;
 
-      Label label_title {
-        xalign: 0.0;
-        ellipsize: end;
-        max-width-chars: 20;
-
-        styles [
-          "heading",
-        ]
+      Box {
+        orientation: horizontal;
+        spacing: 2;
+        
+        Label label_title {
+          xalign: 0.0;
+          ellipsize: end;
+          max-width-chars: 20;
+  
+          styles [
+            "heading",
+          ]
+        }
+        
+        Label explicit_badge {
+            label: "E";
+            valign: center;
+            margin-start: 4;
+            styles ["explicit-badge"]
+        }
       }
 
       Label label_artist {

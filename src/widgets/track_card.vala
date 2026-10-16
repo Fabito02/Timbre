@@ -14,7 +14,8 @@ namespace Timbre {
         private Timbre.Utils.ImageBinding cover_binding;
 
         public TrackCard (string id, string type_name, string title,
-                          string artists, string? cover_url = null) {
+                          string artists, string? cover_url = null,
+                          bool is_live = false, bool explicit = false) {
             Object ();
             this.track_id = id;
             this.item_type = type_name;
@@ -31,13 +32,21 @@ namespace Timbre {
             if (type_name == "Artist") {
                 this.add_css_class ("artist");
             }
-            
-            if (type_name == "Song") {
+
+            if (type_name == "Song" || type_name == "Video") {
                 this.add_css_class ("song");
             }
 
             if (type_name == "Album") {
                 this.add_css_class ("album");
+            }
+
+            if (is_live) {
+                this.add_css_class ("live");
+            }
+
+            if (explicit) {
+                this.add_css_class ("explicit");
             }
         }
     }

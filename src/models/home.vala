@@ -6,6 +6,8 @@ namespace Timbre {
         public string? subtitle { get; set; default = null; }
         public string? thumbnail_url { get; set; default = null; }
         public uint64 duration_secs { get; set; default = 0; }
+        public bool is_live { get; set; default = false; }
+        public bool explicit { get; set; default = false; }
 
         public bool is_playable () {
             return this.kind == "Song" || this.kind == "Video";

@@ -182,7 +182,8 @@ namespace Timbre.HomeSection {
             var item = section.items.get (i);
             var card = new Timbre.TrackCard (
                 item.id, item.kind, item.title,
-                item.subtitle ?? "", item.thumbnail_url);
+                item.subtitle ?? "", item.thumbnail_url,
+                item.is_live, item.explicit);
 
             string i_id = item.id;
             uint64 i_dur = item.duration_secs;

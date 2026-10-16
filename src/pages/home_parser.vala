@@ -73,6 +73,10 @@ namespace Timbre.HomeParser {
             item.title = obj.get_string_member ("title");
         if (obj.has_member ("duration_seconds") && !obj.get_null_member ("duration_seconds"))
             item.duration_secs = (uint64) obj.get_int_member ("duration_seconds");
+        if (obj.has_member ("is_live") && !obj.get_null_member ("is_live"))
+            item.is_live = obj.get_boolean_member ("is_live");
+        if (obj.has_member ("explicit") && !obj.get_null_member ("explicit"))
+            item.explicit = obj.get_boolean_member ("explicit");
 
         if (item.kind == "Playlist"
             && obj.has_member ("description")
