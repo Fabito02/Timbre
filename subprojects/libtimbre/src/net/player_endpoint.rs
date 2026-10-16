@@ -20,6 +20,8 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const VISITOR_TTL: Duration = Duration::from_secs(6 * 3600);
 const PROBE_OFFSET: u64 = 200_000;
 
+const VISITOR_PATTERN: &str = r#""VISITOR_DATA":"([^"]+)""#;
+
 #[derive(Clone, Debug, PartialEq)]
 struct Format {
     itag: u32,
@@ -70,27 +72,26 @@ fn audio_formats(response: &Value) -> Vec<Format> {
         .collect()
 }
 
-fn quality_score(format: &Format) -> f64 {
-    let bps = format.bitrate as f64;
-    let factor = if format.is_opus() {
-        if bps <= 64_000.0 {
-            2.0
-        } else if bps >= 256_000.0 {
-            0.85
-        } else {
-            let t = (bps - 64_000.0) / (256_000.0 - 64_000.0);
-            2.0 + t * (0.85 - 2.0)
-        }
-    } else {
-        1.0
-    };
-    bps * factor
+fn pick_format(formats: &[Format]) -> Option<&Format> {
+    formats.iter().max_by_key(|f| (f.is_opus(), f.bitrate))
 }
 
-fn pick_format(formats: &[Format]) -> Option<&Format> {
-    formats.iter().max_by(|a, b| {
-        quality_score(a).partial_cmp(&quality_score(b)).unwrap_or(std::cmp::Ordering::Equal)
-    })
+/// The audio-only rendition of an HLS master. AAC-LC (itag 234) beats
+/// HE-AAC (233) when both are listed.
+fn audio_rendition(master: &str) -> Option<String> {
+    let uris: Vec<&str> = master
+        .lines()
+        .filter(|l| l.starts_with("#EXT-X-MEDIA:") && l.contains("URI=\""))
+        .filter_map(|l| {
+            l.split("URI=\"")
+                .nth(1)
+                .and_then(|rest| rest.split('"').next())
+        })
+        .collect();
+    uris.iter()
+        .find(|u| u.contains("/itag/234/"))
+        .or_else(|| uris.first())
+        .map(|u| u.to_string())
 }
 
 fn refusal(response: &Value) -> Option<String> {
@@ -128,9 +129,8 @@ fn player_body(video_id: &str, visitor: &str) -> Value {
 }
 
 fn visitor_from_landing(html: &str) -> Option<String> {
-    static PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r#""VISITOR_DATA":"([^"]+)""#).expect("static regex")
-    });
+    static PATTERN: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(VISITOR_PATTERN).expect("static regex"));
     PATTERN.captures(html).map(|c| c[1].to_owned())
 }
 
@@ -184,23 +184,106 @@ impl PlayerEndpointResolver {
         Ok(visitor)
     }
 
-    async fn resolve_native(&self, video_id: &VideoId) -> Result<StreamInfo, String> {
-        let visitor = self.visitor_data().await?;
-        let response: Value = self
+    async fn call_player(
+        &self,
+        video_id: &str,
+        visitor: &str,
+        auth: Option<&HttpAuth>,
+    ) -> Result<Value, String> {
+        let mut request = self
             .http
             .post(PLAYER_URL)
             .header("User-Agent", CLIENT_USER_AGENT)
             .header("X-YouTube-Client-Name", CLIENT_ID)
             .header("X-YouTube-Client-Version", CLIENT_VERSION)
-            .header("X-Goog-Visitor-Id", &visitor)
-            .json(&player_body(video_id.as_str(), &visitor))
+            .header("X-Goog-Visitor-Id", visitor);
+
+        if let Some(auth) = auth {
+            request = request.header("Cookie", &auth.cookie);
+            if let Some(authz) = &auth.authorization {
+                request = request.header("Authorization", authz);
+            }
+            if let Some(u) = &auth.authuser {
+                request = request.header("X-Goog-AuthUser", u);
+            }
+        }
+
+        request
+            .json(&player_body(video_id, visitor))
             .send()
             .await
             .map_err(|e| e.to_string())?
             .json()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())
+    }
+
+    async fn resolve_live(
+        &self,
+        video_id: &VideoId,
+        response: &Value,
+    ) -> Result<StreamInfo, String> {
+        let manifest = response
+            .pointer("/streamingData/hlsManifestUrl")
+            .and_then(Value::as_str)
+            .ok_or("live stream without an HLS manifest")?;
+
+        let uri = match self
+            .http
+            .get(manifest)
+            .header("User-Agent", CLIENT_USER_AGENT)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+        {
+            Ok(resp) => resp
+                .text()
+                .await
+                .ok()
+                .and_then(|master| audio_rendition(&master))
+                .unwrap_or_else(|| manifest.to_owned()),
+            Err(err) => {
+                tracing::debug!(%err, "live master manifest not fetched, playing it whole");
+                manifest.to_owned()
+            }
+        };
+
+        tracing::debug!(%video_id, live = true, "returning HLS audio rendition");
+
+        Ok(StreamInfo {
+            uri,
+            format_id: Some("hls".to_owned()),
+            protocol: Some("m3u8".to_owned()),
+            ext: Some("m3u8".to_owned()),
+            acodec: None,
+            title: response
+                .pointer("/videoDetails/title")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            uploader: response
+                .pointer("/videoDetails/author")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            thumbnail: None,
+            is_local: false,
+            from_cache: false,
+            user_agent: Some(CLIENT_USER_AGENT.to_owned()),
+            bitrate: None,
+            sample_rate: None,
+            channels: None,
+        })
+    }
+
+    async fn resolve_native(
+        &self,
+        video_id: &VideoId,
+        auth: Option<&HttpAuth>,
+    ) -> Result<StreamInfo, String> {
+        let visitor = self.visitor_data().await?;
+        let response = self.call_player(video_id.as_str(), &visitor, auth).await?;
+
         if let Some(reason) = refusal(&response) {
+            // A stale visitor id reads as a bot.
             if reason.contains("bot") {
                 *self.visitor.lock().unwrap() = None;
             }
@@ -214,14 +297,16 @@ impl PlayerEndpointResolver {
             return Err("answered for a different video".to_owned());
         }
 
-        // Live content arrives as HLS, which the audio player cannot
-        // decode. Returning Err here drops us into the yt-dlp fallback.
         if response
             .pointer("/videoDetails/isLive")
             .and_then(Value::as_bool)
             .unwrap_or(false)
+            || response
+                .pointer("/videoDetails/isLiveContent")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
         {
-            return Err("live content: deferring to the yt-dlp fallback".to_owned());
+            return self.resolve_live(video_id, &response).await;
         }
 
         let formats = audio_formats(&response);
@@ -234,10 +319,12 @@ impl PlayerEndpointResolver {
             mime = %format.mime,
             content_length = format.content_length,
             available = formats.len(),
+            authed = auth.is_some(),
             "picked audio format"
         );
 
         self.probe(format).await?;
+
         Ok(StreamInfo {
             uri: format.url.clone(),
             format_id: Some(format.itag.to_string()),
@@ -262,6 +349,7 @@ impl PlayerEndpointResolver {
         })
     }
 
+    /// A URL that only serves its preview answers 403 past the offset.
     async fn probe(&self, format: &Format) -> Result<(), String> {
         let offset = if format.content_length > PROBE_OFFSET + 2 {
             PROBE_OFFSET
@@ -312,7 +400,7 @@ impl StreamResolver for PlayerEndpointResolver {
                 }
             }
             let started = Instant::now();
-            match self.resolve_native(&video_id).await {
+            match self.resolve_native(&video_id, auth.as_ref()).await {
                 Ok(info) => {
                     tracing::debug!(
                         %video_id,
@@ -320,6 +408,7 @@ impl StreamResolver for PlayerEndpointResolver {
                         took_ms = started.elapsed().as_millis() as u64,
                         "resolved through the player endpoint"
                     );
+                    // A live playlist expires; resolve it fresh every time.
                     if info.protocol.as_deref() != Some("m3u8") {
                         self.cache.put(&video_id, &info).await;
                     }

@@ -74,8 +74,7 @@ fn mp4_header_end(data: &[u8]) -> Option<u64> {
     let mut off: u64 = 0;
     while off + 8 <= data.len() as u64 {
         let i = off as usize;
-        let raw_size =
-            u32::from_be_bytes(data[i..i + 4].try_into().ok()?) as u64;
+        let raw_size = u32::from_be_bytes(data[i..i + 4].try_into().ok()?) as u64;
         let kind = &data[i + 4..i + 8];
         if raw_size == 0 {
             return None;
@@ -197,10 +196,7 @@ impl AudioPlayer {
             .map_err(|e| anyhow::anyhow!("Failed to open default audio sink: {e:?}"))?;
         sink.log_on_drop(false);
         let player = Player::connect_new(&sink.mixer());
-        Ok(AudioRig {
-            _sink: sink,
-            player,
-        })
+        Ok(AudioRig { _sink: sink, player })
     }
 
     pub fn store(&self) -> &Arc<AudioStore> {
@@ -430,9 +426,7 @@ impl AudioPlayer {
             ));
         }
         if content_type.contains("mpegurl") {
-            return Err(anyhow::anyhow!(
-                "the resolver returned an HLS manifest ({content_type}), which the audio player cannot decode"
-            ));
+            return self.play_hls(my_gen, url, info).await;
         }
 
         if self.generation.load(Ordering::SeqCst) != my_gen {
@@ -490,6 +484,61 @@ impl AudioPlayer {
         );
 
         outcome
+    }
+
+    async fn play_hls(
+        &self,
+        my_gen: u64,
+        url: &str,
+        info: Option<&StreamInfo>,
+    ) -> Result<()> {
+        use hls_client::{config::ConfigBuilder, stream::HLSStream};
+        use std::num::NonZeroUsize;
+        use stream_download::{
+            Settings, StreamDownload,
+            storage::{adaptive::AdaptiveStorageProvider, temp::TempStorageProvider},
+        };
+
+        let hls_url = url.to_string();
+        let settings = Settings::default();
+
+        let stream = StreamDownload::new::<HLSStream>(
+            ConfigBuilder::new()
+                .url(&hls_url)
+                .map_err(|e| anyhow::anyhow!("hls config: {e}"))?
+                .build()
+                .map_err(|e| anyhow::anyhow!("hls build: {e}"))?,
+            AdaptiveStorageProvider::new(
+                TempStorageProvider::new(),
+                NonZeroUsize::new((settings.get_prefetch_bytes() * 2) as usize).unwrap(),
+            ),
+            settings,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("hls stream: {e}"))?;
+
+        let source = tokio::task::spawn_blocking(move || {
+            rodio::Decoder::new(stream).map_err(|e| anyhow::anyhow!("hls decode: {e:?}"))
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("hls task: {e}"))??;
+
+        self.set_stats(StreamStats {
+            uri: url.to_string(),
+            format_id: info.and_then(|i| i.format_id.clone()),
+            protocol: Some("hls".to_owned()),
+            ext: Some("hls".to_owned()),
+            acodec: None,
+            bitrate_kbps: None,
+            sample_rate_hz: None,
+            channels: None,
+            duration_seconds: None,
+            content_length_bytes: None,
+            from_cache: false,
+            is_local: false,
+        });
+
+        self.append_source(source, my_gen, None, false)
     }
 
     async fn prepare_writer(
@@ -1566,7 +1615,7 @@ impl AudioPlayer {
         }
         match *self.total_duration.lock().unwrap() {
             Some(total) => pos + Duration::from_secs(2) >= total,
-            None => true,
+            None => false,
         }
     }
 }
@@ -1809,8 +1858,7 @@ fn spawn_download_task(
                         }
                         if status.is_server_error() || is_transient_http(status) {
                             attempt += 1;
-                            let delay =
-                                RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
+                            let delay = RESUME_BACKOFF_MS[attempt.min(RESUME_BACKOFF_MS.len() - 1)];
                             tokio::time::sleep(Duration::from_millis(delay)).await;
                             continue;
                         }

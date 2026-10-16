@@ -101,6 +101,13 @@ impl TimbreContext {
             .gzip(true)
             .build()?;
         let session = Session::new(&paths)?;
+        let session_for_validation = session.clone();
+        runtime.spawn(async move {
+            match session_for_validation.validate().await {
+                Ok(state) => tracing::info!(?state, "session validated at boot"),
+                Err(e) => tracing::warn!(%e, "session validation failed at boot"),
+            }
+        });
         let tokens = Arc::new(PoTokens::new());
         let ytdlp: Arc<dyn StreamResolver> = Arc::new(YtDlpResolver::new(&paths, tokens.clone()));
         let native = Arc::new(PlayerEndpointResolver::new(&paths, ytdlp));

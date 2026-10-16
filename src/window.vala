@@ -760,7 +760,7 @@ namespace Timbre {
                     ? "media-playback-pause-symbolic"
                     : "media-playback-start-symbolic";
 
-                if (this.player.is_finished ()) {
+                if (this.player.is_finished () && this.player.get_position () > 0.0) {
                     if (this.queue.has_next ()) {
                         this.queue.next ();
                     } else {

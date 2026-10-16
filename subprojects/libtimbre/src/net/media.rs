@@ -164,6 +164,7 @@ pub struct HttpAuth {
     pub cookie: String,
     pub user_agent: String,
     pub authorization: Option<String>,
+    pub authuser: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

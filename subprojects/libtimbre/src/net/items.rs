@@ -572,11 +572,17 @@ pub fn parse_watch_playlist<'a>(results: impl IntoIterator<Item = &'a Value>) ->
         if data.get("unplayableText").is_some() {
             continue;
         }
+        if data.pointer("/lengthText/runs/0/text").is_none() {
+            continue;
+        }
         if let Some(track) = parse_watch_track(data) {
             out.push(WatchTrack {
                 track,
                 counterpart: counterpart.and_then(parse_watch_track),
             });
+        }
+        if std::env::var_os("TIMBRE_DUMP_WATCH").is_some() {
+            eprintln!("{}", serde_json::to_string_pretty(data).unwrap_or_default());
         }
     }
     out

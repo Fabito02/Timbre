@@ -141,10 +141,12 @@ impl Session {
             .browser_auth
             .as_ref()
             .and_then(|a| a.get_authorization().ok());
+        let authuser = credentials.headers.get("X-Goog-AuthUser").cloned();
         Some(HttpAuth {
             cookie,
             user_agent,
             authorization,
+            authuser,
         })
     }
 
