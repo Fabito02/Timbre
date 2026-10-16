@@ -70,19 +70,29 @@ template $TimbreHomeSpeedTile: Button {
       valign: center;
       hexpand: true;
 
-      Label label_title {
-        halign: start;
-        xalign: 0;
-        ellipsize: end;
-        lines: 2;
-        wrap: true;
-        wrap-mode: word_char;
-        hexpand: true;
-        max-width-chars: 24;
+      Box {
+        orientation: horizontal;
+        spacing: 6;
 
-        styles [
-          "home-speed-title",
-        ]
+        Label label_title {
+          halign: start;
+          xalign: 0;
+          ellipsize: end;
+          lines: 2;
+          wrap: true;
+          wrap-mode: word_char;
+          max-width-chars: 24;
+  
+          styles [
+            "home-speed-title",
+          ]
+        }
+        
+        Label explicit_badge {
+            label: "E";
+            valign: center;
+            styles ["explicit-badge"]
+        }
       }
 
       Label label_sub {

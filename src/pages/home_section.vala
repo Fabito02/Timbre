@@ -112,7 +112,7 @@ namespace Timbre.HomeSection {
             var tile = new Timbre.HomeSpeedTile (
                 item.id, item.kind, item.title,
                 item.subtitle ?? "", item.duration_secs,
-                item.thumbnail_url
+                item.thumbnail_url, item.is_live, item.explicit
             );
 
             string i_id = item.id;

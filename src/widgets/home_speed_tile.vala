@@ -13,11 +13,12 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_sub;
+        [GtkChild] private unowned Gtk.Label explicit_badge;
 
         private Timbre.Utils.ImageBinding cover_binding;
 
         public HomeSpeedTile (string id, string kind, string title, string artist,
-                              uint64 duration, string? cover_url) {
+                              uint64 duration, string? cover_url, bool is_live = false, bool explicit = false) {
             Object ();
 
             this.item_id = id;
@@ -52,6 +53,12 @@ namespace Timbre {
             if (kind == "Album") {
                 this.add_css_class ("album");
             }
+
+            if (explicit) {
+                this.add_css_class ("explicit");
+            }
+
+            this.explicit_badge.visible = explicit;
         }
     }
 }
