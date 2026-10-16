@@ -117,7 +117,7 @@ namespace Timbre {
             group.halign = Gtk.Align.CENTER;
             this.current_group = group;
 
-            var main = this.make_tab (group, _("Main"), "applications-other-symbolic", "main");
+            var main = this.make_tab (group, _("Main"), "blocks-symbolic", "main");
             if (top != null) {
                 var single = new GenericArray<SearchItem> ();
                 single.add (top);

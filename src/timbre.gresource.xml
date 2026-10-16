@@ -59,5 +59,17 @@
             alias="icons/scalable/actions/tape-symbolic.svg"
             preprocess="xml-stripblanks"
         >../data/icons/hicolor/actions/tape-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/library-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/library-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/blocks-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/blocks-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/radio-wave-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/radio-wave-symbolic.svg</file>
   </gresource>
 </gresources>
