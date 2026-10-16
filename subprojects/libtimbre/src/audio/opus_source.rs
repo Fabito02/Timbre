@@ -29,7 +29,10 @@ impl StreamingMediaSource {
                 return Err(io::Error::other(err.clone()));
             }
             if inner.cancelled {
-                return Err(io::Error::new(io::ErrorKind::Interrupted, "stream cancelled"));
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "stream cancelled",
+                ));
             }
             if inner.is_finished {
                 return Err(io::Error::new(
@@ -85,7 +88,10 @@ impl Seek for StreamingMediaSource {
                     .checked_add(delta)
                     .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek overflow"))?;
                 if target < 0 {
-                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "seek before start",
+                    ));
                 }
                 let target = target as u64;
                 self.wait_until(target)?;
@@ -227,7 +233,12 @@ impl OpusSource {
         hint.with_extension("webm");
 
         let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
             .map_err(|e| format!("probe: {e}"))?;
         let format = probed.format;
 
@@ -239,12 +250,16 @@ impl OpusSource {
 
         let track_id = track.id;
         let sample_rate_u32 = track.codec_params.sample_rate.unwrap_or(48_000);
-        let channels_u16 = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
+        let channels_u16 = track
+            .codec_params
+            .channels
+            .map(|c| c.count() as u16)
+            .unwrap_or(2);
 
-        let sample_rate = NonZeroU32::new(sample_rate_u32)
-            .ok_or_else(|| "invalid sample rate".to_owned())?;
-        let channels = NonZeroU16::new(channels_u16)
-            .ok_or_else(|| "invalid channel count".to_owned())?;
+        let sample_rate =
+            NonZeroU32::new(sample_rate_u32).ok_or_else(|| "invalid sample rate".to_owned())?;
+        let channels =
+            NonZeroU16::new(channels_u16).ok_or_else(|| "invalid channel count".to_owned())?;
 
         let total_duration = track
             .codec_params
@@ -296,7 +311,10 @@ impl OpusSource {
             if packet.track_id() != self.track_id {
                 continue;
             }
-            match self.decoder.decode_float(&packet.data, &mut self.pcm, false) {
+            match self
+                .decoder
+                .decode_float(&packet.data, &mut self.pcm, false)
+            {
                 Ok(samples_per_channel) => {
                     self.packets_seen += 1;
                     let channels = self.channels.get() as usize;
@@ -447,7 +465,10 @@ impl Seek for Mp4SparseSource {
             }
         };
         if target < 0 {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "seek before start"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "seek before start",
+            ));
         }
         self.cursor = target as u64;
         Ok(self.cursor)

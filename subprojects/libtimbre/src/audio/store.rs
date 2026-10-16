@@ -19,7 +19,11 @@ pub enum StoreKind {
 
 impl StoreKind {
     pub fn from_int(value: i32) -> Self {
-        if value == 1 { StoreKind::Download } else { StoreKind::Cache }
+        if value == 1 {
+            StoreKind::Download
+        } else {
+            StoreKind::Cache
+        }
     }
 }
 
@@ -121,7 +125,11 @@ pub struct GrowingFileSource {
 
 impl GrowingFileSource {
     fn new(file: std::fs::File, growth: Growth) -> Self {
-        Self { file, growth, cursor: 0 }
+        Self {
+            file,
+            growth,
+            cursor: 0,
+        }
     }
 }
 
@@ -157,11 +165,14 @@ impl Seek for GrowingFileSource {
         let target = match pos {
             SeekFrom::Start(n) => n,
             SeekFrom::Current(delta) => {
-                let target = (self.cursor as i64)
-                    .checked_add(delta)
-                    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "seek overflow"))?;
+                let target = (self.cursor as i64).checked_add(delta).ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "seek overflow")
+                })?;
                 if target < 0 {
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "seek before start"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "seek before start",
+                    ));
                 }
                 target as u64
             }
@@ -169,7 +180,7 @@ impl Seek for GrowingFileSource {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "seek from end not available on a growing file",
-                ))
+                ));
             }
         };
 
@@ -179,7 +190,10 @@ impl Seek for GrowingFileSource {
             state = cv.wait(state).unwrap();
         }
         if state.cancelled {
-            return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "cancelled",
+            ));
         }
         drop(state);
 
@@ -268,7 +282,8 @@ impl AudioStore {
         video_id: &str,
         meta: AudioEntry,
     ) -> std::io::Result<AudioWriter> {
-        self.open_writer_with_growth(kind, video_id, meta, None).await
+        self.open_writer_with_growth(kind, video_id, meta, None)
+            .await
     }
 
     async fn open_writer_with_growth(
@@ -285,7 +300,11 @@ impl AudioStore {
         meta.video_id = video_id.to_owned();
         meta.downloaded_bytes = existing;
         meta.updated_at = now_secs();
-        let file = fs::OpenOptions::new().create(true).append(true).open(&bin).await?;
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&bin)
+            .await?;
         if let Some(g) = &growth {
             g.grow(existing, meta.expected_size);
         }

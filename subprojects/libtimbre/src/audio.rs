@@ -196,7 +196,10 @@ impl AudioPlayer {
             .map_err(|e| anyhow::anyhow!("Failed to open default audio sink: {e:?}"))?;
         sink.log_on_drop(false);
         let player = Player::connect_new(&sink.mixer());
-        Ok(AudioRig { _sink: sink, player })
+        Ok(AudioRig {
+            _sink: sink,
+            player,
+        })
     }
 
     pub fn store(&self) -> &Arc<AudioStore> {
@@ -370,9 +373,7 @@ impl AudioPlayer {
                         "resuming from partial"
                     );
                     return self
-                        .play_partial(
-                            my_gen, &entry, kind, vid, url, user_agent, info, duration,
-                        )
+                        .play_partial(my_gen, &entry, kind, vid, url, user_agent, info, duration)
                         .await;
                 }
 
@@ -486,12 +487,7 @@ impl AudioPlayer {
         outcome
     }
 
-    async fn play_hls(
-        &self,
-        my_gen: u64,
-        url: &str,
-        info: Option<&StreamInfo>,
-    ) -> Result<()> {
+    async fn play_hls(&self, my_gen: u64, url: &str, info: Option<&StreamInfo>) -> Result<()> {
         use hls_client::{config::ConfigBuilder, stream::HLSStream};
         use std::num::NonZeroUsize;
         use stream_download::{
