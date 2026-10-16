@@ -4,6 +4,7 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_artist;
+        [GtkChild] private unowned Gtk.Label explicit_badge;
 
         public string track_id { get; private set; }
         public string item_type { get; private set; }
@@ -26,7 +27,7 @@ namespace Timbre {
             this.label_title.label = title;
             this.label_artist.label = artists;
 
-            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 140);
+            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 144);
             this.cover_binding.load (cover_url);
 
             if (type_name == "Artist") {
@@ -48,6 +49,19 @@ namespace Timbre {
             if (explicit) {
                 this.add_css_class ("explicit");
             }
+
+            this.explicit_badge.visible = explicit;
+
+            if (type_name == "Video") {
+                this.image_cover.width_request = 256;
+                this.image_cover.height_request = 144;
+            } else {
+                this.image_cover.width_request = 144;
+                this.image_cover.height_request = 144;
+            }
+
+            this.label_title.max_width_chars = (type_name == "Video") ? 32 : 20;
+            this.label_artist.max_width_chars = (type_name == "Video") ? 32 : 20;
         }
     }
 }

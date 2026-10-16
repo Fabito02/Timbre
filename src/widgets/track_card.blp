@@ -15,9 +15,7 @@ template $TimbreTrackCard: Button {
       Overlay {
         Picture image_cover {
           can-shrink: true;
-          content-fit: contain;
-          width-request: 140;
-          height-request: 140;
+          content-fit: cover;
           valign: center;
           halign: center;
 
@@ -93,17 +91,15 @@ template $TimbreTrackCard: Button {
     Box {
       orientation: vertical;
       spacing: 2;
-      width-request: 140;
       valign: center;
 
       Box {
         orientation: horizontal;
-        spacing: 2;
+        spacing: 6;
         
         Label label_title {
           xalign: 0.0;
           ellipsize: end;
-          max-width-chars: 20;
   
           styles [
             "heading",
@@ -113,7 +109,6 @@ template $TimbreTrackCard: Button {
         Label explicit_badge {
             label: "E";
             valign: center;
-            margin-start: 4;
             styles ["explicit-badge"]
         }
       }
@@ -121,7 +116,6 @@ template $TimbreTrackCard: Button {
       Label label_artist {
         xalign: 0.0;
         ellipsize: end;
-        max-width-chars: 20;
 
         styles [
           "caption",
