@@ -327,12 +327,35 @@ template $TimbreWindow: Adw.ApplicationWindow {
                   hexpand: true;
                 }
 
-                Box {
+                Box time_or_live_box {
                   orientation: horizontal;
                   spacing: 16;
                   valign: center;
+                  
+                  Box live_widget {
+                    orientation: horizontal;
+                    halign: end;
+                    valign: end;
+          
+                    styles [
+                      "live-overlay",
+                    ]
+          
+                    Image {
+                      icon-name: "radio-wave-symbolic";
+                      pixel-size: 14;
+                      margin-end: 4;
+          
+                      styles [
+                        "live-overlay-icon",
+                      ]
+                    }
+                    Label {
+                      label: _("Live");
+                    }
+                  }
 
-                  Box {
+                  Box time_labels {
                     orientation: horizontal;
                     valign: center;
 

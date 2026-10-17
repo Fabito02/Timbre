@@ -48,6 +48,8 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Picture image_fullscreen;
         [GtkChild] private unowned Gtk.Box like_slot;
+        [GtkChild] private unowned Gtk.Box live_widget;
+        [GtkChild] private unowned Gtk.Box time_labels;
 
         [GtkChild] private unowned Gtk.SearchBar searchbar;
         [GtkChild] private unowned Gtk.Button button_back;
@@ -549,8 +551,11 @@ namespace Timbre {
             if (duration > 0) {
                 this.label_time_total.label = this.format_time ((double) duration);
                 this.adjustment_progress.upper = (double) duration;
+                this.live_widget.visible = !(duration > 0);
+                this.time_labels.visible = (duration > 0);
             } else {
-                this.label_time_total.label = "--:--";
+                this.live_widget.visible = !(duration > 0);
+                this.time_labels.visible = (duration > 0);
                 this.adjustment_progress.upper = 0.0;
             }
 
