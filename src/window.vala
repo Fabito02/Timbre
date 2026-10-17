@@ -23,6 +23,10 @@ namespace Timbre {
         private double metadata_duration = 0.0;
         private Timbre.TrackItem? pending_track = null;
 
+        private bool play_recorded = false;
+        private string recorded_track_id = "";
+        private int64 last_tick_us = 0;
+
         [GtkChild] private unowned Gtk.Scale scale_progress;
         [GtkChild] private unowned Gtk.Adjustment adjustment_progress;
         [GtkChild] private unowned Gtk.Label label_time_current;
@@ -112,6 +116,11 @@ namespace Timbre {
                         Timbre.Utils.trim_memory ();
                     }
                 }
+            });
+
+            this.close_request.connect (() => {
+                this.finish_recording ();
+                return false;
             });
         }
 
@@ -294,7 +303,7 @@ namespace Timbre {
 
         [GtkCallback]
         public void close_fullscreen_clicked () {
-        this.bottom_bar_revealer.reveal_child = true;
+            this.bottom_bar_revealer.reveal_child = true;
             this.fullscreen_revealer.can_target = false;
             this.fullscreen_revealer.reveal_child = false;
         }
@@ -358,6 +367,7 @@ namespace Timbre {
 
             if (this.button_clear_queue != null) {
                 this.button_clear_queue.clicked.connect (() => {
+                    this.finish_recording ();
                     this.queue.clear ();
                     this.player.stop ();
                     this.is_playing = false;
@@ -466,6 +476,8 @@ namespace Timbre {
         }
 
         public void play_track (Timbre.TrackItem track) {
+            this.finish_recording ();
+
             if (this.player != null) {
                 this.player.stop ();
             }
@@ -547,6 +559,10 @@ namespace Timbre {
             this.button_play_pause.icon_name = "media-playback-start-symbolic";
 
             this.current_track_id = track.id;
+            this.recorded_track_id = track.id;
+            this.play_recorded = false;
+            this.last_tick_us = 0;
+
             this.like_fetch_gen++;
             int my_fetch_gen = this.like_fetch_gen;
 
@@ -583,7 +599,6 @@ namespace Timbre {
                     }
 
                     this.log_player_stats ();
-                    this.record_playback (track_id);
 
                     if (this.tick_id == 0) {
                         this.tick_id = GLib.Timeout.add (100, this.update_ui_tick);
@@ -679,16 +694,24 @@ namespace Timbre {
 
         private void record_playback (string track_id) {
             string tid = track_id.dup ();
-
-            this.player.record_play (tid, (success, error) => {
-                if (!success) {
-                    string msg = error != null ? (string) error : "unknown error";
-                    warning ("record_play failed for %s: %s", tid, msg);
+            this.player.record_play_start (tid, (success, error) => {
+                if (!success && error != null) {
+                    warning ("record_play_start failed for %s: %s", tid, (string) error);
                 }
                 if (error != null) {
                     Timbre.string_free (error);
                 }
             });
+        }
+
+        private void finish_recording () {
+            if (!this.play_recorded) return;
+            this.play_recorded = false;
+            string tid = this.recorded_track_id;
+            this.recorded_track_id = "";
+            if (tid.length > 0) {
+                this.player.record_play_end (tid);
+            }
         }
 
         private void log_player_stats () {
@@ -759,7 +782,16 @@ namespace Timbre {
                     ? "media-playback-pause-symbolic"
                     : "media-playback-start-symbolic";
 
+                if (backend_playing
+                    && !this.play_recorded
+                    && this.recorded_track_id.length > 0
+                    && this.recorded_track_id == this.current_track_id) {
+                    this.play_recorded = true;
+                    this.record_playback (this.recorded_track_id);
+                }
+
                 if (this.player.is_finished () && this.player.get_position () > 0.0) {
+                    this.finish_recording ();
                     if (this.queue.has_next ()) {
                         this.queue.next ();
                     } else {
@@ -775,6 +807,14 @@ namespace Timbre {
             double current_pos = this.player.get_position ();
             this.set_slider_silently (current_pos);
             this.label_time_current.label = format_time (current_pos);
+
+            if (this.play_recorded && backend_playing && this.recorded_track_id.length > 0) {
+                int64 now_us = GLib.get_monotonic_time ();
+                if (now_us - this.last_tick_us >= 1000000) {
+                    this.last_tick_us = now_us;
+                    this.player.record_play_tick (this.recorded_track_id, current_pos);
+                }
+            }
 
             double effective = this.metadata_duration;
             if (effective > 0.0

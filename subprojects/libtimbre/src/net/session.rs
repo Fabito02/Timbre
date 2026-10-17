@@ -102,6 +102,70 @@ impl Session {
         Ok(session)
     }
 
+    pub async fn signature_timestamp(&self) -> Option<u64> {
+        const UA: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0";
+        if let Some(sts) = self.sts_from_base_js(UA).await {
+            return Some(sts);
+        }
+        self.sts_from_watch_page(UA).await
+    }
+
+    async fn sts_from_base_js(&self, ua: &str) -> Option<u64> {
+        let html = self
+            .http
+            .get("https://music.youtube.com/")
+            .header("User-Agent", ua)
+            .header("Cookie", "SOCS=CAI")
+            .send()
+            .await
+            .ok()?
+            .text()
+            .await
+            .ok()?;
+
+        let base_path = html.split("jsUrl\":\"").nth(1)?.split('"').next()?;
+        let base_url = if base_path.starts_with("http") {
+            base_path.to_owned()
+        } else {
+            format!("https://music.youtube.com{}", base_path)
+        };
+
+        let js = self
+            .http
+            .get(&base_url)
+            .header("User-Agent", ua)
+            .send()
+            .await
+            .ok()?
+            .text()
+            .await
+            .ok()?;
+
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(r#"signatureTimestamp["']?\s*[:=]\s*(\d+)"#).unwrap()
+        });
+        RE.captures(&js)?.get(1)?.as_str().parse().ok()
+    }
+
+    async fn sts_from_watch_page(&self, ua: &str) -> Option<u64> {
+        let html = self
+            .http
+            .get("https://music.youtube.com/watch?v=jNQXAC9IVRw")
+            .header("User-Agent", ua)
+            .header("Cookie", "SOCS=CAI")
+            .send()
+            .await
+            .ok()?
+            .text()
+            .await
+            .ok()?;
+
+        static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(r#"signatureTimestamp["']?\s*[:=]\s*(\d+)"#).unwrap()
+        });
+        RE.captures(&html)?.get(1)?.as_str().parse().ok()
+    }
+
     pub fn http(&self) -> &reqwest::Client {
         &self.http
     }

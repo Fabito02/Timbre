@@ -30,6 +30,7 @@ opus = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 stream-download = { version = "0.21.1", features = ["reqwest-rustls"] }
 hls_client = "1.1.0"
+rustypipe-botguard = "0.1.2"
 
 [dev-dependencies]
 tempfile = "3"

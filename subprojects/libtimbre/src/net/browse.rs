@@ -198,7 +198,7 @@ impl Fixtures {
     }
 
     pub fn dir() -> PathBuf {
-        match std::env::var_os("MIXTAPES_FIXTURES") {
+        match std::env::var_os("TIMBRE_FIXTURES") {
             Some(dir) => PathBuf::from(dir),
             None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/innertube"),
         }

@@ -161,9 +161,15 @@ namespace Timbre {
                                    string privacy,
                                    [CCode (scope = "async")] DoneCallback cb);
 
-        [CCode (cname = "timbre_player_record_play")]
-        public bool record_play (string track_id,
-        [CCode (scope = "async")] DoneCallback cb);
+        [CCode (cname = "timbre_player_record_play_start")]
+        public bool record_play_start (string track_id,
+                                        [CCode (scope = "async")] DoneCallback cb);
+
+        [CCode (cname = "timbre_player_record_play_tick")]
+        public void record_play_tick (string track_id, double position_secs);
+
+        [CCode (cname = "timbre_player_record_play_end")]
+        public void record_play_end (string track_id);
 
         [CCode (cname = "timbre_audio_release_sink")]
         public void audio_release_sink ();

@@ -3,7 +3,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -59,6 +59,8 @@ pub struct TimbrePlayerHandle {
     player: Arc<AudioPlayer>,
     runtime: Arc<Runtime>,
     ctx: Arc<TimbreContext>,
+    playback_session: Arc<std::sync::Mutex<Option<history::PlaySession>>>,
+    playback_gen: Arc<AtomicU64>,
 }
 
 #[derive(Clone, Copy)]
@@ -161,6 +163,8 @@ pub unsafe extern "C" fn timbre_player_new() -> *mut TimbrePlayerHandle {
         player,
         runtime,
         ctx,
+        playback_session: Arc::new(std::sync::Mutex::new(None)),
+        playback_gen: Arc::new(AtomicU64::new(0)),
     }))
 }
 
@@ -1088,7 +1092,7 @@ pub unsafe extern "C" fn timbre_player_edit_playlist(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timbre_player_record_play(
+pub unsafe extern "C" fn timbre_player_record_play_start(
     handle: *mut TimbrePlayerHandle,
     track_id: *const c_char,
     cb: Option<TimbreDoneCallback>,
@@ -1100,19 +1104,110 @@ pub unsafe extern "C" fn timbre_player_record_play(
     let Some(track_id) = from_c(track_id) else {
         return false;
     };
+    if track_id.is_empty() {
+        return false;
+    }
+
     let ctx = h.ctx.clone();
+    let slot = h.playback_session.clone();
+    let gen_ctl = h.playback_gen.clone();
+    let my_gen = gen_ctl.fetch_add(1, Ordering::SeqCst) + 1;
     let user = SendPtr::new(ud);
 
     h.runtime.spawn(async move {
-        let api = ctx.session.api();
         let auth = ctx.session.media_auth();
-        let result = history::record_play(&*api, &ctx.http, auth.as_ref(), &track_id)
-            .await
-            .map(|_| ())
-            .map_err(|e| e.to_string());
-        dispatch_done(cb, user.raw(), result);
+        let sts = ctx.session.signature_timestamp().await;
+
+        let outcome =
+            history::begin_play(&ctx.http, auth.as_ref(), &track_id, &ctx.tokens, sts).await;
+
+        if gen_ctl.load(Ordering::SeqCst) != my_gen {
+            dispatch_done(cb, user.raw(), Err("superseded".into()));
+            return;
+        }
+
+        match outcome {
+            Ok(session) => {
+                let old = slot.lock().unwrap().replace(session);
+                if let Some(old) = old {
+                    if old.video_id() != track_id.as_str() {
+                        history::end_play(&ctx.http, auth.as_ref(), &old, old.reported_secs).await;
+                    }
+                }
+                dispatch_done(cb, user.raw(), Ok(()));
+            }
+            Err(e) => dispatch_done(cb, user.raw(), Err(e.to_string())),
+        }
     });
     true
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_record_play_end(
+    handle: *mut TimbrePlayerHandle,
+    track_id: *const c_char,
+) {
+    let Some(h) = handle.as_ref() else { return };
+    let expected = from_c(track_id);
+    let ctx = h.ctx.clone();
+    let slot = h.playback_session.clone();
+    let gen_ctl = h.playback_gen.clone();
+    gen_ctl.fetch_add(1, Ordering::SeqCst);
+
+    let position = h.player.get_position().as_secs_f64();
+
+    h.runtime.spawn(async move {
+        let session = {
+            let mut guard = slot.lock().unwrap();
+            match (guard.as_ref(), expected.as_deref()) {
+                (Some(s), Some(id)) if s.video_id() == id => guard.take(),
+                _ => None,
+            }
+        };
+        if let Some(s) = session {
+            let auth = ctx.session.media_auth();
+            history::end_play(&ctx.http, auth.as_ref(), &s, position).await;
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_record_play_tick(
+    handle: *mut TimbrePlayerHandle,
+    track_id: *const c_char,
+    position_secs: f64,
+) {
+    let Some(h) = handle.as_ref() else { return };
+    let Some(track_id) = from_c(track_id) else {
+        return;
+    };
+    if position_secs < 0.0 {
+        return;
+    }
+
+    let ctx = h.ctx.clone();
+    let slot = h.playback_session.clone();
+
+    h.runtime.spawn(async move {
+        let mut session = {
+            let guard = slot.lock().unwrap();
+            match guard.as_ref() {
+                Some(s) if s.video_id() == track_id.as_str() => Some(s.clone()),
+                _ => None,
+            }
+        };
+        let Some(ref mut s) = session else { return };
+        let auth = ctx.session.media_auth();
+        history::tick_play(&ctx.http, auth.as_ref(), s, position_secs).await;
+
+        let mut guard = slot.lock().unwrap();
+        if let Some(ref mut existing) = *guard {
+            if existing.cpn == s.cpn {
+                existing.reported_secs = s.reported_secs;
+                existing.atr_sent = s.atr_sent;
+            }
+        }
+    });
 }
 
 #[unsafe(no_mangle)]

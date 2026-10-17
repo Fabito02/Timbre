@@ -152,8 +152,11 @@ bool timbre_player_edit_playlist(TimbrePlayerHandle *h, const char *playlist_id,
                                  const char *privacy, TimbreDoneCallback cb,
                                  void *ud);
 
-bool timbre_player_record_play(TimbrePlayerHandle *h, const char *track_id,
-                               TimbreDoneCallback cb, void *ud);
+bool timbre_player_record_play_start(TimbrePlayerHandle *h, const char *track_id,
+                                     TimbreDoneCallback cb, void *ud);
+void timbre_player_record_play_tick(TimbrePlayerHandle *h, const char *track_id,
+                                    double position_secs);
+void timbre_player_record_play_end(TimbrePlayerHandle *h, const char *track_id);
 
 #ifdef __cplusplus
 }
