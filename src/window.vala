@@ -443,7 +443,6 @@ namespace Timbre {
         }
 
         private void update_nav_buttons () {
-            this.button_prev.sensitive = this.queue.has_prev ();
             this.button_next.sensitive = this.queue.has_next ();
         }
 
@@ -910,6 +909,11 @@ namespace Timbre {
 
         [GtkCallback]
         private void on_prev_clicked () {
+            if (this.player.get_position () > 3.0 || !this.queue.has_prev ()) {
+                this.player.seek (0.0);
+                return;
+            }
+
             this.queue.prev ();
         }
 

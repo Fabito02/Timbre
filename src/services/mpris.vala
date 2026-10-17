@@ -204,7 +204,12 @@ namespace Timbre.Services {
         }
 
         public void previous () throws GLib.DBusError, GLib.IOError {
-            if (this.queue.has_prev ()) this.queue.prev ();
+            if (this.player.get_position () > 3.0 || !this.queue.has_prev ()) {
+                this.player.seek (0.0);
+                return;
+            }
+    
+            this.queue.prev ();
         }
 
         public void pause () throws GLib.DBusError, GLib.IOError {
@@ -392,7 +397,7 @@ namespace Timbre.Services {
         private void emit_can_go_changed (bool next, bool prev) {
             var b = new VariantBuilder (new VariantType ("a{sv}"));
             b.add ("{sv}", "CanGoNext",     new Variant.boolean (next));
-            b.add ("{sv}", "CanGoPrevious", new Variant.boolean (prev));
+            b.add ("{sv}", "CanGoPrevious", new Variant.boolean (true));
             this.emit_player_changed (b);
         }
 
