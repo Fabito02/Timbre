@@ -606,7 +606,7 @@ namespace Timbre {
                     this.log_player_stats ();
 
                     if (this.tick_id == 0) {
-                        this.tick_id = GLib.Timeout.add (100, this.update_ui_tick);
+                        this.tick_id = GLib.Timeout.add (250, this.update_ui_tick);
                     }
 
                     if (need_metadata_fetch && my_fetch_gen == this.like_fetch_gen) {

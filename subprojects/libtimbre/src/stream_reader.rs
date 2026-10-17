@@ -91,28 +91,24 @@ impl StreamReader {
 
 impl Read for StreamReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
+        if buf.is_empty() { return Ok(0); }
         let mut inner = self.buffer.inner.lock().unwrap();
         loop {
-            if inner.cancelled {
-                return Ok(0);
-            }
-            if let Some(ref err) = inner.error {
-                return Err(io::Error::other(err.clone()));
-            }
+            if inner.cancelled { return Ok(0); }
+            if let Some(ref err) = inner.error { return Err(io::Error::other(err.clone())); }
             if self.cursor < inner.data.len() {
                 let available = inner.data.len() - self.cursor;
                 let to_copy = available.min(buf.len());
                 buf[..to_copy].copy_from_slice(&inner.data[self.cursor..self.cursor + to_copy]);
                 self.cursor += to_copy;
+
+                if self.cursor >= 256 * 1024 {
+                    inner.data.drain(..self.cursor);
+                    self.cursor = 0;
+                }
                 return Ok(to_copy);
             }
-            if inner.is_finished {
-                return Ok(0);
-            }
+            if inner.is_finished { return Ok(0); }
             inner = self.buffer.cvar.wait(inner).unwrap();
         }
     }

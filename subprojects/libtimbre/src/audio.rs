@@ -760,8 +760,10 @@ impl AudioPlayer {
             stats.is_local = is_local;
         }
 
-        if let Err(e) = self.rebuild_sink() {
-            tracing::warn!(%e, "append_source: rebuild failed, using existing rig");
+        if !self.has_sink() {
+            if let Err(e) = self.rebuild_sink() {
+                tracing::warn!(%e, "append_source: rebuild failed");
+            }
         }
 
         if self.generation.load(Ordering::SeqCst) != my_gen {
@@ -1603,16 +1605,16 @@ impl AudioPlayer {
             Some((empty, _)) => (empty, self.position.lock().unwrap().elapsed()),
             None => return false,
         };
-        if !empty {
-            return false;
-        }
-        if pos == Duration::ZERO {
-            return false;
-        }
-        match *self.total_duration.lock().unwrap() {
+        if !empty { return false; }
+        if pos == Duration::ZERO { return false; }
+        let finished = match *self.total_duration.lock().unwrap() {
             Some(total) => pos + Duration::from_secs(2) >= total,
             None => false,
+        };
+        if finished {
+            let _ = self.active_buffer.lock().unwrap().take();
         }
+        finished
     }
 }
 
