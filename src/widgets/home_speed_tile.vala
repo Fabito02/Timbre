@@ -14,6 +14,8 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_sub;
         [GtkChild] private unowned Gtk.Label explicit_badge;
+        [GtkChild] private unowned Adw.Bin album_overlay;
+        [GtkChild] private unowned Adw.Bin play_overlay;
 
         private Timbre.Utils.ImageBinding cover_binding;
 
@@ -41,22 +43,14 @@ namespace Timbre {
 
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
             this.cover_binding.load (cover_url);
-
+            
             if (kind == "Artist") {
                 this.add_css_class ("artist");
             }
 
-            if (kind == "Song") {
-                this.add_css_class ("song");
-            }
-
-            if (kind == "Album") {
-                this.add_css_class ("album");
-            }
-
-            if (explicit) {
-                this.add_css_class ("explicit");
-            }
+            this.play_overlay.visible = kind == "Song" || kind == "Video";
+            this.album_overlay.visible = kind == "Album";
+            this.explicit_badge.visible = explicit;
 
             this.explicit_badge.visible = explicit;
         }

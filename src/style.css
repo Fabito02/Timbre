@@ -209,13 +209,6 @@ picture.image-placeholder {
     border-radius: 6px;
 }
 
-.play-overlay,
-.album-overlay,
-.live-overlay,
-.explicit-badge {
-    opacity: 0;
-}
-
 .play-overlay-icon,
 .album-overlay-icon {
     background-color: #00000070;
@@ -232,13 +225,6 @@ picture.image-placeholder {
     padding: 6px;
     padding: 6px;
     margin: 2px;
-}
-
-.song .play-overlay,
-.album .album-overlay,
-.live .live-overlay,
-.explicit .explicit-badge {
-    opacity: 1;
 }
 
 .live-overlay {

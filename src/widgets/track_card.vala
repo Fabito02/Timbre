@@ -5,6 +5,9 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_artist;
         [GtkChild] private unowned Gtk.Label explicit_badge;
+        [GtkChild] private unowned Gtk.Box live_overlay;
+        [GtkChild] private unowned Adw.Bin album_overlay;
+        [GtkChild] private unowned Adw.Bin play_overlay;
 
         public string track_id { get; private set; }
         public string item_type { get; private set; }
@@ -34,22 +37,9 @@ namespace Timbre {
                 this.add_css_class ("artist");
             }
 
-            if (type_name == "Song" || type_name == "Video") {
-                this.add_css_class ("song");
-            }
-
-            if (type_name == "Album") {
-                this.add_css_class ("album");
-            }
-
-            if (is_live) {
-                this.add_css_class ("live");
-            }
-
-            if (explicit) {
-                this.add_css_class ("explicit");
-            }
-
+            this.play_overlay.visible = type_name == "Song" || type_name == "Video";
+            this.album_overlay.visible = type_name == "Album";
+            this.live_overlay.visible = is_live;
             this.explicit_badge.visible = explicit;
 
             if (type_name == "Video") {
