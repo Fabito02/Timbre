@@ -3,9 +3,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::process::Command;
 
 use crate::context::Paths;
@@ -44,7 +44,6 @@ pub struct YtDlpResolver {
     binary: PathBuf,
     tokens: Arc<crate::net::potoken::PoTokens>,
     tmp_dir: PathBuf,
-    cache: StreamCache,
 }
 
 impl YtDlpResolver {
@@ -54,7 +53,6 @@ impl YtDlpResolver {
             binary,
             tokens,
             tmp_dir: paths.cache_dir.clone(),
-            cache: StreamCache::new(paths.stream_cache_dir.clone()),
         }
     }
 
@@ -152,24 +150,11 @@ impl StreamResolver for YtDlpResolver {
         video_id: VideoId,
         auth: Option<HttpAuth>,
     ) -> BoxFuture<'_, Result<StreamInfo, ResolveError>> {
-        Box::pin(async move {
-            if let Some(mut info) = self.cache.get(&video_id).await {
-                if info.uri.contains("yt_live_broadcast") || crate::audio::is_live_uri(&info.uri) {
-                    self.cache.invalidate(&video_id).await;
-                } else {
-                    info.from_cache = true;
-                    return Ok(info);
-                }
-            }
-            let info = self.run(&video_id, auth.as_ref()).await?;
-            self.cache.put(&video_id, &info).await;
-            Ok(info)
-        })
+        Box::pin(async move { self.run(&video_id, auth.as_ref()).await })
     }
 
-    fn invalidate(&self, video_id: &VideoId) -> BoxFuture<'_, ()> {
-        let video_id = video_id.clone();
-        Box::pin(async move { self.cache.invalidate(&video_id).await })
+    fn invalidate(&self, _video_id: &VideoId) -> BoxFuture<'_, ()> {
+        Box::pin(async move {})
     }
 }
 
@@ -205,141 +190,6 @@ impl StreamResolver for DemoResolver {
 
     fn invalidate(&self, video_id: &VideoId) -> BoxFuture<'_, ()> {
         self.inner.invalidate(video_id)
-    }
-}
-
-pub struct StreamCache {
-    dir: PathBuf,
-    puts: std::sync::atomic::AtomicUsize,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-struct CacheEntry {
-    #[serde(default)]
-    uri: String,
-    #[serde(default, rename = "url")]
-    legacy_url: Option<String>,
-    #[serde(default)]
-    format_id: Option<String>,
-    #[serde(default)]
-    protocol: Option<String>,
-    #[serde(default)]
-    ext: Option<String>,
-    #[serde(default)]
-    acodec: Option<String>,
-    #[serde(default)]
-    user_agent: Option<String>,
-    #[serde(default)]
-    bitrate: Option<u64>,
-    #[serde(default)]
-    timestamp: f64,
-}
-
-impl CacheEntry {
-    fn into_info(self) -> StreamInfo {
-        let uri = if self.uri.is_empty() {
-            self.legacy_url.unwrap_or_default()
-        } else {
-            self.uri
-        };
-        StreamInfo {
-            uri,
-            format_id: self.format_id,
-            protocol: self.protocol,
-            ext: self.ext,
-            acodec: self.acodec,
-            user_agent: self.user_agent,
-            bitrate: self.bitrate,
-            ..StreamInfo::default()
-        }
-    }
-
-    fn from_info(info: &StreamInfo) -> Self {
-        Self {
-            uri: info.uri.clone(),
-            legacy_url: None,
-            format_id: info.format_id.clone(),
-            protocol: info.protocol.clone(),
-            ext: info.ext.clone(),
-            acodec: info.acodec.clone(),
-            user_agent: info.user_agent.clone(),
-            bitrate: info.bitrate,
-            timestamp: now_secs(),
-        }
-    }
-}
-
-impl StreamCache {
-    const MAX_ENTRIES: usize = 500;
-    const EVICT_EVERY: usize = 20;
-    const TTL: Duration = Duration::from_secs(5 * 3600);
-
-    pub fn new(dir: PathBuf) -> Self {
-        Self {
-            dir,
-            puts: std::sync::atomic::AtomicUsize::new(0),
-        }
-    }
-
-    fn path_for(&self, video_id: &VideoId) -> PathBuf {
-        self.dir.join(format!("{video_id}.json"))
-    }
-
-    pub async fn get(&self, video_id: &VideoId) -> Option<StreamInfo> {
-        let path = self.path_for(video_id);
-        let bytes = tokio::fs::read(&path).await.ok()?;
-        let entry: CacheEntry = serde_json::from_slice(&bytes).ok()?;
-        let age = now_secs() - entry.timestamp;
-        if age > Self::TTL.as_secs_f64() {
-            let _ = tokio::fs::remove_file(&path).await;
-            return None;
-        }
-        let _ = tokio::task::spawn_blocking(move || {
-            std::fs::File::open(&path).and_then(|f| f.set_modified(SystemTime::now()))
-        })
-        .await;
-        Some(entry.into_info())
-    }
-
-    pub async fn put(&self, video_id: &VideoId, info: &StreamInfo) {
-        let entry = CacheEntry::from_info(info);
-        if let Ok(bytes) = serde_json::to_vec(&entry) {
-            if let Err(err) = async {
-                tokio::fs::create_dir_all(&self.dir).await?;
-                tokio::fs::write(self.path_for(video_id), bytes).await
-            }
-            .await
-            {
-                tracing::warn!(%err, %video_id, "stream cache write failed");
-            }
-        }
-        if self.puts.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % Self::EVICT_EVERY == 0 {
-            let dir = self.dir.clone();
-            let _ = tokio::task::spawn_blocking(move || evict_old(&dir, Self::MAX_ENTRIES)).await;
-        }
-    }
-
-    pub async fn invalidate(&self, video_id: &VideoId) {
-        let _ = tokio::fs::remove_file(self.path_for(video_id)).await;
-    }
-}
-
-fn evict_old(dir: &Path, keep: usize) {
-    let Ok(read) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<(SystemTime, PathBuf)> = read
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-        .collect();
-    if entries.len() <= keep {
-        return;
-    }
-    entries.sort();
-    let excess = entries.len() - keep;
-    for (_, path) in entries.into_iter().take(excess) {
-        let _ = std::fs::remove_file(path);
     }
 }
 

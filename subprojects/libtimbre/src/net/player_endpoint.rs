@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use crate::context::Paths;
 use crate::net::media::{HttpAuth, StreamInfo, VideoId};
-use crate::net::stream::{BoxFuture, ResolveError, StreamCache, StreamResolver};
+use crate::net::stream::{BoxFuture, ResolveError, StreamResolver};
 
 const PLAYER_URL: &str = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
 const CLIENT_NAME: &str = "VISIONOS";
@@ -137,12 +137,11 @@ fn visitor_from_landing(html: &str) -> Option<String> {
 pub struct PlayerEndpointResolver {
     http: reqwest::Client,
     fallback: Arc<dyn StreamResolver>,
-    cache: StreamCache,
     visitor: Mutex<Option<(String, Instant)>>,
 }
 
 impl PlayerEndpointResolver {
-    pub fn new(paths: &Paths, fallback: Arc<dyn StreamResolver>) -> Self {
+    pub fn new(_paths: &Paths, fallback: Arc<dyn StreamResolver>) -> Self {
         let http = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .gzip(true)
@@ -151,7 +150,6 @@ impl PlayerEndpointResolver {
         Self {
             http,
             fallback,
-            cache: StreamCache::new(paths.stream_cache_dir.clone()),
             visitor: Mutex::new(None),
         }
     }
@@ -380,25 +378,6 @@ impl StreamResolver for PlayerEndpointResolver {
         auth: Option<HttpAuth>,
     ) -> BoxFuture<'_, Result<StreamInfo, ResolveError>> {
         Box::pin(async move {
-            if let Some(mut info) = self.cache.get(&video_id).await {
-                if info.format_id.is_none() {
-                    tracing::debug!(%video_id, "dropping legacy cache entry without format metadata");
-                    self.cache.invalidate(&video_id).await;
-                } else if info.uri.contains("yt_live_broadcast")
-                    || crate::audio::is_live_uri(&info.uri)
-                {
-                    self.cache.invalidate(&video_id).await;
-                } else {
-                    info.from_cache = true;
-                    tracing::debug!(
-                        %video_id,
-                        itag = ?info.format_id,
-                        bitrate = ?info.bitrate,
-                        "served from cache"
-                    );
-                    return Ok(info);
-                }
-            }
             let started = Instant::now();
             match self.resolve_native(&video_id, auth.as_ref()).await {
                 Ok(info) => {
@@ -408,10 +387,6 @@ impl StreamResolver for PlayerEndpointResolver {
                         took_ms = started.elapsed().as_millis() as u64,
                         "resolved through the player endpoint"
                     );
-                    // A live playlist expires; resolve it fresh every time.
-                    if info.protocol.as_deref() != Some("m3u8") {
-                        self.cache.put(&video_id, &info).await;
-                    }
                     Ok(info)
                 }
                 Err(reason) => {
