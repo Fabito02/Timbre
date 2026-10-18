@@ -14,15 +14,24 @@ template $TimbreHomeSpeedTile: Button {
     Overlay {
       valign: center;
 
-      Picture image_cover {
-        width-request: 48;
-        height-request: 48;
-        content-fit: cover;
-        valign: center;
+      Overlay {
+        Box {
+          width-request: 48;
+          height-request: 48;
+        }
 
-        styles [
-          "home-speed-cover",
-        ]
+        [overlay]
+        Picture image_cover {
+          can-shrink: true;
+          keep-aspect-ratio: false;
+          content-fit: contain;
+          halign: fill;
+          valign: fill;
+
+          styles [
+            "home-speed-cover",
+          ]
+        }
       }
 
       [overlay]
