@@ -55,7 +55,8 @@ namespace Timbre.Utils {
         public void load (string? url) {
             if (url == null) {
                 this.current_url = null;
-                this.picture.set_paintable (null);
+                var pic = this.picture;
+                if (pic != null) pic.set_paintable (null);
                 return;
             }
             if (this.picture_destroyed) return;
@@ -453,6 +454,8 @@ namespace Timbre.Utils {
 
             var pic = this.picture;
             if (pic != null) {
+                pic.set_paintable (null);
+
                 if (this.map_id != 0)     pic.disconnect (this.map_id);
                 if (this.unmap_id != 0)   pic.disconnect (this.unmap_id);
                 if (this.destroy_id != 0) pic.disconnect (this.destroy_id);
