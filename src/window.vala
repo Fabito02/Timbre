@@ -37,6 +37,7 @@ namespace Timbre {
 
         [GtkChild] private unowned Adw.OverlaySplitView split_view;
         [GtkChild] private unowned Gtk.ToggleButton button_toggle_queue;
+        [GtkChild] private unowned Gtk.ToggleButton fullscreen_button_toggle_queue;
         [GtkChild] private unowned Gtk.Button button_open_fullscreen;
         [GtkChild] private unowned Gtk.Button button_close_fullscreen;
         [GtkChild] private unowned Gtk.ListView queue_list;
@@ -57,7 +58,7 @@ namespace Timbre {
         [GtkChild] private unowned Adw.ViewStack main_stack;
         [GtkChild] private unowned Adw.NavigationView navigation_view;
         [GtkChild] private unowned Gtk.Revealer bottom_bar_revealer;
-        [GtkChild] private unowned Gtk.Revealer fullscreen_revealer;
+        [GtkChild] private unowned Adw.BottomSheet fullscreen_sheet;
 
         [GtkChild] private unowned Adw.ViewSwitcher switcher;
         [GtkChild] private unowned Adw.ViewSwitcherBar switcher_bar;
@@ -107,16 +108,9 @@ namespace Timbre {
             this.update_nav_buttons ();
             this.setup_mpris ();
 
-            this.fullscreen_revealer.notify.connect ((pspec) => {
-                if (pspec.name == "child-revealed") {
-                    if (!this.fullscreen_revealer.reveal_child && !this.fullscreen_revealer.child_revealed) {
-                        this.fullscreen_revealer.visible = false;
-
-                        this.cover_fullscreen_binding.load (null);
-
-                        Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
-                        Timbre.Utils.trim_memory ();
-                    }
+            this.fullscreen_sheet.notify["open"].connect (() => {
+                if (!this.fullscreen_sheet.open) {
+                    this.bottom_bar_revealer.reveal_child = true;
                 }
             });
 
@@ -258,8 +252,13 @@ namespace Timbre {
                 this.split_view.show_sidebar = this.button_toggle_queue.active;
             });
 
+            this.fullscreen_button_toggle_queue.toggled.connect (() => {
+                this.split_view.show_sidebar = this.fullscreen_button_toggle_queue.active;
+            });
+
             this.split_view.notify["show-sidebar"].connect (() => {
                 this.button_toggle_queue.active = this.split_view.show_sidebar;
+                this.fullscreen_button_toggle_queue.active = this.split_view.show_sidebar;
             });
 
             this.home_page.collection_selected.connect ((id, type_name, title, subtitle, cover) => {
@@ -291,21 +290,17 @@ namespace Timbre {
         [GtkCallback]
         public void open_fullscreen_clicked () {
             this.bottom_bar_revealer.reveal_child = false;
-            this.fullscreen_revealer.visible = true;
-            this.fullscreen_revealer.can_target = true;
-
+        
             if (this.pending_track != null) {
                 this.cover_fullscreen_binding.load (this.pending_track.thumbnail_url);
             }
-
-            this.fullscreen_revealer.reveal_child = true;
+        
+            this.fullscreen_sheet.open = true;
         }
-
+        
         [GtkCallback]
         public void close_fullscreen_clicked () {
-            this.bottom_bar_revealer.reveal_child = true;
-            this.fullscreen_revealer.can_target = false;
-            this.fullscreen_revealer.reveal_child = false;
+            this.fullscreen_sheet.open = false;
         }
 
         private void setup_queue_view () {
@@ -540,7 +535,7 @@ namespace Timbre {
 
             this.cover_binding.load (track.thumbnail_url);
 
-            if (this.fullscreen_revealer.visible) {
+            if (this.fullscreen_sheet.open) {
                 this.cover_fullscreen_binding.load (track.thumbnail_url);
             }
 
