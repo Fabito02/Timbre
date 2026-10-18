@@ -9,6 +9,8 @@ namespace Timbre {
         public uint64 duration { get; set; default = 0; }
         public string item_type { get; set; default = ""; }
         public LikeStatus like_status { get; set; default = LikeStatus.INDIFFERENT; }
+        public bool is_live { get; set; default = false; }
+        public bool explicit { get; set; default = false; }
     }
 
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/search.ui")]
@@ -219,9 +221,12 @@ namespace Timbre {
                 s.thumb = obj.get_string_member ("thumb");
             if (obj.has_member ("duration_seconds") && !obj.get_null_member ("duration_seconds"))
                 s.duration = (uint64) obj.get_int_member ("duration_seconds");
-
             if (obj.has_member ("like_status") && !obj.get_null_member ("like_status"))
                 s.like_status = parse_like_status (obj.get_string_member ("like_status"));
+            if (obj.has_member ("is_live") && !obj.get_null_member ("is_live"))
+                s.is_live = obj.get_boolean_member ("is_live");
+            if (obj.has_member ("explicit") && !obj.get_null_member ("explicit"))
+                s.explicit = obj.get_boolean_member ("explicit");
 
             return s;
         }
@@ -270,7 +275,8 @@ namespace Timbre {
                 var item = items.get (i);
                 var row = new Timbre.TrackRow.simple (
                     item.kind, item.id, item.title, item.subtitle,
-                    item.duration, item.thumb);
+                    item.duration, item.thumb,
+                    item.is_live, item.explicit);
                 if (is_top) {
                     row.add_css_class ("search-top-result");
                 }

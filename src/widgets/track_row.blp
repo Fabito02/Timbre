@@ -36,13 +36,27 @@ template $TimbreTrackRow: ListBoxRow {
       hexpand: true;
       valign: center;
 
-      Label label_title {
-        xalign: 0.0;
-        ellipsize: end;
-
-        styles [
-          "heading",
-        ]
+      Box {
+        orientation: horizontal;
+        
+        Label label_title {
+          xalign: 0.0;
+          ellipsize: end;
+  
+          styles [
+            "heading",
+          ]
+        }
+  
+        Label explicit_badge {
+          label: "E";
+          valign: center;
+          margin-start: 6;
+  
+          styles [
+            "explicit-badge",
+          ]
+        }
       }
 
       Label label_artist {
@@ -53,6 +67,29 @@ template $TimbreTrackRow: ListBoxRow {
           "caption",
           "dim-label",
         ]
+      }
+    }
+
+    Box live_badge {
+      orientation: horizontal;
+      halign: end;
+      valign: center;
+
+      styles [
+        "live-overlay",
+      ]
+
+      Image {
+        icon-name: "radio-wave-symbolic";
+        pixel-size: 14;
+        margin-end: 4;
+
+        styles [
+          "live-overlay-icon",
+        ]
+      }
+      Label {
+        label: _("Live");
       }
     }
 

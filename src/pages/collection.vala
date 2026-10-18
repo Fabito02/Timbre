@@ -209,6 +209,14 @@ namespace Timbre {
                         obj.get_string_member ("like_status"));
                 }
 
+                if (obj.has_member ("is_live") && !obj.get_null_member ("is_live")) {
+                    track.is_live = obj.get_boolean_member ("is_live");
+                }
+
+                if (obj.has_member ("explicit") && !obj.get_null_member ("explicit")) {
+                    track.explicit = obj.get_boolean_member ("explicit");
+                }
+
                 list.add (track);
             }
 
@@ -241,7 +249,9 @@ namespace Timbre {
                     track.artist,
                     track.duration_secs,
                     display_cover,
-                    track.like_status
+                    track.like_status,
+                    track.is_live,
+                    track.explicit
                 ));
             }
         }

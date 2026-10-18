@@ -8,12 +8,13 @@ namespace Timbre {
         public uint64 item_duration { get; private set; }
         public string? item_cover { get; private set; }
 
-        private const int TILE_WIDTH = 220;
+        private const int TILE_WIDTH = 230;
 
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_sub;
         [GtkChild] private unowned Gtk.Label explicit_badge;
+        [GtkChild] private unowned Adw.Bin live_badge;
         [GtkChild] private unowned Adw.Bin album_overlay;
         [GtkChild] private unowned Adw.Bin play_overlay;
 
@@ -51,8 +52,7 @@ namespace Timbre {
             this.play_overlay.visible = kind == "Song" || kind == "Video";
             this.album_overlay.visible = kind == "Album";
             this.explicit_badge.visible = explicit;
-
-            this.explicit_badge.visible = explicit;
+            this.live_badge.visible = is_live;
         }
     }
 }

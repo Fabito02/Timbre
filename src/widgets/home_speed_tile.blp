@@ -7,14 +7,14 @@ template $TimbreHomeSpeedTile: Button {
     "card",
   ]
 
-  Box {
-    orientation: horizontal;
-    spacing: 10;
-
-    Overlay {
-      valign: center;
+  Overlay {
+    Box {
+      orientation: horizontal;
+      spacing: 10;
 
       Overlay {
+        valign: center;
+
         Box {
           width-request: 48;
           height-request: 48;
@@ -32,86 +32,108 @@ template $TimbreHomeSpeedTile: Button {
             "home-speed-cover",
           ]
         }
-      }
 
-      [overlay]
-      Adw.Bin play_overlay {
-        halign: center;
-        valign: center;
-
-        styles [
-          "play-overlay",
-        ]
-
-        Image {
-          icon-name: "media-playback-start-symbolic";
-          pixel-size: 14;
+        [overlay]
+        Adw.Bin play_overlay {
+          halign: center;
+          valign: center;
 
           styles [
-            "play-overlay-icon-speed-tile",
+            "play-overlay",
           ]
+
+          Image {
+            icon-name: "media-playback-start-symbolic";
+            pixel-size: 14;
+
+            styles [
+              "play-overlay-icon-speed-tile",
+            ]
+          }
+        }
+
+        [overlay]
+        Adw.Bin album_overlay {
+          halign: end;
+          valign: end;
+
+          styles [
+            "album-overlay",
+          ]
+
+          Image {
+            icon-name: "media-optical-symbolic";
+            pixel-size: 12;
+
+            styles [
+              "album-overlay-icon-speed-tile",
+            ]
+          }
         }
       }
 
-      [overlay]
-      Adw.Bin album_overlay {
-        halign: end;
-        valign: end;
+      Box {
+        orientation: vertical;
+        spacing: 2;
+        valign: center;
+        hexpand: true;
 
-        styles [
-          "album-overlay",
-        ]
+        Box {
+          orientation: horizontal;
+          spacing: 6;
 
-        Image {
-          icon-name: "media-optical-symbolic";
-          pixel-size: 12;
+          Label label_title {
+            halign: start;
+            xalign: 0;
+            ellipsize: end;
+            lines: 2;
+            wrap: true;
+            wrap-mode: word_char;
+            max-width-chars: 24;
+
+            styles [
+              "home-speed-title",
+            ]
+          }
+
+          Label explicit_badge {
+            label: "E";
+            valign: center;
+
+            styles [
+              "explicit-badge",
+            ]
+          }
+        }
+
+        Label label_sub {
+          halign: start;
+          xalign: 0;
+          ellipsize: end;
 
           styles [
-            "album-overlay-icon-speed-tile",
+            "caption",
+            "dim-label",
           ]
         }
       }
     }
 
-    Box {
-      orientation: vertical;
-      spacing: 2;
-      valign: center;
-      hexpand: true;
+    [overlay]
+    Adw.Bin live_badge {
+      halign: end;
+      valign: end;
 
-      Box {
-        orientation: horizontal;
-        spacing: 6;
+      styles [
+        "live-overlay",
+      ]
 
-        Label label_title {
-          halign: start;
-          xalign: 0;
-          ellipsize: end;
-          lines: 2;
-          wrap: true;
-          wrap-mode: word_char;
-          max-width-chars: 24;
-  
-          styles [
-            "home-speed-title",
-          ]
-        }
-        
-        Label explicit_badge {
-            label: "E";
-            valign: center;
-            styles ["explicit-badge"]
-        }
-      }
-
-      Label label_sub {
-        halign: start;
-        xalign: 0;
-        ellipsize: end;
+      Image {
+        icon-name: "radio-wave-symbolic";
+        pixel-size: 12;
 
         styles [
-          "caption",
-          "dim-label",
+          "live-overlay-icon",
         ]
       }
     }

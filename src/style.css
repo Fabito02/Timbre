@@ -93,7 +93,7 @@ scale.playback-bar:hover slider {
     border-radius: 8px;
 }
 
-.row-cover-img, .cover-bar-img {
+.row-cover-img, .cover-bar-img, .home-speed-cover {
     border-radius: 8px;
     background-color: #00000060;
 }
@@ -231,7 +231,6 @@ picture.image-placeholder {
     background-color: #ED333B;
     padding: 4px 6px;
     border-radius: 8px;
-    margin: 6px
 }
 
 .explicit-badge {

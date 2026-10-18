@@ -120,7 +120,7 @@ impl MediaItem {
             album: self.album.clone(),
             thumb: self.thumb.clone(),
             duration_seconds: self.duration_seconds,
-            is_explicit: self.explicit,
+            explicit: self.explicit,
             is_live: self.is_live,
             ..Track::default()
         })
@@ -148,7 +148,7 @@ pub struct Track {
     #[serde(default)]
     pub entity_id: Option<String>,
     #[serde(default)]
-    pub is_explicit: bool,
+    pub explicit: bool,
     #[serde(default)]
     pub is_live: bool,
     #[serde(default)]

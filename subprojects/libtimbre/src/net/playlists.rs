@@ -39,7 +39,6 @@ fn to_int(text: &str) -> Option<u32> {
 fn is_auto_playlist(playlist_id: &str) -> bool {
     playlist_id.starts_with("RD")
         || playlist_id.starts_with("VLLM")
-        || playlist_id == "LM"
         || playlist_id == "SE"
 }
 
@@ -87,9 +86,6 @@ pub async fn get_playlist(
     playlist_id: &str,
     limit: Option<usize>,
 ) -> Result<PlaylistDetails, NetError> {
-    if is_auto_playlist(playlist_id) {
-        return get_auto_playlist(api, playlist_id, limit).await;
-    }
 
     let browse_id = if playlist_id.starts_with("VL") {
         playlist_id.to_owned()
@@ -124,10 +120,6 @@ pub async fn get_playlist(
     tracks.extend(rest.strict()?);
     details.tracks = tracks;
     details.sum_duration();
-    if playlist_id == "LM" {
-        details.title = "Your Likes".to_owned();
-        details.description = "Your liked songs from YouTube Music.".to_owned();
-    }
     tracing::info!(
         playlist_id,
         tracks = details.tracks.len(),
@@ -147,7 +139,7 @@ async fn get_auto_playlist(
     let want = match (limit, is_likes) {
         (Some(n), _) => n,
         (None, true) => usize::MAX,
-        (None, false) => 500,
+        (None, false) => 100,
     };
 
     let browse_id = if playlist_id.starts_with("VL") {
@@ -199,11 +191,6 @@ async fn get_auto_playlist(
         tracks,
         ..PlaylistDetails::default()
     };
-
-    if playlist_id == "LM" {
-        details.title = "Your Likes".to_owned();
-        details.description = "Your liked songs from YouTube Music.".to_owned();
-    }
 
     details.sum_duration();
     tracing::info!(
@@ -476,7 +463,6 @@ pub async fn get_watch_playlist(
         let pid = p.trim_start_matches("VL");
         is_playlist = pid.starts_with("PL")
             || pid.starts_with("OLA")
-            || pid == "LM"
             || pid.starts_with("VLLM")
             || pid == "SE";
         body["playlistId"] = json!(pid);

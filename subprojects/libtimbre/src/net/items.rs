@@ -450,7 +450,7 @@ pub fn parse_playlist_item(data: &Value, is_album: bool, is_collaborative: bool)
         like_status: like,
         video_type: owned_at(data, VIDEO_TYPE_PATH),
         entity_id: None,
-        is_explicit: data.pointer(BADGE_LABEL).is_some(),
+        explicit: data.pointer(BADGE_LABEL).is_some(),
         is_live: is_live(data),
         set_video_id,
         is_available,
