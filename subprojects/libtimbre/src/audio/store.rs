@@ -251,7 +251,21 @@ impl AudioStore {
     }
 
     pub fn bin_path(&self, kind: StoreKind, video_id: &str) -> PathBuf {
-        self.root(kind).join(format!("{video_id}.bin"))
+        let ext = std::fs::read(self.meta_path(kind, video_id))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<AudioEntry>(&b).ok())
+            .and_then(|e| e.ext);
+        self.bin_path_with_ext(kind, video_id, ext.as_deref())
+    }
+    
+    pub fn bin_path_with_ext(
+        &self,
+        kind: StoreKind,
+        video_id: &str,
+        ext: Option<&str>,
+    ) -> PathBuf {
+        let ext = ext.filter(|e| !e.is_empty()).unwrap_or("bin");
+        self.root(kind).join(format!("{video_id}.{ext}"))
     }
 
     fn meta_path(&self, kind: StoreKind, video_id: &str) -> PathBuf {
@@ -295,7 +309,7 @@ impl AudioStore {
     ) -> std::io::Result<AudioWriter> {
         let root = self.root(kind).to_path_buf();
         fs::create_dir_all(&root).await?;
-        let bin = self.bin_path(kind, video_id);
+        let bin = self.bin_path_with_ext(kind, video_id, meta.ext.as_deref());
         let existing = fs::metadata(&bin).await.map(|m| m.len()).unwrap_or(0);
         meta.video_id = video_id.to_owned();
         meta.downloaded_bytes = existing;
