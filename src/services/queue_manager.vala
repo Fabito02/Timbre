@@ -34,6 +34,18 @@ namespace Timbre {
             }
         }
 
+        public void add_to_queue (GenericArray<TrackItem> new_tracks) {
+            int start = this.length;
+            for (int i = 0; i < new_tracks.length; i++) {
+                this.store.append (new QueueItem (
+                    new_tracks.get (i),
+                    start + i,
+                    false
+                ));
+            }
+            this.queue_updated ();
+        }
+
         public void play_single (TrackItem track) {
             var single = new GenericArray<TrackItem> ();
             single.add (track);

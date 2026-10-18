@@ -249,10 +249,8 @@ namespace Timbre {
             this.navigation_view.popped.connect (() => {
                 var stack = this.navigation_view.navigation_stack;
                 this.button_back.visible = (stack.get_n_items () > 1);
-
-                if (stack.get_n_items () <= 1) {
-                    Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
-                }
+    
+                Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                 Timbre.Utils.trim_memory ();
             });
 
@@ -428,7 +426,7 @@ namespace Timbre {
                     return;
                 }
 
-                this.search_debounce_id = GLib.Timeout.add (500, () => {
+                this.search_debounce_id = GLib.Timeout.add (100, () => {
                     this.search_debounce_id = 0;
                     this.execute_search (query);
                     return GLib.Source.REMOVE;
@@ -551,11 +549,11 @@ namespace Timbre {
             if (duration > 0) {
                 this.label_time_total.label = this.format_time ((double) duration);
                 this.adjustment_progress.upper = (double) duration;
-                this.live_widget.visible = !(duration > 0);
-                this.time_labels.visible = (duration > 0);
+                this.live_widget.visible = track.is_live;
+                this.time_labels.visible = !track.is_live;
             } else {
-                this.live_widget.visible = !(duration > 0);
-                this.time_labels.visible = (duration > 0);
+                this.live_widget.visible = track.is_live;
+                this.time_labels.visible = !track.is_live;
                 this.adjustment_progress.upper = 0.0;
             }
 
@@ -614,6 +612,11 @@ namespace Timbre {
                     }
 
                     bottom_bar_revealer.reveal_child = true;
+                    
+                    if (!this.queue.has_next ()) {
+                        this.play_radio_from_current ();
+                    }
+                    
                     return GLib.Source.REMOVE;
                 });
             });
@@ -797,11 +800,8 @@ namespace Timbre {
 
                 if (this.player.is_finished () && this.player.get_position () > 0.0) {
                     this.finish_recording ();
-                    if (this.queue.has_next ()) {
-                        this.queue.next ();
-                    } else {
-                        this.play_radio_from_current ();
-                    }
+
+                    this.queue.next ();
                 }
             }
 
@@ -855,7 +855,8 @@ namespace Timbre {
                     Timbre.string_free (json);
 
                     if (tracks.length > 0) {
-                        this.queue.play_list (tracks, 1);
+                        tracks.remove_index (0);
+                        this.queue.add_to_queue (tracks);
                     }
                     return GLib.Source.REMOVE;
                 });
