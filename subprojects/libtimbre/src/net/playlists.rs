@@ -86,7 +86,10 @@ pub async fn get_playlist(
     playlist_id: &str,
     limit: Option<usize>,
 ) -> Result<PlaylistDetails, NetError> {
-
+    if is_auto_playlist(playlist_id) {
+        return get_auto_playlist(api, playlist_id, limit).await;
+    }
+    
     let browse_id = if playlist_id.starts_with("VL") {
         playlist_id.to_owned()
     } else {
