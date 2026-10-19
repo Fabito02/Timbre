@@ -424,7 +424,7 @@ namespace Timbre {
             this.queue.queue_updated.connect (() => {
                 this.update_nav_buttons ();
                 int total = this.queue.length;
-                this.label_queue_count.label = (total == 1) ? "1 faixa" : "%d faixas".printf (total);
+                this.label_queue_count.label = (total == 1) ? _("1 track") : _("%d tracks").printf (total);
             });
 
             if (this.button_clear_queue != null) {
