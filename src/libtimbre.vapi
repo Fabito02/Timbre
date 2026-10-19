@@ -25,6 +25,7 @@ namespace Timbre {
         [CCode (cname = "timbre_player_pause")]  public void pause ();
         [CCode (cname = "timbre_player_resume")] public void resume ();
         [CCode (cname = "timbre_player_stop")]   public void stop ();
+        [CCode (cname = "timbre_player_reset")]   public void reset ();
 
         [CCode (cname = "timbre_player_seek")]
         public bool seek (double target_secs);

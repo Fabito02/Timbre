@@ -427,36 +427,37 @@ namespace Timbre {
                 this.label_queue_count.label = (total == 1) ? _("1 track") : _("%d tracks").printf (total);
             });
 
-            if (this.button_clear_queue != null) {
-                this.button_clear_queue.clicked.connect (() => {
-                    this.finish_recording ();
-                    this.queue.clear ();
-                    this.player.stop ();
-                    this.is_playing = false;
-                    this.slider_locked = false;
-                    this.pending_seek_target = -1.0;
-                    this.metadata_duration = 0.0;
-                    this.pending_track = null;
-                    if (this.slider_unlock_id != 0) {
-                        GLib.Source.remove (this.slider_unlock_id);
-                        this.slider_unlock_id = 0;
-                    }
-                    this.button_play_pause.icon_name = "media-playback-start-symbolic";
-                    this.label_current_title.label = "No track selected";
-                    this.label_current_artist.label = "Artista";
-                    this.label_time_current.label = "0:00";
-                    this.label_time_total.label = "0:00";
-                    this.adjustment_progress.value = 0.0;
-                    this.cover_binding.load (null);
-                    this.cover_fullscreen_binding.load (null);
+            this.button_clear_queue.clicked.connect (() => {
+                this.fullscreen_sheet.open = false;
+                this.split_view.show_sidebar = false;
+                this.bottom_bar_revealer.reveal_child = false;
+                this.finish_recording ();
+                this.queue.clear ();
+                this.player.reset ();
+                this.is_playing = false;
+                this.slider_locked = false;
+                this.pending_seek_target = -1.0;
+                this.metadata_duration = 0.0;
+                this.pending_track = null;
+                if (this.slider_unlock_id != 0) {
+                    GLib.Source.remove (this.slider_unlock_id);
+                    this.slider_unlock_id = 0;
+                }
+                this.button_play_pause.icon_name = "media-playback-start-symbolic";
+                this.label_current_title.label = "No track selected";
+                this.label_current_artist.label = "Artista";
+                this.label_time_current.label = "0:00";
+                this.label_time_total.label = "0:00";
+                this.adjustment_progress.value = 0.0;
+                this.cover_binding.load (null);
+                this.cover_fullscreen_binding.load (null);
 
-                    this.current_track_id = "";
-                    this.like_fetch_gen++;
-                    if (this.bar_like_btn != null) {
-                        this.bar_like_btn.set_target (null);
-                    }
-                });
-            }
+                this.current_track_id = "";
+                this.like_fetch_gen++;
+                if (this.bar_like_btn != null) {
+                    this.bar_like_btn.set_target (null);
+                }
+            });
         }
 
         private void setup_search () {

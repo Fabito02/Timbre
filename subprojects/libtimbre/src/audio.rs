@@ -1537,6 +1537,23 @@ impl AudioPlayer {
         self.clear_error();
     }
 
+    pub fn reset(&self) {
+        self.cancel_pending();
+        if let Some(old) = self.active_buffer.lock().unwrap().take() {
+            old.cancel();
+        }
+        self.with_player(|p| p.stop());
+        self.position.lock().unwrap().reset();
+
+        *self.current_url.lock().unwrap() = None;
+        *self.current_user_agent.lock().unwrap() = None;
+        *self.current_is_opus.lock().unwrap() = false;
+        *self.total_duration.lock().unwrap() = None;
+        *self.released_position.lock().unwrap() = None;
+        *self.stats.lock().unwrap() = StreamStats::default();
+        self.clear_error();
+    }
+
     pub fn get_position(&self) -> Duration {
         self.sync_position();
         let elapsed = self.position.lock().unwrap().elapsed();
@@ -1590,13 +1607,15 @@ impl AudioPlayer {
         }
 
         let has_track = self.current_url.lock().unwrap().is_some();
+        if !has_track {
+            return PlayerState::Stopped;
+        }
+
         let advanced = self.position.lock().unwrap().elapsed() > Duration::ZERO;
-        if has_track && !advanced {
+        if !advanced {
             PlayerState::Loading
-        } else if has_track {
-            PlayerState::Paused
         } else {
-            PlayerState::Stopped
+            PlayerState::Paused
         }
     }
 
@@ -1605,8 +1624,12 @@ impl AudioPlayer {
             Some((empty, _)) => (empty, self.position.lock().unwrap().elapsed()),
             None => return false,
         };
-        if !empty { return false; }
-        if pos == Duration::ZERO { return false; }
+        if !empty {
+            return false;
+        }
+        if pos == Duration::ZERO {
+            return false;
+        }
         let finished = match *self.total_duration.lock().unwrap() {
             Some(total) => pos + Duration::from_secs(2) >= total,
             None => false,

@@ -56,6 +56,7 @@ namespace Timbre.Services {
         private const string IDENTITY_STR = "Timbre";
         private const string DESKTOP_ENTRY_STR = "io.github.fabito02.Timbre";
         private const string TRACK_ID_PREFIX = "/io/github/fabito02/Timbre/track/v";
+        private const string TRACK_ID_NONE   = "/io/github/fabito02/Timbre/track/vnone";
 
         private GLib.DBusConnection? connection = null;
         private uint root_reg_id = 0;
@@ -63,10 +64,16 @@ namespace Timbre.Services {
         private uint owner_id = 0;
         private uint poll_id = 0;
 
+        private ulong sig_track_changed = 0;
+        private ulong sig_queue_updated = 0;
+        private ulong sig_repeat_changed = 0;
+        private ulong sig_shuffle_changed = 0;
+
         private unowned Timbre.Player player;
         private unowned Timbre.QueueManager queue;
 
         private string last_status = "";
+        private bool last_idle = true;
 
         public delegate double PositionProvider ();
         public delegate double DurationProvider ();
@@ -106,6 +113,11 @@ namespace Timbre.Services {
             return 0.0;
         }
 
+        private bool is_idle () {
+            return this.current_track () == null
+                || this.player.get_state () == 0;
+        }
+
         public void start () {
             try {
                 this.connection = GLib.Bus.get_sync (GLib.BusType.SESSION, null);
@@ -138,6 +150,7 @@ namespace Timbre.Services {
                 GLib.BusNameOwnerFlags.NONE, null, null);
 
             this.last_status = this.playback_status;
+            this.last_idle = this.is_idle ();
 
             this.poll_id = GLib.Timeout.add (100, () => {
                 string s = this.playback_status;
@@ -145,20 +158,31 @@ namespace Timbre.Services {
                     this.last_status = s;
                     this.emit_status_changed ();
                 }
+
+                bool idle = this.is_idle ();
+                if (idle != this.last_idle) {
+                    this.last_idle = idle;
+                    this.emit_metadata_changed ();
+                    this.emit_can_go_changed (
+                        idle ? false : this.queue.has_next (),
+                        this.queue.has_prev ());
+                }
+
                 return GLib.Source.CONTINUE;
             });
 
-            this.queue.track_changed.connect (() => {
+            this.sig_track_changed = this.queue.track_changed.connect (() => {
+                this.last_idle = this.is_idle ();
                 this.emit_metadata_changed ();
                 this.emit_can_go_changed (this.queue.has_next (), this.queue.has_prev ());
             });
-            this.queue.queue_updated.connect (() => {
+            this.sig_queue_updated = this.queue.queue_updated.connect (() => {
                 this.emit_can_go_changed (this.queue.has_next (), this.queue.has_prev ());
             });
-            this.queue.repeat_changed.connect ((mode) => {
+            this.sig_repeat_changed = this.queue.repeat_changed.connect ((mode) => {
                 this.emit_loop_status_changed ();
             });
-            this.queue.shuffle_changed.connect ((mode) => {
+            this.sig_shuffle_changed = this.queue.shuffle_changed.connect ((mode) => {
                 this.emit_shuffle_changed ();
             });
 
@@ -170,6 +194,24 @@ namespace Timbre.Services {
                 GLib.Source.remove (this.poll_id);
                 this.poll_id = 0;
             }
+
+            if (this.sig_track_changed != 0) {
+                this.queue.disconnect (this.sig_track_changed);
+                this.sig_track_changed = 0;
+            }
+            if (this.sig_queue_updated != 0) {
+                this.queue.disconnect (this.sig_queue_updated);
+                this.sig_queue_updated = 0;
+            }
+            if (this.sig_repeat_changed != 0) {
+                this.queue.disconnect (this.sig_repeat_changed);
+                this.sig_repeat_changed = 0;
+            }
+            if (this.sig_shuffle_changed != 0) {
+                this.queue.disconnect (this.sig_shuffle_changed);
+                this.sig_shuffle_changed = 0;
+            }
+
             if (this.owner_id != 0) {
                 GLib.Bus.unown_name (this.owner_id);
                 this.owner_id = 0;
@@ -236,12 +278,14 @@ namespace Timbre.Services {
         }
 
         public void seek (int64 offset) throws GLib.DBusError, GLib.IOError {
+            if (this.is_idle ()) return;
             double target = this.reported_position () + (double) offset / 1e6;
             this.apply_seek (target);
         }
 
         public void set_position (GLib.ObjectPath track_id, int64 position)
                 throws GLib.DBusError, GLib.IOError {
+            if (this.is_idle ()) return;
             if (track_id != this.current_track_path ()) return;
             this.apply_seek ((double) position / 1e6);
         }
@@ -319,6 +363,12 @@ namespace Timbre.Services {
             owned get {
                 var table = new HashTable<string, Variant> (str_hash, str_equal);
 
+                if (this.is_idle ()) {
+                    table.insert ("mpris:trackid",
+                        new Variant.object_path (TRACK_ID_NONE));
+                    return table;
+                }
+
                 var track = this.current_track ();
                 string video_id = (track != null) ? track.id : "";
 
@@ -366,14 +416,15 @@ namespace Timbre.Services {
 
         public double minimum_rate { get { return 1.0; } }
         public double maximum_rate { get { return 1.0; } }
-        public bool can_go_next { get { return this.queue.has_next (); } }
+        public bool can_go_next { get { return !this.is_idle () && this.queue.has_next (); } }
         public bool can_go_previous { get { return this.queue.has_prev (); } }
         public bool can_play { get { return true; } }
         public bool can_pause { get { return true; } }
-        public bool can_seek { get { return this.reported_duration () > 0.0; } }
+        public bool can_seek { get { return !this.is_idle () && this.reported_duration () > 0.0; } }
         public bool can_control { get { return true; } }
 
         public void notify_seeked (double position) {
+            if (this.is_idle ()) return;
             this.seeked ((int64) (position * 1e6));
         }
 
@@ -392,7 +443,7 @@ namespace Timbre.Services {
 
         private string track_path (string video_id) {
             if (video_id.length == 0) {
-                return "/io/github/fabito02/Timbre/track/vnone";
+                return TRACK_ID_NONE;
             }
             var sb = new StringBuilder (TRACK_ID_PREFIX);
             for (int i = 0; i < video_id.length; i++) {
@@ -441,14 +492,14 @@ namespace Timbre.Services {
             var b = new VariantBuilder (new VariantType ("a{sv}"));
             b.add ("{sv}", "Metadata", this.metadata_to_variant ());
             b.add ("{sv}", "CanSeek",
-                   new Variant.boolean (this.reported_duration () > 0.0));
+                   new Variant.boolean (this.can_seek));
             this.emit_player_changed (b);
         }
 
         private void emit_can_go_changed (bool next, bool prev) {
             var b = new VariantBuilder (new VariantType ("a{sv}"));
             b.add ("{sv}", "CanGoNext",     new Variant.boolean (next));
-            b.add ("{sv}", "CanGoPrevious", new Variant.boolean (true));
+            b.add ("{sv}", "CanGoPrevious", new Variant.boolean (prev));
             this.emit_player_changed (b);
         }
 

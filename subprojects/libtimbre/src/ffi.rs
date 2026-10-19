@@ -345,6 +345,13 @@ pub unsafe extern "C" fn timbre_player_stop(handle: *mut TimbrePlayerHandle) {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_player_reset(handle: *mut TimbrePlayerHandle) {
+    if let Some(h) = handle.as_ref() {
+        h.player.reset();
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn timbre_player_seek(
     handle: *mut TimbrePlayerHandle,
     target_secs: f64,

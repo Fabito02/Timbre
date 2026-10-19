@@ -37,6 +37,7 @@ bool timbre_player_play_track_id(TimbrePlayerHandle *h, const char *track_id,
 void timbre_player_pause(TimbrePlayerHandle *h);
 void timbre_player_resume(TimbrePlayerHandle *h);
 void timbre_player_stop(TimbrePlayerHandle *h);
+void timbre_player_reset(TimbrePlayerHandle *h);
 bool timbre_player_seek(TimbrePlayerHandle *h, double target_secs);
 
 double timbre_player_get_position(TimbrePlayerHandle *h);
