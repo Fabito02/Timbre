@@ -85,6 +85,8 @@ namespace Timbre {
 
             int s = (int) duration_secs;
             this.label_duration.label = "%d:%02d".printf (s / 60, s % 60);
+            
+            this.label_duration.visible = (duration_secs > 0) && !is_live;
 
             this.cover_binding.load (cover_url);
 
@@ -99,7 +101,6 @@ namespace Timbre {
 
             this.explicit_badge.visible = explicit;
             this.live_badge.visible = is_live;
-            this.label_duration.visible = !is_live;
         }
 
         public override void dispose () {
