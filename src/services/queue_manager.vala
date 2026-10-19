@@ -1,4 +1,25 @@
 namespace Timbre {
+    public class QueueItem : Object {
+        public Track track { get; construct; }
+        public int index { get; set; }
+        public bool is_playing { get; set; }
+
+        public bool is_live {
+            get { return this.track != null && this.track.is_live; }
+        }
+        public bool explicit {
+            get { return this.track != null && this.track.explicit; }
+        }
+
+        public QueueItem (Track track, int index, bool is_playing) {
+            Object (
+                track: track,
+                index: index,
+                is_playing: is_playing
+            );
+        }
+    }
+
     public class QueueManager : Object {
         public GLib.ListStore store { get; private set; }
         public int current_index { get; private set; default = -1; }
@@ -6,14 +27,14 @@ namespace Timbre {
         public enum RepeatMode { OFF, ALL, ONE }
         public RepeatMode repeat_mode = RepeatMode.OFF;
 
-        public signal void track_changed (TrackItem track);
+        public signal void track_changed (Track track);
         public signal void queue_updated ();
         public signal void repeat_changed (RepeatMode mode);
         public signal void shuffle_changed (bool enabled);
         public signal void queue_ended ();
 
         public bool _shuffle = false;
-        private GenericArray<TrackItem>? _saved_order = null;
+        private GenericArray<Track>? _saved_order = null;
 
         public QueueManager () {
             this.store = new GLib.ListStore (typeof (QueueItem));
@@ -23,12 +44,12 @@ namespace Timbre {
             get { return (int) this.store.get_n_items (); }
         }
 
-        public TrackItem? get_track_at (int index) {
+        public Track? get_track_at (int index) {
             if (index < 0 || index >= this.length) return null;
             return ((QueueItem) this.store.get_item (index)).track;
         }
 
-        public void play_list (GenericArray<TrackItem> new_tracks, int start_index = 0) {
+        public void play_list (GenericArray<Track> new_tracks, int start_index = 0) {
             this._shuffle = false;
             this._saved_order = null;
             this.store.remove_all ();
@@ -45,7 +66,7 @@ namespace Timbre {
             }
         }
 
-        public void add_to_queue (GenericArray<TrackItem> new_tracks) {
+        public void add_to_queue (GenericArray<Track> new_tracks) {
             int start = this.length;
             for (int i = 0; i < new_tracks.length; i++) {
                 this.store.append (new QueueItem (
@@ -57,8 +78,8 @@ namespace Timbre {
             this.queue_updated ();
         }
 
-        public void play_single (TrackItem track) {
-            var single = new GenericArray<TrackItem> ();
+        public void play_single (Track track) {
+            var single = new GenericArray<Track> ();
             single.add (track);
             this.play_list (single, 0);
         }
@@ -149,8 +170,8 @@ namespace Timbre {
             }
         }
 
-        private GenericArray<TrackItem> snapshot_tracks () {
-            var out = new GenericArray<TrackItem> ();
+        private GenericArray<Track> snapshot_tracks () {
+            var out = new GenericArray<Track> ();
             for (uint i = 0; i < this.store.get_n_items (); i++) {
                 out.add (((QueueItem) this.store.get_item (i)).track);
             }
@@ -179,7 +200,7 @@ namespace Timbre {
             }
         }
 
-        private void move_track_to_front (TrackItem? track) {
+        private void move_track_to_front (Track? track) {
             if (track == null) return;
             int pos = -1;
             for (int i = 0; i < this.length; i++) {
@@ -202,7 +223,7 @@ namespace Timbre {
         public void set_shuffle (bool enabled) {
             if (this._shuffle == enabled) return;
 
-            TrackItem? current = this.get_track_at (this.current_index);
+            Track? current = this.get_track_at (this.current_index);
 
             if (enabled) {
                 this._saved_order = this.snapshot_tracks ();
@@ -222,14 +243,14 @@ namespace Timbre {
         private void restore_order () {
             if (this._saved_order == null) return;
 
-            TrackItem? current = this.get_track_at (this.current_index);
+            Track? current = this.get_track_at (this.current_index);
 
-            var in_saved = new HashTable<TrackItem, bool> (null, null);
+            var in_saved = new HashTable<Track, bool> (null, null);
             for (int i = 0; i < this._saved_order.length; i++) {
                 in_saved.add (this._saved_order.get (i));
             }
 
-            var extras = new GenericArray<TrackItem> ();
+            var extras = new GenericArray<Track> ();
             for (int i = 0; i < this.length; i++) {
                 var t = this.get_track_at (i);
                 if (t != null && !in_saved.contains (t)) extras.add (t);

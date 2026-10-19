@@ -11,6 +11,20 @@ template $TimbreTrackRow: ListBoxRow {
     margin-start: 6;
     margin-end: 6;
 
+    GestureClick secondary_click {
+      button: 3;
+      released => $onSecondaryClick();
+    }
+
+    GestureLongPress long_press_gesture {
+      pressed => $onLongPress();
+    }
+
+    PopoverMenu context_menu {
+      has-arrow: false;
+      halign: start;
+    }
+
     Overlay {
       Box {
         width-request: 48;
@@ -38,21 +52,21 @@ template $TimbreTrackRow: ListBoxRow {
 
       Box {
         orientation: horizontal;
-        
+
         Label label_title {
           xalign: 0.0;
           ellipsize: end;
-  
+
           styles [
             "heading",
           ]
         }
-  
+
         Label explicit_badge {
           label: "E";
           valign: center;
           margin-start: 6;
-  
+
           styles [
             "explicit-badge",
           ]
@@ -88,6 +102,7 @@ template $TimbreTrackRow: ListBoxRow {
           "live-overlay-icon",
         ]
       }
+
       Label {
         label: _("Live");
       }

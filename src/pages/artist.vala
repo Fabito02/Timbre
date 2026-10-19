@@ -1,31 +1,23 @@
 namespace Timbre {
 
-    public class ArtistCardItem : Object {
-        public string id { get; set; default = ""; }
-        public string kind { get; set; default = ""; }
-        public string title { get; set; default = ""; }
-        public string subtitle { get; set; default = ""; }
-        public string? cover { get; set; default = null; }
-    }
-
     public class ArtistCardSection : Object {
         public string? title { get; set; default = null; }
         public string? browse_id { get; set; default = null; }
         public string? params { get; set; default = null; }
-        public GenericArray<ArtistCardItem> results { get; set; }
+        public GenericArray<MediaItem> results { get; set; }
 
         public ArtistCardSection () {
-            this.results = new GenericArray<ArtistCardItem> ();
+            this.results = new GenericArray<MediaItem> ();
         }
     }
 
     public class ArtistSongSection : Object {
         public string? title { get; set; default = null; }
         public string? browse_id { get; set; default = null; }
-        public GenericArray<TrackItem> results { get; set; }
+        public GenericArray<Track> results { get; set; }
 
         public ArtistSongSection () {
-            this.results = new GenericArray<TrackItem> ();
+            this.results = new GenericArray<Track> ();
         }
     }
 
@@ -96,61 +88,88 @@ namespace Timbre {
             return sb.str;
         }
 
-        public static TrackItem? parse_track (Json.Object o) {
+        public static Track? parse_track (Json.Object o) {
             string vid = s_str (o, "video_id") ?? "";
             if (vid.length == 0) return null;
 
-            var t = new TrackItem ();
+            var t = new Track ();
             t.id = vid;
             t.title = s_str (o, "title") ?? "";
 
-            string joined = join_artists (o);
-            t.artist = joined.length > 0 ? joined : (s_str (o, "artist") ?? "");
+            if (o.has_member ("artists") && !o.get_null_member ("artists")) {
+                var arr = s_arr (o, "artists");
+                if (arr != null) {
+                    foreach (unowned Json.Node n in arr.get_elements ()) {
+                        if (n.get_node_type () != Json.NodeType.OBJECT) continue;
+                        var ao = n.get_object ();
+                        var p = new Person ();
+                        var name = s_str (ao, "name");
+                        if (name != null) p.name = name;
+                        var id = s_str (ao, "id");
+                        if (id != null) p.id = id;
+                        t.artists.add (p);
+                    }
+                }
+            } else if (o.has_member ("artist") && !o.get_null_member ("artist")) {
+                var p = new Person ();
+                p.name = o.get_string_member ("artist");
+                t.artists.add (p);
+            }
+
+            if (o.has_member ("album") && !o.get_null_member ("album")) {
+                var al = o.get_member ("album");
+                if (al.get_node_type () == Json.NodeType.OBJECT) {
+                    var ao = al.get_object ();
+                    var named = new Named ();
+                    var name = s_str (ao, "name");
+                    if (name != null) named.name = name;
+                    var id = s_str (ao, "id");
+                    if (id != null) named.id = id;
+                    t.album = named;
+                }
+            }
 
             if (o.has_member ("duration_seconds") && !o.get_null_member ("duration_seconds"))
-                t.duration_secs = (uint64) o.get_int_member ("duration_seconds");
+                t.duration_seconds = (uint) o.get_int_member ("duration_seconds");
             if (o.has_member ("thumb") && !o.get_null_member ("thumb"))
-                t.thumbnail_url = o.get_string_member ("thumb");
+                t.thumb = o.get_string_member ("thumb");
             if (o.has_member ("like_status") && !o.get_null_member ("like_status"))
                 t.like_status = parse_like_status (o.get_string_member ("like_status"));
 
             return t;
         }
 
-        private static ArtistCardItem? parse_card (Json.Object o) {
+        private static MediaItem? parse_card (Json.Object o) {
             string id = s_str (o, "id") ?? "";
             if (id.length == 0) return null;
 
-            var c = new ArtistCardItem ();
+            var c = new MediaItem ();
             c.id = id;
-            c.kind = s_str (o, "kind") ?? "";
+            c.kind = ItemKind.parse (s_str (o, "kind") ?? "");
             c.title = s_str (o, "title") ?? "";
+            c.subscribers = s_str (o, "subscribers");
+            c.description = s_str (o, "description");
+            c.item_type = s_str (o, "item_type");
+            c.year = s_str (o, "year");
 
-            if (c.kind == "Artist") {
-                c.subtitle = s_str (o, "subscribers") ?? "";
-            } else if (c.kind == "Playlist") {
-                c.subtitle = s_str (o, "description") ?? "";
-                if (c.subtitle.length == 0) {
-                    string joined = join_artists (o);
-                    if (joined.length > 0) c.subtitle = joined;
-                    else if (o.has_member ("item_type") && !o.get_null_member ("item_type"))
-                        c.subtitle = o.get_string_member ("item_type");
-                }
-            } else {
-                string joined = join_artists (o);
-                if (joined.length > 0) {
-                    c.subtitle = joined;
-                } else if (o.has_member ("subscribers") && !o.get_null_member ("subscribers")) {
-                    c.subtitle = o.get_string_member ("subscribers");
-                } else if (o.has_member ("item_type") && !o.get_null_member ("item_type")) {
-                    c.subtitle = o.get_string_member ("item_type");
-                } else if (o.has_member ("year") && !o.get_null_member ("year")) {
-                    c.subtitle = o.get_string_member ("year");
+            if (c.kind != ItemKind.ARTIST) {
+                var arr = s_arr (o, "artists");
+                if (arr != null) {
+                    foreach (unowned Json.Node n in arr.get_elements ()) {
+                        if (n.get_node_type () != Json.NodeType.OBJECT) continue;
+                        var ao = n.get_object ();
+                        var p = new Person ();
+                        var name = s_str (ao, "name");
+                        if (name != null) p.name = name;
+                        var pid = s_str (ao, "id");
+                        if (pid != null) p.id = pid;
+                        c.artists.add (p);
+                    }
                 }
             }
 
             if (o.has_member ("thumb") && !o.get_null_member ("thumb"))
-                c.cover = o.get_string_member ("thumb");
+                c.thumb = o.get_string_member ("thumb");
 
             return c;
         }
@@ -255,13 +274,11 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Label label_read_more;
         [GtkChild] private unowned Gtk.Box sections_box;
 
-        public signal void track_selected (string id, uint64 duration, string title,
-                                           string artist, string? cover);
-        public signal void collection_selected (string id, string type_name, string title,
-                                                string subtitle, string? cover);
+        public signal void track_selected (MediaItem item);
+        public signal void collection_selected (MediaItem item);
         public signal void show_all_requested (string browse_id, string? params_json,
                                                string title, GenericArray<HomeItemModel> seed);
-        public signal void play_songs_requested (GenericArray<TrackItem> tracks, int start_index, bool shuffle);
+        public signal void play_songs_requested (GenericArray<Track> tracks, int start_index, bool shuffle);
 
         private unowned Timbre.Player player;
         private string channel_id;
@@ -486,11 +503,7 @@ namespace Timbre {
             int visible = int.min (total, this.song_limit);
             for (int i = 0; i < visible; i++) {
                 var t = section.results.get (i);
-                var row = new Timbre.TrackRow (
-                    this.player, "Song",
-                    t.id, t.title, t.artist,
-                    t.duration_secs, t.thumbnail_url,
-                    t.like_status);
+                var row = new Timbre.TrackRow (this.player, t);
                 list.append (row);
             }
 
@@ -498,7 +511,7 @@ namespace Timbre {
                 if (this.released) return;
                 int idx = row.get_index ();
                 if (idx < 0 || idx >= section.results.length) return;
-                var tracks = new GenericArray<TrackItem> ();
+                var tracks = new GenericArray<Track> ();
                 for (int j = 0; j < section.results.length; j++)
                     tracks.add (section.results.get (j));
                 this.play_songs_requested (tracks, idx, false);
@@ -578,8 +591,8 @@ namespace Timbre {
             });
         }
 
-        private GenericArray<TrackItem> parse_playlist_tracks (string json_str) {
-            var tracks = new GenericArray<TrackItem> ();
+        private GenericArray<Track> parse_playlist_tracks (string json_str) {
+            var tracks = new GenericArray<Track> ();
             try {
                 var parser = new Json.Parser ();
                 parser.load_from_data (json_str);
@@ -639,9 +652,7 @@ namespace Timbre {
             int limit = int.min (n, CARD_LIMIT);
             for (int i = 0; i < limit; i++) {
                 var item = section.results.get (i);
-                var card = new Timbre.TrackCard (
-                    item.id, item.kind, item.title,
-                    item.subtitle, item.cover);
+                var card = new Timbre.TrackCard (item);
                 card.clicked.connect (() => {
                     if (this.released) return;
                     this.on_card_activated (item);
@@ -654,13 +665,11 @@ namespace Timbre {
             this.sections_box.append (sec_box);
         }
 
-        private void on_card_activated (ArtistCardItem item) {
-            string kind = item.kind.down ();
-            if (kind == "song" || kind == "video") {
-                this.track_selected (item.id, 0, item.title, item.subtitle, item.cover);
-            } else {
-                this.collection_selected (item.id, kind, item.title, item.subtitle, item.cover);
-            }
+        private void on_card_activated (MediaItem item) {
+            if (item.kind.is_playable ())
+                this.track_selected (item);
+            else
+                this.collection_selected (item);
         }
 
         private void emit_show_all (string title, ArtistCardSection section) {
@@ -672,9 +681,11 @@ namespace Timbre {
                 hi.id = item.id;
                 hi.kind = item.kind;
                 hi.title = item.title;
-                hi.subtitle = item.subtitle;
-                hi.thumbnail_url = item.cover;
-                hi.duration_secs = 0;
+                hi.thumb = item.thumb;
+                hi.duration_seconds = item.duration_seconds;
+                hi.explicit = item.explicit;
+                hi.is_live = item.is_live;
+                for (int j = 0; j < item.artists.length; j++) hi.artists.add (item.artists.get (j));
                 seed.add (hi);
             }
             this.show_all_requested (section.browse_id, section.params, title, seed);
@@ -684,7 +695,7 @@ namespace Timbre {
             if (this.data == null || this.data.songs == null) return;
             var songs = this.data.songs;
             if (songs.results.length == 0) return;
-            var tracks = new GenericArray<TrackItem> ();
+            var tracks = new GenericArray<Track> ();
             for (int i = 0; i < songs.results.length; i++)
                 tracks.add (songs.results.get (i));
             this.play_songs_requested (tracks, shuffle ? -1 : 0, shuffle);
@@ -717,8 +728,8 @@ namespace Timbre {
             });
         }
 
-        private GenericArray<TrackItem> parse_radio_tracks (string json_str) {
-            var tracks = new GenericArray<TrackItem> ();
+        private GenericArray<Track> parse_radio_tracks (string json_str) {
+            var tracks = new GenericArray<Track> ();
             try {
                 var parser = new Json.Parser ();
                 parser.load_from_data (json_str);

@@ -21,7 +21,7 @@ namespace Timbre {
         private string current_track_id = "";
         private int like_fetch_gen = 0;
         private double metadata_duration = 0.0;
-        private Timbre.TrackItem? pending_track = null;
+        private Timbre.Track? pending_track = null;
 
         private bool play_recorded = false;
         private string recorded_track_id = "";
@@ -138,7 +138,7 @@ namespace Timbre {
             this.fullscreen_sheet.notify["open"].connect (() => {
                 if (this.fullscreen_sheet.open) {
                     if (this.pending_track != null) {
-                        this.cover_fullscreen_binding.load (this.pending_track.thumbnail_url);
+                        this.cover_fullscreen_binding.load (this.pending_track.thumb);
                     }
                 } else {
                     this.bottom_bar_revealer.reveal_child = true;
@@ -263,6 +263,17 @@ namespace Timbre {
             this.switcher.visible = !search_on && !bar_on;
         }
 
+        private static string kind_to_lower (ItemKind kind) {
+            switch (kind) {
+                case ItemKind.SONG:     return "song";
+                case ItemKind.VIDEO:    return "video";
+                case ItemKind.ALBUM:    return "album";
+                case ItemKind.ARTIST:   return "artist";
+                case ItemKind.PLAYLIST: return "playlist";
+                default:                return "song";
+            }
+        }
+
         private void open_collection (string id, string type_name,
                                       string title, string subtitle,
                                       string? cover, Adw.NavigationView? target_view = null) {
@@ -288,19 +299,19 @@ namespace Timbre {
         }
 
         private void wire_artist_page (Timbre.ArtistPage page, Adw.NavigationView? target_view) {
-            page.track_selected.connect ((id, duration, title, artist, cover) => {
-                this.queue.play_single (new Timbre.TrackItem.with_data (
-                    id, title, artist, duration, cover));
+            page.track_selected.connect ((item) => {
+                this.queue.play_single (item.to_track ());
             });
 
-            page.collection_selected.connect ((id, type_name, title, subtitle, cover) => {
-                this.open_collection (id, type_name, title, subtitle, cover, target_view);
+            page.collection_selected.connect ((item) => {
+                this.open_collection (item.id, kind_to_lower (item.kind),
+                    item.title, item.subtitle_text (), item.thumb, target_view);
             });
 
             page.play_songs_requested.connect ((tracks, start_index, shuffle) => {
                 if (tracks.length == 0) return;
                 if (shuffle) {
-                    var shuffled = new GenericArray<TrackItem> ();
+                    var shuffled = new GenericArray<Track> ();
                     for (int i = 0; i < tracks.length; i++) shuffled.add (tracks.get (i));
                     for (int i = shuffled.length - 1; i > 0; i--) {
                         int j = Random.int_range (0, i + 1);
@@ -319,13 +330,13 @@ namespace Timbre {
                 var sp = new Timbre.SectionPage (
                     this.player, browse_id, params_json, title, seed);
 
-                sp.track_selected.connect ((id, duration, t, artist, cover) => {
-                    this.queue.play_single (new Timbre.TrackItem.with_data (
-                        id, t, artist, duration, cover));
+                sp.track_selected.connect ((item) => {
+                    this.queue.play_single (item.to_track ());
                 });
 
-                sp.collection_selected.connect ((id, type_name, t, subtitle, cover) => {
-                    this.open_collection (id, type_name, t, subtitle, cover, target_view);
+                sp.collection_selected.connect ((item) => {
+                    this.open_collection (item.id, kind_to_lower (item.kind),
+                        item.title, item.subtitle_text (), item.thumb, target_view);
                 });
 
                 var nav = target_view ?? this.navigation_view;
@@ -368,33 +379,34 @@ namespace Timbre {
                 this.fullscreen_button_toggle_queue.active = this.split_view.show_sidebar;
             });
 
-            this.home_page.collection_selected.connect ((id, type_name, title, subtitle, cover) => {
-                this.open_collection (id, type_name, title, subtitle, cover, this.navigation_view);
+            this.home_page.collection_selected.connect ((item) => {
+                this.open_collection (item.id, kind_to_lower (item.kind),
+                    item.title, item.subtitle_text (), item.thumb, this.navigation_view);
             });
 
-            this.home_page.track_selected.connect ((id, duration, title, artist, cover) => {
-                this.queue.play_single (new Timbre.TrackItem.with_data (
-                    id, title, artist, duration, cover));
+            this.home_page.track_selected.connect ((item) => {
+                this.queue.play_single (item.to_track ());
             });
 
             this.home_page.show_all_requested.connect ((browse_id, params_json, title, seed) => {
                 var page = new Timbre.SectionPage (
                     this.player, browse_id, params_json, title, seed);
 
-                page.track_selected.connect ((id, duration, t, artist, cover) => {
-                    this.queue.play_single (new Timbre.TrackItem.with_data (
-                        id, t, artist, duration, cover));
+                page.track_selected.connect ((item) => {
+                    this.queue.play_single (item.to_track ());
                 });
 
-                page.collection_selected.connect ((id, type_name, t, subtitle, cover) => {
-                    this.open_collection (id, type_name, t, subtitle, cover, this.navigation_view);
+                page.collection_selected.connect ((item) => {
+                    this.open_collection (item.id, kind_to_lower (item.kind),
+                        item.title, item.subtitle_text (), item.thumb, this.navigation_view);
                 });
 
                 this.navigation_view.push (page);
             });
 
-            this.library_page.collection_selected.connect ((id, kind, title, subtitle, cover) => {
-                this.open_collection (id, kind, title, subtitle, cover, this.library_view);
+            this.library_page.collection_selected.connect ((item) => {
+                this.open_collection (item.id, kind_to_lower (item.kind),
+                    item.title, item.subtitle_text (), item.thumb, this.library_view);
             });
 
             this.library_page.artist_selected.connect ((id, name) => {
@@ -420,7 +432,7 @@ namespace Timbre {
             this.bottom_bar_revealer.reveal_child = false;
 
             if (this.pending_track != null) {
-                this.cover_fullscreen_binding.load (this.pending_track.thumbnail_url);
+                this.cover_fullscreen_binding.load (this.pending_track.thumb);
             }
 
             this.fullscreen_sheet_content.height_request = this.get_height();
@@ -523,13 +535,13 @@ namespace Timbre {
         }
 
         private void setup_search () {
-            this.search_page.track_selected.connect ((id, duration, title, artist, cover) => {
-                this.queue.play_single (new Timbre.TrackItem.with_data (
-                    id, title, artist, duration, cover));
+            this.search_page.track_selected.connect ((item) => {
+                this.queue.play_single (item.to_track ());
             });
 
-            this.search_page.collection_selected.connect ((id, type_name, title, subtitle, cover) => {
-                this.open_collection (id, type_name, title, subtitle, cover, this.search_view);
+            this.search_page.collection_selected.connect ((item) => {
+                this.open_collection (item.id, kind_to_lower (item.kind),
+                    item.title, item.subtitle_text (), item.thumb, this.search_view);
             });
 
             this.searchbar.notify["search-mode-enabled"].connect (() => {
@@ -622,7 +634,7 @@ namespace Timbre {
             }
         }
 
-        public void play_track (Timbre.TrackItem track) {
+        public void play_track (Timbre.Track track) {
             this.finish_recording ();
 
             if (this.player != null) {
@@ -632,17 +644,17 @@ namespace Timbre {
             this.button_play_pause.icon_name = "media-playback-start-symbolic";
             this.loading_track = true;
 
-            if (track.duration_secs == 0) {
+            if (track.duration_seconds == null || track.duration_seconds == 0) {
                 this.pending_track = track;
                 this.like_fetch_gen++;
                 int my_gen = this.like_fetch_gen;
                 this.fetch_and_play (track, my_gen);
                 return;
             }
-            this.start_playback (track, track.duration_secs);
+            this.start_playback (track, track.duration_seconds);
         }
 
-        private void fetch_and_play (Timbre.TrackItem track, int gen) {
+        private void fetch_and_play (Timbre.Track track, int gen) {
             this.player.get_watch_playlist (track.id, "", (json, error) => {
                 Idle.add (() => {
                     if (gen != this.like_fetch_gen) {
@@ -650,7 +662,7 @@ namespace Timbre {
                         if (error != null) Timbre.string_free (error);
                         return GLib.Source.REMOVE;
                     }
-                    uint64 dur = track.duration_secs;
+                    uint64 dur = track.duration_seconds ?? 0;
                     if (error == null) {
                         var info = this.extract_track_info ((string) json, track.id);
                         if (info.duration > 0) dur = (uint64) info.duration;
@@ -666,7 +678,7 @@ namespace Timbre {
             });
         }
 
-        private void start_playback (Timbre.TrackItem track, uint64 duration) {
+        private void start_playback (Timbre.Track track, uint64 duration) {
             message ("start_playback: id=%s dur=%lu title=%s".printf (
                 track.id, (ulong) duration, track.title));
 
@@ -685,12 +697,12 @@ namespace Timbre {
                 : 0.0;
 
             this.label_current_title.label = track.title;
-            this.label_current_artist.label = track.artist;
+            this.label_current_artist.label = track.artists_text ();
 
-            this.cover_binding.load (track.thumbnail_url);
+            this.cover_binding.load (track.thumb);
 
             if (this.fullscreen_sheet.open) {
-                this.cover_fullscreen_binding.load (track.thumbnail_url);
+                this.cover_fullscreen_binding.load (track.thumb);
             }
 
             this.set_slider_silently (0.0);
@@ -722,7 +734,7 @@ namespace Timbre {
             bool need_duration_fetch = (duration == 0);
 
             if (this.bar_like_btn != null) {
-                if (track.like_status != null) {
+                if (track.like_status != LikeStatus.INDIFFERENT) {
                     this.bar_like_btn.set_target (track.id, track.like_status);
                 } else {
                     this.bar_like_btn.set_target (track.id, null);
@@ -1016,8 +1028,14 @@ namespace Timbre {
             });
         }
 
-        private GenericArray<TrackItem> parse_radio_tracks (string json_str) {
-            var tracks = new GenericArray<TrackItem> ();
+        public void add_to_queue (Timbre.TrackRow row) {
+            var items = new GenericArray<Timbre.Track> ();
+            items.add (row.media_item.to_track ());
+            this.queue.add_to_queue (items);
+        }
+
+        private GenericArray<Track> parse_radio_tracks (string json_str) {
+            var tracks = new GenericArray<Track> ();
             try {
                 var parser = new Json.Parser ();
                 parser.load_from_data (json_str);
@@ -1040,17 +1058,35 @@ namespace Timbre {
                         vid = t.get_string_member ("video_id");
                     if (vid.length == 0) continue;
 
-                    string title = t.has_member ("title") && !t.get_null_member ("title")
+                    var track = new Timbre.Track ();
+                    track.id = vid;
+                    track.title = t.has_member ("title") && !t.get_null_member ("title")
                         ? t.get_string_member ("title") : "";
-                    string artist = t.has_member ("artist") && !t.get_null_member ("artist")
-                        ? t.get_string_member ("artist") : "";
-                    string? thumb = t.has_member ("thumb") && !t.get_null_member ("thumb")
-                        ? t.get_string_member ("thumb") : null;
-                    uint64 dur = t.has_member ("duration_seconds") && !t.get_null_member ("duration_seconds")
-                        ? (uint64) t.get_int_member ("duration_seconds") : 0;
 
-                    tracks.add (new Timbre.TrackItem.with_data (
-                        vid, title, artist, dur, thumb));
+                    if (t.has_member ("artists") && !t.get_null_member ("artists")) {
+                        var a_node = t.get_member ("artists");
+                        if (a_node.get_node_type () == Json.NodeType.ARRAY) {
+                            foreach (unowned Json.Node an in a_node.get_array ().get_elements ()) {
+                                if (an.get_node_type () != Json.NodeType.OBJECT) continue;
+                                var ao = an.get_object ();
+                                var p = new Person ();
+                                if (ao.has_member ("name") && !ao.get_null_member ("name"))
+                                    p.name = ao.get_string_member ("name");
+                                track.artists.add (p);
+                            }
+                        }
+                    } else if (t.has_member ("artist") && !t.get_null_member ("artist")) {
+                        var p = new Person ();
+                        p.name = t.get_string_member ("artist");
+                        track.artists.add (p);
+                    }
+
+                    if (t.has_member ("thumb") && !t.get_null_member ("thumb"))
+                        track.thumb = t.get_string_member ("thumb");
+                    if (t.has_member ("duration_seconds") && !t.get_null_member ("duration_seconds"))
+                        track.duration_seconds = (uint) t.get_int_member ("duration_seconds");
+
+                    tracks.add (track);
                 }
             } catch (Error e) {
                 debug ("parse_radio_tracks: %s", e.message);

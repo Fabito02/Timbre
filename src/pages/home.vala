@@ -17,8 +17,8 @@ namespace Timbre {
         private int populate_idx = 0;
         private HomeSectionModel[] populate_queue = new HomeSectionModel[0];
 
-        public signal void track_selected (string id, uint64 duration, string title, string artist, string? cover);
-        public signal void collection_selected (string id, string type_name, string title, string subtitle, string? cover);
+        public signal void track_selected (MediaItem item);
+        public signal void collection_selected (MediaItem item);
         public signal void show_all_requested (string browse_id, string? params_json, string title, GenericArray<HomeItemModel> seed);
 
         public HomePage () {

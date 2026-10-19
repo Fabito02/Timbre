@@ -9,40 +9,32 @@ namespace Timbre {
         [GtkChild] private unowned Adw.Bin album_overlay;
         [GtkChild] private unowned Adw.Bin play_overlay;
 
-        public string track_id { get; private set; }
-        public string item_type { get; private set; }
-        public string track_title { get; private set; }
-        public string track_artist { get; private set; }
-        public string? track_cover { get; private set; }
+        public MediaItem media_item { get; private set; }
+        public string track_id { get { return media_item.id; } }
+        public string item_type { get { return media_item.kind.to_string (); } }
 
         private Timbre.Utils.ImageBinding cover_binding;
 
-        public TrackCard (string id, string type_name, string title,
-                          string artists, string? cover_url = null,
-                          bool is_live = false, bool explicit = false) {
+        public TrackCard (MediaItem item) {
             Object ();
-            this.track_id = id;
-            this.item_type = type_name;
-            this.track_title = title;
-            this.track_artist = artists;
-            this.track_cover = cover_url;
+            this.media_item = item;
 
-            this.label_title.label = title;
-            this.label_artist.label = artists;
+            this.label_title.label = item.title;
+            this.label_artist.label = item.subtitle_text ();
 
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 144);
-            this.cover_binding.load (cover_url);
+            this.cover_binding.load (item.thumb);
 
-            if (type_name == "Artist") {
+            if (item.kind == ItemKind.ARTIST) {
                 this.add_css_class ("artist");
             }
 
-            this.play_overlay.visible = type_name == "Song" || type_name == "Video";
-            this.album_overlay.visible = type_name == "Album";
-            this.live_overlay.visible = is_live;
-            this.explicit_badge.visible = explicit;
+            this.play_overlay.visible = item.kind.is_playable ();
+            this.album_overlay.visible = (item.kind == ItemKind.ALBUM);
+            this.live_overlay.visible = item.is_live;
+            this.explicit_badge.visible = item.explicit;
 
-            if (type_name == "Video") {
+            if (item.kind == ItemKind.VIDEO) {
                 this.image_cover.width_request = 256;
                 this.image_cover.height_request = 144;
             } else {
@@ -50,8 +42,8 @@ namespace Timbre {
                 this.image_cover.height_request = 144;
             }
 
-            this.label_title.max_width_chars = (type_name == "Video") ? 32 : 20;
-            this.label_artist.max_width_chars = (type_name == "Video") ? 32 : 20;
+            this.label_title.max_width_chars = (item.kind == ItemKind.VIDEO) ? 32 : 20;
+            this.label_artist.max_width_chars = (item.kind == ItemKind.VIDEO) ? 32 : 20;
         }
     }
 }

@@ -380,14 +380,16 @@ namespace Timbre.Services {
                         table.insert ("xesam:title",
                             new Variant.string (track.title));
                     }
-                    if (track.artist.length > 0) {
-                        string[] names = { track.artist };
+
+                    string artists_str = track.artists_text ();
+                    if (artists_str.length > 0) {
+                        string[] names = { artists_str };
                         table.insert ("xesam:artist", new Variant.strv (names));
                     }
-                    if (track.thumbnail_url != null
-                        && track.thumbnail_url.length > 0) {
+
+                    if (track.thumb != null && track.thumb.length > 0) {
                         table.insert ("mpris:artUrl",
-                            new Variant.string (track.thumbnail_url));
+                            new Variant.string (track.thumb));
                     }
                 }
 
@@ -436,7 +438,7 @@ namespace Timbre.Services {
             this.notify_seeked (target);
         }
 
-        private Timbre.TrackItem? current_track () {
+        private Timbre.Track? current_track () {
             if (this.queue.current_index < 0) return null;
             return this.queue.get_track_at (this.queue.current_index);
         }

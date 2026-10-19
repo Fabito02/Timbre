@@ -1,9 +1,4 @@
 namespace Timbre {
-    public enum LikeStatus {
-        INDIFFERENT,
-        LIKE,
-        DISLIKE
-    }
 
     public class LikeButton : Gtk.Button {
         private Gtk.Popover popover;

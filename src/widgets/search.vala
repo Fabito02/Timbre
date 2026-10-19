@@ -1,18 +1,4 @@
 namespace Timbre {
-
-    public class SearchItem : Object {
-        public string kind { get; set; default = ""; }
-        public string id { get; set; default = ""; }
-        public string title { get; set; default = ""; }
-        public string subtitle { get; set; default = ""; }
-        public string? thumb { get; set; default = null; }
-        public uint64 duration { get; set; default = 0; }
-        public string item_type { get; set; default = ""; }
-        public LikeStatus like_status { get; set; default = LikeStatus.INDIFFERENT; }
-        public bool is_live { get; set; default = false; }
-        public bool explicit { get; set; default = false; }
-    }
-
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/search.ui")]
     public class SearchPage : Gtk.Box {
         [GtkChild] private unowned Adw.ViewStack stack;
@@ -22,8 +8,8 @@ namespace Timbre {
         [GtkChild] private unowned Adw.StatusPage main_page;
         [GtkChild] private unowned Adw.StatusPage status_page;
 
-        public signal void track_selected (string track_id, uint64 duration_secs, string title, string artist, string? cover_url);
-        public signal void collection_selected (string id, string type_name, string title, string subtitle, string? cover_url);
+        public signal void track_selected (MediaItem item);
+        public signal void collection_selected (MediaItem item);
 
         private unowned Timbre.Player? player;
         private bool released = false;
@@ -69,7 +55,7 @@ namespace Timbre {
 
             var obj = root.get_object ();
 
-            SearchItem? top = null;
+            MediaItem? top = null;
             if (obj.has_member ("top_result") && !obj.get_null_member ("top_result")) {
                 var n = obj.get_member ("top_result");
                 if (n.get_node_type () == Json.NodeType.OBJECT) {
@@ -77,7 +63,7 @@ namespace Timbre {
                 }
             }
 
-            var all = new GenericArray<SearchItem> ();
+            var all = new GenericArray<MediaItem> ();
             if (obj.has_member ("items") && !obj.get_null_member ("items")) {
                 var arr = obj.get_array_member ("items");
                 foreach (unowned Json.Node node in arr.get_elements ()) {
@@ -92,20 +78,20 @@ namespace Timbre {
                 return;
             }
 
-            var songs = new GenericArray<SearchItem> ();
-            var artists = new GenericArray<SearchItem> ();
-            var playlists = new GenericArray<SearchItem> ();
-            var albums = new GenericArray<SearchItem> ();
-            var videos = new GenericArray<SearchItem> ();
-            var episodes = new GenericArray<SearchItem> ();
+            var songs = new GenericArray<MediaItem> ();
+            var artists = new GenericArray<MediaItem> ();
+            var playlists = new GenericArray<MediaItem> ();
+            var albums = new GenericArray<MediaItem> ();
+            var videos = new GenericArray<MediaItem> ();
+            var episodes = new GenericArray<MediaItem> ();
 
             foreach (var it in all) {
                 switch (it.kind) {
-                    case "Song":     songs.add (it); break;
-                    case "Artist":   artists.add (it); break;
-                    case "Playlist": playlists.add (it); break;
-                    case "Album":    albums.add (it); break;
-                    case "Video":
+                    case ItemKind.SONG:     songs.add (it); break;
+                    case ItemKind.ARTIST:   artists.add (it); break;
+                    case ItemKind.PLAYLIST: playlists.add (it); break;
+                    case ItemKind.ALBUM:    albums.add (it); break;
+                    case ItemKind.VIDEO:
                         if (it.item_type == "Episode") episodes.add (it);
                         else videos.add (it);
                         break;
@@ -119,7 +105,7 @@ namespace Timbre {
 
             var main = this.make_tab (group, _("Main"), "blocks-symbolic", "main");
             if (top != null) {
-                var single = new GenericArray<SearchItem> ();
+                var single = new GenericArray<MediaItem> ();
                 single.add (top);
                 this.add_section (main, _("Top Result"), single, true);
             }
@@ -173,54 +159,40 @@ namespace Timbre {
             }
         }
 
-        private SearchItem? parse_item (Json.Object obj) {
+        private MediaItem? parse_item (Json.Object obj) {
             string id = this.json_str (obj, "id");
             if (id.length == 0) return null;
 
-            var s = new SearchItem ();
-            s.kind = this.json_str (obj, "kind");
-            s.id = id;
-            s.title = this.json_str (obj, "title");
-            s.item_type = this.json_str (obj, "item_type");
-            s.thumb = this.json_str (obj, "thumb");
-            s.duration = (uint64) this.json_int (obj, "duration_seconds");
-            s.like_status = parse_like_status (this.json_str (obj, "like_status"));
-            s.is_live = this.json_bool (obj, "is_live");
-            s.explicit = this.json_bool (obj, "explicit");
+            var item = new MediaItem ();
+            item.id = id;
+            item.kind = ItemKind.parse (this.json_str (obj, "kind"));
+            item.title = this.json_str (obj, "title");
+            item.item_type = this.json_str (obj, "item_type");
+            item.thumb = this.json_str (obj, "thumb");
+            item.duration_seconds = (uint) this.json_int (obj, "duration_seconds");
+            item.is_live = this.json_bool (obj, "is_live");
+            item.explicit = this.json_bool (obj, "explicit");
+            item.subscribers = this.json_str (obj, "subscribers");
+            item.count = this.json_str (obj, "count");
+            item.description = this.json_str (obj, "description");
 
-            var sb = new StringBuilder ();
             if (obj.has_member ("artists") && !obj.get_null_member ("artists")) {
-                var a = obj.get_member ("artists");
-                if (a.get_node_type () == Json.NodeType.ARRAY) {
-                    foreach (unowned Json.Node n in a.get_array ().get_elements ()) {
-                        if (n.get_node_type () != Json.NodeType.OBJECT) continue;
-                        var ao = n.get_object ();
-                        if (!ao.has_member ("name") || ao.get_null_member ("name")) continue;
-                        if (sb.len > 0) sb.append (", ");
-                        sb.append (ao.get_string_member ("name"));
+                var artists_node = obj.get_member ("artists");
+                if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
+                    foreach (unowned Json.Node a in artists_node.get_array ().get_elements ()) {
+                        if (a.get_node_type () != Json.NodeType.OBJECT) continue;
+                        var ao = a.get_object ();
+                        var p = new Person ();
+                        if (ao.has_member ("name") && !ao.get_null_member ("name"))
+                            p.name = ao.get_string_member ("name");
+                        if (ao.has_member ("id") && !ao.get_null_member ("id"))
+                            p.id = ao.get_string_member ("id");
+                        item.artists.add (p);
                     }
                 }
             }
-            string artists_text = sb.str;
 
-            switch (s.kind) {
-                case "Album":
-                    s.subtitle = artists_text.length > 0 ? artists_text : _("Album");
-                    break;
-                case "Artist":
-                    s.subtitle = this.json_str (obj, "subscribers");
-                    if (s.subtitle.length == 0) s.subtitle = _("Artist");
-                    break;
-                case "Playlist":
-                    string count = this.json_str (obj, "count");
-                    s.subtitle = count.length > 0 ? "%s songs".printf (count) : _("Playlist");
-                    break;
-                default:
-                    s.subtitle = artists_text;
-                    break;
-            }
-
-            return s;
+            return item;
         }
 
         private string json_str (Json.Object obj, string key) {
@@ -260,7 +232,7 @@ namespace Timbre {
         }
 
         private void add_section (Gtk.Box parent, string title,
-                                  GenericArray<SearchItem> items, bool is_top) {
+                                  GenericArray<MediaItem> items, bool is_top) {
             if (items.length == 0) return;
 
             var section = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
@@ -274,10 +246,7 @@ namespace Timbre {
             list.add_css_class ("songs-list");
 
             foreach (var item in items) {
-                var row = new Timbre.TrackRow.simple (
-                    item.kind, item.id, item.title, item.subtitle,
-                    item.duration, item.thumb,
-                    item.is_live, item.explicit);
+                var row = new Timbre.TrackRow.simple (item);
                 if (is_top) {
                     row.add_css_class ("search-top-result");
                 }
@@ -291,13 +260,10 @@ namespace Timbre {
                 if (idx < 0 || idx >= items_ref.length) return;
                 var it = items_ref.get (idx);
 
-                if (it.kind == "Song" || it.kind == "Video") {
-                    this.track_selected (it.id, it.duration,
-                                         it.title, it.subtitle, it.thumb);
-                } else {
-                    this.collection_selected (it.id, it.kind.down (),
-                                              it.title, it.subtitle, it.thumb);
-                }
+                if (it.kind.is_playable ())
+                    this.track_selected (it);
+                else
+                    this.collection_selected (it);
             });
 
             section.append (list);

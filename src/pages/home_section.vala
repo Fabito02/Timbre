@@ -109,26 +109,13 @@ namespace Timbre.HomeSection {
 
         for (int i = 0; i < section.items.length; i++) {
             var item = section.items.get (i);
-            var tile = new Timbre.HomeSpeedTile (
-                item.id, item.kind, item.title,
-                item.subtitle ?? "", item.duration_secs,
-                item.thumbnail_url, item.is_live, item.explicit
-            );
-
-            string i_id = item.id;
-            uint64 i_dur = item.duration_secs;
-            string i_title = item.title;
-            string i_sub = item.subtitle ?? "";
-            string? i_thumb = item.thumbnail_url;
-            string i_kind = item.kind;
-
+            var tile = new Timbre.HomeSpeedTile (item);
             tile.clicked.connect (() => {
-                if (i_kind == "Song" || i_kind == "Video")
-                    page.track_selected (i_id, i_dur, i_title, i_sub, i_thumb);
+                if (item.kind.is_playable ())
+                    page.track_selected (item);
                 else
-                    page.collection_selected (i_id, i_kind, i_title, i_sub, i_thumb);
+                    page.collection_selected (item);
             });
-
             wrap.append (tile);
         }
 
@@ -180,23 +167,13 @@ namespace Timbre.HomeSection {
 
         for (int i = 0; i < section.items.length; i++) {
             var item = section.items.get (i);
-            var card = new Timbre.TrackCard (
-                item.id, item.kind, item.title,
-                item.subtitle ?? "", item.thumbnail_url,
-                item.is_live, item.explicit);
-
-            string i_id = item.id;
-            uint64 i_dur = item.duration_secs;
-            string i_title = item.title;
-            string i_sub = item.subtitle ?? "";
-            string? i_thumb = item.thumbnail_url;
-            string i_kind = item.kind;
+            var card = new Timbre.TrackCard (item);
 
             card.clicked.connect (() => {
-                if (i_kind == "Song" || i_kind == "Video")
-                    page.track_selected (i_id, i_dur, i_title, i_sub, i_thumb);
+                if (item.kind.is_playable ())
+                    page.track_selected (item);
                 else
-                    page.collection_selected (i_id, i_kind, i_title, i_sub, i_thumb);
+                    page.collection_selected (item);
             });
 
             strip.append (card);

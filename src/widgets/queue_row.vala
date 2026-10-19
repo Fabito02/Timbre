@@ -115,7 +115,7 @@ namespace Timbre {
 
             this.current_item = queue_item;
             this.label_title.label = queue_item.track.title;
-            this.label_artist.label = queue_item.track.artist;
+            this.label_artist.label = queue_item.track.artists_text ();
 
             this.update_state ();
 

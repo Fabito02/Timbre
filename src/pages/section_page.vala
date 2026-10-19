@@ -17,8 +17,8 @@ namespace Timbre {
 
         private GLib.HashTable<string, bool> seen_ids;
 
-        public signal void track_selected (string id, uint64 duration, string title, string artist, string? cover);
-        public signal void collection_selected (string id, string type_name, string title, string subtitle, string? cover);
+        public signal void track_selected (MediaItem item);
+        public signal void collection_selected (MediaItem item);
 
         public SectionPage (Timbre.Player player,
                             string browse_id,
@@ -148,28 +148,18 @@ namespace Timbre {
 
             for (int i = 0; i < items.length; i++) {
                 var item = items.get (i);
-
                 if (item.id == null || item.id.length == 0) continue;
                 if (this.seen_ids.contains (item.id)) continue;
                 this.seen_ids.insert (item.id, true);
 
-                var card = new Timbre.TrackCard (
-                    item.id, item.kind, item.title,
-                    item.subtitle ?? "", item.thumbnail_url);
+                var card = new Timbre.TrackCard (item);
                 card.width_request = CARD_WIDTH;
 
-                string i_id = item.id;
-                uint64 i_dur = item.duration_secs;
-                string i_title = item.title;
-                string i_sub = item.subtitle ?? "";
-                string? i_thumb = item.thumbnail_url;
-                string i_kind = item.kind;
-
                 card.clicked.connect (() => {
-                    if (i_kind == "Song" || i_kind == "Video")
-                        this.track_selected (i_id, i_dur, i_title, i_sub, i_thumb);
+                    if (item.kind.is_playable ())
+                        this.track_selected (item);
                     else
-                        this.collection_selected (i_id, i_kind, i_title, i_sub, i_thumb);
+                        this.collection_selected (item);
                 });
 
                 this.wrap.append (card);

@@ -290,3 +290,7 @@ picture.image-placeholder {
     padding-left: 16px;
     padding-right: 16px;
 }
+
+.track_row {
+    padding: 6px;
+}
