@@ -766,7 +766,7 @@ namespace Timbre {
 
                     if (!this.queue.has_next ()
                         && this.queue.repeat_mode != Timbre.QueueManager.RepeatMode.ALL) {
-                        this.play_radio (this.current_track_id);
+                        this.play_radio (this.current_track_id, true);
                     }
 
                     return GLib.Source.REMOVE;
@@ -984,7 +984,7 @@ namespace Timbre {
             return true;
         }
 
-        public void play_radio (string id) {
+        public void play_radio (string id, bool increment) {
             if (this.radio_loading) return;
 
             if (id.length == 0) return;
@@ -1005,9 +1005,11 @@ namespace Timbre {
                     var tracks = this.parse_radio_tracks ((string) json);
                     Timbre.string_free (json);
 
-                    if (tracks.length > 0) {
+                    if (increment) {
                         tracks.remove_index (0);
                         this.queue.add_to_queue (tracks);
+                    } else {
+                        this.queue.play_list (tracks);
                     }
                     return GLib.Source.REMOVE;
                 });
