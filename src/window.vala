@@ -1034,6 +1034,12 @@ namespace Timbre {
             this.queue.add_to_queue (items);
         }
 
+        public void play_next (Timbre.TrackRow row) {
+            var items = new GenericArray<Timbre.Track> ();
+            items.add (row.media_item.to_track ());
+            this.queue.play_next (items);
+        }
+
         private GenericArray<Track> parse_radio_tracks (string json_str) {
             var tracks = new GenericArray<Track> ();
             try {

@@ -30,7 +30,7 @@ namespace Timbre {
 
             var section1 = new GLib.Menu ();
             section1.append ("Start Radio", "widget.radio");
-            section1.append ("Play Next",  "widget.add_next");
+            section1.append ("Play Next",  "widget.play_next");
             section1.append ("Add to Queue",   "widget.add_queue");
             menu.append_section (null, section1);
 
@@ -63,9 +63,12 @@ namespace Timbre {
             });
             this.actions.add_action (add_queue_action);
 
-            var remove_action = new GLib.SimpleAction ("remove", null);
-            remove_action.activate.connect (() => GLib.message ("remover"));
-            this.actions.add_action (remove_action);
+            var play_next = new GLib.SimpleAction ("play_next", null);
+            play_next.activate.connect (() => {
+                var win = this.get_root () as Timbre.Window;
+                if (win != null) win.play_next (this);
+            });
+            this.actions.add_action (play_next);
 
             this.insert_action_group ("widget", this.actions);
         }

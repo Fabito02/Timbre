@@ -78,6 +78,22 @@ namespace Timbre {
             this.queue_updated ();
         }
 
+        public void play_next (GenericArray<Track> new_tracks) {
+            if (this.length == 0 || this.current_index < 0) {
+                this.play_list (new_tracks);
+                return;
+            }
+
+            int insert_pos = this.current_index + 1;
+
+            for (int i = 0; i < new_tracks.length; i++) {
+                this.store.insert (insert_pos + i, new QueueItem (new_tracks.get (i), 0, false));
+            }
+
+            this.reindex ();
+            this.queue_updated ();
+        }
+
         public void play_single (Track track) {
             var single = new GenericArray<Track> ();
             single.add (track);
