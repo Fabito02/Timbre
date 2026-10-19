@@ -155,6 +155,9 @@ namespace Timbre.Services {
             this.queue.queue_updated.connect (() => {
                 this.emit_can_go_changed (this.queue.has_next (), this.queue.has_prev ());
             });
+            this.queue.repeat_changed.connect ((mode) => {
+                this.emit_loop_status_changed ();
+            });
 
             message ("mpris: registered at %s (%s)", BUS_NAME, OBJECT_PATH);
         }
@@ -208,7 +211,7 @@ namespace Timbre.Services {
                 this.player.seek (0.0);
                 return;
             }
-    
+
             this.queue.prev ();
         }
 
@@ -256,9 +259,40 @@ namespace Timbre.Services {
             }
         }
 
+        private void emit_loop_status_changed () {
+            var b = new VariantBuilder (new VariantType ("a{sv}"));
+            b.add ("{sv}", "LoopStatus", new Variant.string (this.loop_status));
+            this.emit_player_changed (b);
+        }
+
         public string loop_status {
-            owned get { return "None"; }
-            set { /* repeat not yet in Timbre */ }
+            owned get {
+                switch (this.queue.repeat_mode) {
+                    case Timbre.QueueManager.RepeatMode.ONE:  return "Track";
+                    case Timbre.QueueManager.RepeatMode.ALL:  return "Playlist";
+                    default:                                   return "None";
+                }
+            }
+            set {
+                Timbre.QueueManager.RepeatMode new_mode;
+                switch (value) {
+                    case "Track":
+                        new_mode = Timbre.QueueManager.RepeatMode.ONE;
+                        break;
+                    case "Playlist":
+                        new_mode = Timbre.QueueManager.RepeatMode.ALL;
+                        break;
+                    default:
+                        new_mode = Timbre.QueueManager.RepeatMode.OFF;
+                        break;
+                }
+            
+                if (this.queue.repeat_mode != new_mode) {
+                    this.queue.repeat_mode = new_mode;
+                    this.queue.repeat_changed (new_mode);
+                }
+                this.emit_loop_status_changed ();
+            }
         }
 
         public double rate { get { return 1.0; } set { } }
