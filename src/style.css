@@ -285,3 +285,8 @@ picture.image-placeholder {
 .fullscreen-img {
     border-radius: 20px;
 }
+
+.add-button {
+    padding-left: 16px;
+    padding-right: 16px;
+}

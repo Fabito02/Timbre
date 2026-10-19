@@ -297,8 +297,13 @@ template $TimbreWindow: Adw.ApplicationWindow {
               title: _("Search");
               icon-name: "edit-find-symbolic";
               visible: false;
-
-              child: $TimbreSearchPage search_page {};
+            
+              child: Adw.NavigationView search_view {
+                Adw.NavigationPage {
+                  title: "Search";
+                  child: $TimbreSearchPage search_page {};
+                }
+              };
             }
           };
 

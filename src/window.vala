@@ -59,6 +59,8 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.SearchEntry searchentry;
         [GtkChild] private unowned Adw.ViewStack main_stack;
         [GtkChild] private unowned Adw.NavigationView navigation_view;
+        [GtkChild] private unowned Adw.NavigationView library_view;
+        [GtkChild] private unowned Adw.NavigationView search_view;
         [GtkChild] private unowned Gtk.Revealer bottom_bar_revealer;
 
         [GtkChild] private unowned Adw.BottomSheet fullscreen_sheet;
@@ -76,6 +78,8 @@ namespace Timbre {
         private Timbre.Utils.ImageBinding cover_fullscreen_binding;
         private Timbre.LikeButton? bar_like_btn = null;
         public Timbre.Services.Mpris? mpris { get; private set; default = null; }
+
+        private string previous_tab = "home";
 
         private class TrackInfo {
             public LikeStatus status = LikeStatus.INDIFFERENT;
@@ -97,7 +101,26 @@ namespace Timbre {
             this.library_page.set_player (this.player);
             this.main_stack.visible_child_name = "home";
 
-            this.searchbar.key_capture_widget = this;
+            var key_ctrl = new Gtk.EventControllerKey ();
+            key_ctrl.propagation_phase = Gtk.PropagationPhase.CAPTURE;
+            key_ctrl.key_pressed.connect ((keyval, keycode, state) => {
+                if (this.searchbar.search_mode_enabled) return false;
+                if ((state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.SUPER_MASK)) != 0) return false;
+
+                var focused = this.get_focus ();
+                if (focused is Gtk.Editable || focused is Gtk.TextView) return false;
+
+                unichar c = (unichar) Gdk.keyval_to_unicode (keyval);
+                if (c != 0 && c.isprint ()) {
+                    this.searchbar.search_mode_enabled = true;
+                    this.searchentry.set_text (c.to_string ());
+                    this.searchentry.set_position (-1);
+                    this.searchentry.grab_focus ();
+                    return true;
+                }
+                return false;
+            });
+            ((Gtk.Widget)this).add_controller (key_ctrl);
 
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
             this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 512);
@@ -125,6 +148,16 @@ namespace Timbre {
                         return GLib.Source.REMOVE;
                     });
                 }
+            });
+
+            this.main_stack.notify["visible-child-name"].connect (() => {
+                if (this.main_stack.visible_child_name != "search") {
+                    this.previous_tab = this.main_stack.visible_child_name;
+                }
+                if (this.main_stack.visible_child_name == "library") {
+                    this.library_page.load_library_data (false);
+                }
+                this.update_back_button ();
             });
 
             this.close_request.connect (() => {
@@ -157,7 +190,7 @@ namespace Timbre {
 
             this.queue.shuffle_changed.connect ((enabled) => {
                 this.button_shuffle.active = enabled;
-                
+
                 if (enabled) {
                     this.button_shuffle.icon_name = "media-playlist-shuffle-symbolic";
                     this.button_shuffle.add_css_class ("accent");
@@ -232,10 +265,10 @@ namespace Timbre {
 
         private void open_collection (string id, string type_name,
                                       string title, string subtitle,
-                                      string? cover) {
+                                      string? cover, Adw.NavigationView? target_view = null) {
             string kind = type_name.down ();
             if (kind == "artist") {
-                this.open_artist (id, title);
+                this.open_artist (id, title, target_view);
                 return;
             }
             var page = new Timbre.CollectionPage (
@@ -243,23 +276,25 @@ namespace Timbre {
             page.play_collection.connect ((tracks, start_index) => {
                 this.queue.play_list (tracks, start_index);
             });
-            this.navigation_view.push (page);
+            var nav = target_view ?? this.navigation_view;
+            nav.push (page);
         }
 
-        public void open_artist (string channel_id, string? name) {
+        public void open_artist (string channel_id, string? name, Adw.NavigationView? target_view = null) {
             var page = new Timbre.ArtistPage (this.player, channel_id, name);
-            this.wire_artist_page (page);
-            this.navigation_view.push (page);
+            this.wire_artist_page (page, target_view);
+            var nav = target_view ?? this.navigation_view;
+            nav.push (page);
         }
 
-        private void wire_artist_page (Timbre.ArtistPage page) {
+        private void wire_artist_page (Timbre.ArtistPage page, Adw.NavigationView? target_view) {
             page.track_selected.connect ((id, duration, title, artist, cover) => {
                 this.queue.play_single (new Timbre.TrackItem.with_data (
                     id, title, artist, duration, cover));
             });
 
             page.collection_selected.connect ((id, type_name, title, subtitle, cover) => {
-                this.open_collection (id, type_name, title, subtitle, cover);
+                this.open_collection (id, type_name, title, subtitle, cover, target_view);
             });
 
             page.play_songs_requested.connect ((tracks, start_index, shuffle) => {
@@ -290,29 +325,50 @@ namespace Timbre {
                 });
 
                 sp.collection_selected.connect ((id, type_name, t, subtitle, cover) => {
-                    this.open_collection (id, type_name, t, subtitle, cover);
+                    this.open_collection (id, type_name, t, subtitle, cover, target_view);
                 });
 
-                this.navigation_view.push (sp);
+                var nav = target_view ?? this.navigation_view;
+                nav.push (sp);
             });
         }
 
         private void setup_navigation () {
             this.button_back.clicked.connect (() => {
-                this.navigation_view.pop ();
+                string current = this.main_stack.visible_child_name;
+                if (current == "search") {
+                    if (this.search_view.navigation_stack.get_n_items () > 1) {
+                        this.search_view.pop ();
+                    } else {
+                        this.searchbar.search_mode_enabled = false;
+                    }
+                } else if (current == "library") {
+                    if (this.searchbar.search_mode_enabled) {
+                        this.searchbar.search_mode_enabled = false;
+                    } else {
+                        this.library_view.pop ();
+                    }
+                } else {
+                    this.navigation_view.pop ();
+                }
             });
 
-            this.navigation_view.pushed.connect (() => {
-                this.button_back.visible = true;
-            });
-
+            this.navigation_view.pushed.connect (this.update_back_button);
             this.navigation_view.popped.connect (() => {
-                var stack = this.navigation_view.navigation_stack;
-                this.button_back.visible = (stack.get_n_items () > 1);
-
+                this.update_back_button ();
                 Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                 Timbre.Utils.trim_memory ();
             });
+
+            this.library_view.pushed.connect (this.update_back_button);
+            this.library_view.popped.connect (() => {
+                this.update_back_button ();
+                Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
+                Timbre.Utils.trim_memory ();
+            });
+
+            this.search_view.pushed.connect (this.update_back_button);
+            this.search_view.popped.connect (this.update_back_button);
 
             this.button_toggle_queue.toggled.connect (() => {
                 this.split_view.show_sidebar = this.button_toggle_queue.active;
@@ -328,7 +384,7 @@ namespace Timbre {
             });
 
             this.home_page.collection_selected.connect ((id, type_name, title, subtitle, cover) => {
-                this.open_collection (id, type_name, title, subtitle, cover);
+                this.open_collection (id, type_name, title, subtitle, cover, this.navigation_view);
             });
 
             this.home_page.track_selected.connect ((id, duration, title, artist, cover) => {
@@ -346,11 +402,32 @@ namespace Timbre {
                 });
 
                 page.collection_selected.connect ((id, type_name, t, subtitle, cover) => {
-                    this.open_collection (id, type_name, t, subtitle, cover);
+                    this.open_collection (id, type_name, t, subtitle, cover, this.navigation_view);
                 });
 
                 this.navigation_view.push (page);
             });
+
+            this.library_page.collection_selected.connect ((id, kind, title, subtitle, cover) => {
+                this.open_collection (id, kind, title, subtitle, cover, this.library_view);
+            });
+
+            this.library_page.artist_selected.connect ((id, name) => {
+                this.open_artist (id, name, this.library_view);
+            });
+        }
+
+        private void update_back_button () {
+            string current = this.main_stack.visible_child_name;
+            if (current == "library") {
+                this.button_back.visible = this.library_view.navigation_stack.get_n_items () > 1 || this.searchbar.search_mode_enabled;
+            } else if (current == "home") {
+                this.button_back.visible = this.navigation_view.navigation_stack.get_n_items () > 1;
+            } else if (current == "search") {
+                this.button_back.visible = this.search_view.navigation_stack.get_n_items () > 1 || this.searchbar.search_mode_enabled;
+            } else {
+                this.button_back.visible = false;
+            }
         }
 
         [GtkCallback]
@@ -467,14 +544,30 @@ namespace Timbre {
             });
 
             this.search_page.collection_selected.connect ((id, type_name, title, subtitle, cover) => {
-                this.open_collection (id, type_name, title, subtitle, cover);
-                this.searchbar.search_mode_enabled = false;
+                this.open_collection (id, type_name, title, subtitle, cover, this.search_view);
             });
 
             this.searchbar.notify["search-mode-enabled"].connect (() => {
-                bool on = this.searchbar.search_mode_enabled;
-                this.main_stack.visible_child_name = on ? "search" : "home";
+                if (this.searchbar.search_mode_enabled) {
+                    if (this.previous_tab == "library") {
+                        this.searchentry.grab_focus ();
+                    } else {
+                        this.main_stack.visible_child_name = "search";
+                        this.searchentry.grab_focus ();
+                    }
+                } else {
+                    if (this.previous_tab == "library") {
+                        this.library_page.filter_content ("");
+                    } else {
+                        this.main_stack.visible_child_name = this.previous_tab;
+                        this.search_page.clear ();
+                        while (this.search_view.navigation_stack.get_n_items () > 1) {
+                            this.search_view.pop ();
+                        }
+                    }
+                }
                 this.update_switcher_visibility ();
+                this.update_back_button ();
             });
 
             this.searchentry.search_changed.connect (() => {
@@ -484,6 +577,12 @@ namespace Timbre {
                 }
 
                 string query = this.searchentry.text.strip ();
+
+                if (this.previous_tab == "library") {
+                    this.library_page.filter_content (query);
+                    return;
+                }
+
                 if (query.length == 0) {
                     this.search_page.clear ();
                     return;

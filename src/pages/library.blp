@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $TimbreLibraryPage : Adw.NavigationPage {
+template $TimbreLibraryPage: Adw.NavigationPage {
   title: _("Library");
 
   Gtk.Stack stack {
@@ -9,15 +9,85 @@ template $TimbreLibraryPage : Adw.NavigationPage {
     vexpand: true;
 
     Gtk.StackPage {
+      name: "loading";
+
+      child: Gtk.ScrolledWindow {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        vexpand: true;
+
+        Adw.Clamp {
+          maximum-size: 1080;
+          tightening-threshold: 720;
+
+          Gtk.Box skeleton_box {
+            orientation: vertical;
+            spacing: 32;
+            margin-top: 32;
+            margin-bottom: 32;
+            margin-start: 18;
+            margin-end: 18;
+            vexpand: false;
+            valign: start;
+          }
+        }
+      };
+    }
+
+    Gtk.StackPage {
       name: "content";
 
-      child: Gtk.Box content_box {
-        orientation: vertical;
-        spacing: 24;
-        margin-top: 24;
-        margin-bottom: 24;
-        margin-start: 12;
-        margin-end: 12;
+      child: Overlay {
+        vexpand: true;
+        hexpand: true;
+
+        Gtk.ScrolledWindow feed_scroll {
+          hscrollbar-policy: never;
+          vscrollbar-policy: automatic;
+          vexpand: true;
+
+          Adw.Clamp {
+            maximum-size: 1080;
+            tightening-threshold: 720;
+
+            Gtk.Box content_box {
+              orientation: vertical;
+              spacing: 24;
+              margin-top: 24;
+              margin-bottom: 24;
+              margin-start: 18;
+              margin-end: 18;
+              vexpand: false;
+            }
+          }
+        }
+
+        [overlay]
+        Button {
+          icon-name: "view-fullscreen-symbolic";
+          valign: end;
+          halign: end;
+          margin-end: 20;
+          margin-bottom: 20;
+
+          styles [
+            "suggested-action",
+            "pill",
+            "add-button",
+          ]
+
+          child: Box {
+            Image {
+              icon-name: "list-add-symbolic";
+              pixel-size: 16;
+              margin-end: 8;
+            }
+
+            Label {
+              label: _("New Playlist");
+            }
+          };
+        }
       };
     }
 

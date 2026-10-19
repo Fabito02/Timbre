@@ -41,7 +41,6 @@ namespace Timbre {
         public void clear () {
             if (this.released) return;
             this.clear_results ();
-            this.stack.visible_child_name = "main";
         }
 
         public void show_loading () {
@@ -100,8 +99,7 @@ namespace Timbre {
             var videos = new GenericArray<SearchItem> ();
             var episodes = new GenericArray<SearchItem> ();
 
-            for (int i = 0; i < all.length; i++) {
-                var it = all.get (i);
+            foreach (var it in all) {
                 switch (it.kind) {
                     case "Song":     songs.add (it); break;
                     case "Artist":   artists.add (it); break;
@@ -184,6 +182,11 @@ namespace Timbre {
             s.id = id;
             s.title = this.json_str (obj, "title");
             s.item_type = this.json_str (obj, "item_type");
+            s.thumb = this.json_str (obj, "thumb");
+            s.duration = (uint64) this.json_int (obj, "duration_seconds");
+            s.like_status = parse_like_status (this.json_str (obj, "like_status"));
+            s.is_live = this.json_bool (obj, "is_live");
+            s.explicit = this.json_bool (obj, "explicit");
 
             var sb = new StringBuilder ();
             if (obj.has_member ("artists") && !obj.get_null_member ("artists")) {
@@ -217,17 +220,6 @@ namespace Timbre {
                     break;
             }
 
-            if (obj.has_member ("thumb") && !obj.get_null_member ("thumb"))
-                s.thumb = obj.get_string_member ("thumb");
-            if (obj.has_member ("duration_seconds") && !obj.get_null_member ("duration_seconds"))
-                s.duration = (uint64) obj.get_int_member ("duration_seconds");
-            if (obj.has_member ("like_status") && !obj.get_null_member ("like_status"))
-                s.like_status = parse_like_status (obj.get_string_member ("like_status"));
-            if (obj.has_member ("is_live") && !obj.get_null_member ("is_live"))
-                s.is_live = obj.get_boolean_member ("is_live");
-            if (obj.has_member ("explicit") && !obj.get_null_member ("explicit"))
-                s.explicit = obj.get_boolean_member ("explicit");
-
             return s;
         }
 
@@ -235,6 +227,16 @@ namespace Timbre {
             if (!obj.has_member (key)) return "";
             if (obj.get_null_member (key)) return "";
             return obj.get_string_member (key);
+        }
+
+        private int json_int (Json.Object obj, string key) {
+            if (!obj.has_member (key) || obj.get_null_member (key)) return 0;
+            return (int) obj.get_int_member (key);
+        }
+
+        private bool json_bool (Json.Object obj, string key) {
+            if (!obj.has_member (key) || obj.get_null_member (key)) return false;
+            return obj.get_boolean_member (key);
         }
 
         private Gtk.Box make_tab (Adw.ToggleGroup group, string label, string icon, string id) {
@@ -271,8 +273,7 @@ namespace Timbre {
             list.add_css_class ("boxed-list");
             list.add_css_class ("songs-list");
 
-            for (int i = 0; i < items.length; i++) {
-                var item = items.get (i);
+            foreach (var item in items) {
                 var row = new Timbre.TrackRow.simple (
                     item.kind, item.id, item.title, item.subtitle,
                     item.duration, item.thumb,
