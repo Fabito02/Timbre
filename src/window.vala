@@ -335,22 +335,7 @@ namespace Timbre {
 
         private void setup_navigation () {
             this.button_back.clicked.connect (() => {
-                string current = this.main_stack.visible_child_name;
-                if (current == "search") {
-                    if (this.search_view.navigation_stack.get_n_items () > 1) {
-                        this.search_view.pop ();
-                    } else {
-                        this.searchbar.search_mode_enabled = false;
-                    }
-                } else if (current == "library") {
-                    if (this.searchbar.search_mode_enabled) {
-                        this.searchbar.search_mode_enabled = false;
-                    } else {
-                        this.library_view.pop ();
-                    }
-                } else {
-                    this.navigation_view.pop ();
-                }
+                this.navigation_view.pop ();
             });
 
             this.navigation_view.pushed.connect (this.update_back_button);
@@ -420,11 +405,11 @@ namespace Timbre {
         private void update_back_button () {
             string current = this.main_stack.visible_child_name;
             if (current == "library") {
-                this.button_back.visible = this.library_view.navigation_stack.get_n_items () > 1 || this.searchbar.search_mode_enabled;
+                this.button_back.visible = this.library_view.navigation_stack.get_n_items () > 1;
             } else if (current == "home") {
                 this.button_back.visible = this.navigation_view.navigation_stack.get_n_items () > 1;
             } else if (current == "search") {
-                this.button_back.visible = this.search_view.navigation_stack.get_n_items () > 1 || this.searchbar.search_mode_enabled;
+                this.button_back.visible = this.search_view.navigation_stack.get_n_items () > 1;
             } else {
                 this.button_back.visible = false;
             }
