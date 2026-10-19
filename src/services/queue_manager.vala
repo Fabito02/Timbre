@@ -3,8 +3,14 @@ namespace Timbre {
         public GLib.ListStore store { get; private set; }
         public int current_index { get; private set; default = -1; }
 
+        public enum RepeatMode { OFF, ALL, ONE }
+        public RepeatMode repeat_mode = RepeatMode.OFF;
+
         public signal void track_changed (TrackItem track);
         public signal void queue_updated ();
+        public signal void repeat_changed (RepeatMode mode);
+        public signal void shuffle_changed (bool enabled);
+        public signal void queue_ended ();
 
         public QueueManager () {
             this.store = new GLib.ListStore (typeof (QueueItem));
@@ -102,9 +108,23 @@ namespace Timbre {
         }
 
         public void next () {
-            if (!this.has_next ()) return;
-            this.current_index++;
-            this.emit_current ();
+            if (this.repeat_mode == RepeatMode.ONE) {
+                this.track_changed (this.get_track_at (this.current_index));
+                return;
+            }
+
+            if (this.has_next ()) {
+                this.current_index++;
+                this.emit_current ();
+                return;
+            }
+
+            if (this.repeat_mode == RepeatMode.ALL) {
+                this.current_index = 0;
+                this.emit_current ();
+            } else {
+                this.queue_ended ();
+            }
         }
 
         public void prev () {
@@ -122,6 +142,16 @@ namespace Timbre {
             for (uint i = 0; i < this.store.get_n_items (); i++) {
                 ((QueueItem) this.store.get_item (i)).is_playing = (int) i == this.current_index;
             }
+        }
+
+        public void cycle_repeat () {
+            switch (this.repeat_mode) {
+                case RepeatMode.OFF:  this.repeat_mode = RepeatMode.ALL; break;
+                case RepeatMode.ALL:  this.repeat_mode = RepeatMode.ONE; break;
+                case RepeatMode.ONE:  this.repeat_mode = RepeatMode.OFF; break;
+            }
+
+            this.repeat_changed (this.repeat_mode);
         }
     }
 }

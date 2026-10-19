@@ -71,5 +71,17 @@
             alias="icons/scalable/actions/radio-wave-symbolic.svg"
             preprocess="xml-stripblanks"
         >../data/icons/hicolor/actions/radio-wave-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/media-playlist-no-repeat-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/media-playlist-no-repeat-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/media-playlist-repeat-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/media-playlist-repeat-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/song-repeat-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/song-repeat-symbolic.svg</file>
   </gresource>
 </gresources>

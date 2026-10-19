@@ -43,6 +43,7 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.ListView queue_list;
         [GtkChild] private unowned Gtk.Label label_queue_count;
         [GtkChild] private unowned Gtk.Button button_clear_queue;
+        [GtkChild] private unowned Gtk.Button button_repeat;
 
         [GtkChild] private unowned Gtk.Label label_current_title;
         [GtkChild] private unowned Gtk.Label label_current_artist;
@@ -128,6 +129,30 @@ namespace Timbre {
             this.close_request.connect (() => {
                 this.finish_recording ();
                 return false;
+            });
+
+            this.queue.repeat_changed.connect ((mode) => {
+                switch (mode) {
+                    case Timbre.QueueManager.RepeatMode.OFF:
+                        this.button_repeat.icon_name = "media-playlist-no-repeat-symbolic";
+                        this.button_repeat.remove_css_class ("accent");
+                        this.button_repeat.tooltip_text = _("Repeat: off");
+                        break;
+                    case Timbre.QueueManager.RepeatMode.ALL:
+                        this.button_repeat.icon_name = "media-playlist-repeat-symbolic";
+                        this.button_repeat.add_css_class ("accent");
+                        this.button_repeat.tooltip_text = _("Repeat: all");
+                        break;
+                    case Timbre.QueueManager.RepeatMode.ONE:
+                        this.button_repeat.icon_name = "song-repeat-symbolic";
+                        this.button_repeat.add_css_class ("accent");
+                        this.button_repeat.tooltip_text = _("Repeat: one");
+                        break;
+                }
+            });
+
+            this.button_repeat.clicked.connect (() => {
+                this.queue.cycle_repeat ();
             });
         }
 
@@ -632,7 +657,8 @@ namespace Timbre {
                         bottom_bar_revealer.reveal_child = true;
                     }
 
-                    if (!this.queue.has_next ()) {
+                    if (!this.queue.has_next ()
+                        && this.queue.repeat_mode != Timbre.QueueManager.RepeatMode.ALL) {
                         this.play_radio_from_current ();
                     }
 

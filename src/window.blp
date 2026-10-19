@@ -88,7 +88,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
           }
 
           Button button_repeat {
-            icon-name: "media-playlist-repeat-symbolic";
+            icon-name: "media-playlist-no-repeat-symbolic";
             tooltip-text: _("Repeat");
 
             styles [
@@ -309,7 +309,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
             Revealer bottom_bar_revealer {
               reveal-child: false;
               transition-type: fade_slide_up;
-              transition-duration: 350;
+              transition-duration: 300;
 
               Box {
                 orientation: vertical;
