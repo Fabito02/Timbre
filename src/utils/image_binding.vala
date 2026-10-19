@@ -60,7 +60,11 @@ namespace Timbre.Utils {
                 return;
             }
             if (this.picture_destroyed) return;
-            if (this.current_url == url) return;
+
+            if (this.current_url == url && this.loaded && this.picture != null && this.picture.paintable != null) {
+                return;
+            }
+
             this.current_url = url;
             this.loaded = false;
 
@@ -72,7 +76,7 @@ namespace Timbre.Utils {
             var pic = this.picture;
             if (pic == null) return;
 
-            if (url == null || url.strip ().length == 0) {
+            if (url.strip ().length == 0) {
                 this.apply_placeholder ();
                 return;
             }
@@ -97,9 +101,8 @@ namespace Timbre.Utils {
             }
 
             this.apply_placeholder ();
-
             this.try_hook ();
-            this.schedule_check ();
+            this.start_fetch (url);
         }
 
         private void schedule_check () {

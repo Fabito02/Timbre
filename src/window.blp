@@ -158,8 +158,9 @@ template $TimbreWindow: Adw.ApplicationWindow {
 
     content: Adw.BottomSheet fullscreen_sheet {
       full-width: true;
+      vexpand: true;
 
-      sheet: Adw.ToolbarView {
+      sheet: Adw.ToolbarView fullscreen_sheet_content {
         hexpand: true;
         vexpand: true;
 

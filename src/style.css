@@ -83,6 +83,10 @@ scale.playback-bar:hover slider {
     opacity: 1;
 }
 
+button.no-hover:hover {
+    background-color: transparent;
+}
+
 .play-btn {
     padding: 6px 14px;
 }
@@ -93,7 +97,9 @@ scale.playback-bar:hover slider {
     border-radius: 8px;
 }
 
-.row-cover-img, .cover-bar-img, .home-speed-cover {
+.row-cover-img,
+.cover-bar-img,
+.home-speed-cover {
     border-radius: 8px;
     background-color: #00000060;
 }
@@ -228,7 +234,7 @@ picture.image-placeholder {
 }
 
 .live-overlay {
-    background-color: #ED333B;
+    background-color: #ed333b;
     padding: 4px 6px;
     border-radius: 8px;
 }
@@ -259,15 +265,15 @@ picture.image-placeholder {
 }
 
 .banner-scrim {
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    alpha(var(--window-bg-color), 0.05) 15%,
-    alpha(var(--window-bg-color), 0.2) 35%,
-    alpha(var(--window-bg-color), 0.5) 60%,
-    alpha(var(--window-bg-color), 0.8) 82%,
-    var(--window-bg-color) 100%
-  );
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        alpha(var(--window-bg-color), 0.05) 15%,
+        alpha(var(--window-bg-color), 0.2) 35%,
+        alpha(var(--window-bg-color), 0.5) 60%,
+        alpha(var(--window-bg-color), 0.8) 82%,
+        var(--window-bg-color) 100%
+    );
 }
 
 /* fullscreen player */
@@ -277,5 +283,4 @@ picture.image-placeholder {
 }
 
 .fullscreen-img {
-    
 }

@@ -58,7 +58,9 @@ namespace Timbre {
         [GtkChild] private unowned Adw.ViewStack main_stack;
         [GtkChild] private unowned Adw.NavigationView navigation_view;
         [GtkChild] private unowned Gtk.Revealer bottom_bar_revealer;
+
         [GtkChild] private unowned Adw.BottomSheet fullscreen_sheet;
+        [GtkChild] private unowned Adw.ToolbarView fullscreen_sheet_content;
 
         [GtkChild] private unowned Adw.ViewSwitcher switcher;
         [GtkChild] private unowned Adw.ViewSwitcherBar switcher_bar;
@@ -109,8 +111,17 @@ namespace Timbre {
             this.setup_mpris ();
 
             this.fullscreen_sheet.notify["open"].connect (() => {
-                if (!this.fullscreen_sheet.open) {
+                if (this.fullscreen_sheet.open) {
+                    if (this.pending_track != null) {
+                        this.cover_fullscreen_binding.load (this.pending_track.thumbnail_url);
+                    }
+                } else {
                     this.bottom_bar_revealer.reveal_child = true;
+
+                    GLib.Idle.add (() => {
+                        this.fullscreen_sheet_content.height_request = -1;
+                        return GLib.Source.REMOVE;
+                    });
                 }
             });
 
@@ -118,6 +129,14 @@ namespace Timbre {
                 this.finish_recording ();
                 return false;
             });
+        }
+
+        public override void size_allocate (int width, int height, int baseline) {
+            base.size_allocate (width, height, baseline);
+
+            if (this.fullscreen_sheet.open) {
+                this.fullscreen_sheet_content.height_request = height;
+            }
         }
 
         public void open_preferences () {
@@ -243,7 +262,7 @@ namespace Timbre {
             this.navigation_view.popped.connect (() => {
                 var stack = this.navigation_view.navigation_stack;
                 this.button_back.visible = (stack.get_n_items () > 1);
-    
+
                 Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                 Timbre.Utils.trim_memory ();
             });
@@ -290,14 +309,15 @@ namespace Timbre {
         [GtkCallback]
         public void open_fullscreen_clicked () {
             this.bottom_bar_revealer.reveal_child = false;
-        
+
             if (this.pending_track != null) {
                 this.cover_fullscreen_binding.load (this.pending_track.thumbnail_url);
             }
-        
+
+            this.fullscreen_sheet_content.height_request = this.get_height();
             this.fullscreen_sheet.open = true;
         }
-        
+
         [GtkCallback]
         public void close_fullscreen_clicked () {
             this.fullscreen_sheet.open = false;
@@ -506,7 +526,9 @@ namespace Timbre {
                     if (json != null) Timbre.string_free (json);
                     if (error != null) Timbre.string_free (error);
                     this.start_playback (track, dur);
-                    bottom_bar_revealer.reveal_child = true;
+                    if (!this.fullscreen_sheet.open) {
+                        bottom_bar_revealer.reveal_child = true;
+                    }
                     return GLib.Source.REMOVE;
                 });
             });
@@ -606,12 +628,14 @@ namespace Timbre {
                         this.fetch_track_metadata (track_id, my_fetch_gen);
                     }
 
-                    bottom_bar_revealer.reveal_child = true;
-                    
+                    if (!this.fullscreen_sheet.open) {
+                        bottom_bar_revealer.reveal_child = true;
+                    }
+
                     if (!this.queue.has_next ()) {
                         this.play_radio_from_current ();
                     }
-                    
+
                     return GLib.Source.REMOVE;
                 });
             });
