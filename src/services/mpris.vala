@@ -158,6 +158,9 @@ namespace Timbre.Services {
             this.queue.repeat_changed.connect ((mode) => {
                 this.emit_loop_status_changed ();
             });
+            this.queue.shuffle_changed.connect ((mode) => {
+                this.emit_shuffle_changed ();
+            });
 
             message ("mpris: registered at %s (%s)", BUS_NAME, OBJECT_PATH);
         }
@@ -265,6 +268,12 @@ namespace Timbre.Services {
             this.emit_player_changed (b);
         }
 
+        private void emit_shuffle_changed () {
+            var b = new VariantBuilder (new VariantType ("a{sv}"));
+            b.add ("{sv}", "Shuffle", new Variant.boolean (this.shuffle));
+            this.emit_player_changed (b);
+        }
+
         public string loop_status {
             owned get {
                 switch (this.queue.repeat_mode) {
@@ -286,7 +295,7 @@ namespace Timbre.Services {
                         new_mode = Timbre.QueueManager.RepeatMode.OFF;
                         break;
                 }
-            
+
                 if (this.queue.repeat_mode != new_mode) {
                     this.queue.repeat_mode = new_mode;
                     this.queue.repeat_changed (new_mode);
@@ -296,7 +305,15 @@ namespace Timbre.Services {
         }
 
         public double rate { get { return 1.0; } set { } }
-        public bool shuffle { get { return false; } set { } }
+        public bool shuffle {
+            get { return this.queue._shuffle; }
+            set {
+                if (this.queue._shuffle != value) {
+                    this.queue.set_shuffle (value);
+                    this.emit_shuffle_changed ();
+                }
+            }
+        }
 
         public HashTable<string, Variant> metadata {
             owned get {

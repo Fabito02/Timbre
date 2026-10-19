@@ -44,6 +44,7 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Label label_queue_count;
         [GtkChild] private unowned Gtk.Button button_clear_queue;
         [GtkChild] private unowned Gtk.Button button_repeat;
+        [GtkChild] private unowned Gtk.ToggleButton button_shuffle;
 
         [GtkChild] private unowned Gtk.Label label_current_title;
         [GtkChild] private unowned Gtk.Label label_current_artist;
@@ -136,23 +137,44 @@ namespace Timbre {
                     case Timbre.QueueManager.RepeatMode.OFF:
                         this.button_repeat.icon_name = "media-playlist-no-repeat-symbolic";
                         this.button_repeat.remove_css_class ("accent");
+                        this.button_repeat.add_css_class ("flat");
                         this.button_repeat.tooltip_text = _("Repeat: off");
                         break;
                     case Timbre.QueueManager.RepeatMode.ALL:
                         this.button_repeat.icon_name = "media-playlist-repeat-symbolic";
                         this.button_repeat.add_css_class ("accent");
+                        this.button_repeat.remove_css_class ("flat");
                         this.button_repeat.tooltip_text = _("Repeat: all");
                         break;
                     case Timbre.QueueManager.RepeatMode.ONE:
                         this.button_repeat.icon_name = "song-repeat-symbolic";
                         this.button_repeat.add_css_class ("accent");
+                        this.button_repeat.remove_css_class ("flat");
                         this.button_repeat.tooltip_text = _("Repeat: one");
                         break;
                 }
             });
 
+            this.queue.shuffle_changed.connect ((enabled) => {
+                this.button_shuffle.active = enabled;
+                
+                if (enabled) {
+                    this.button_shuffle.icon_name = "media-playlist-shuffle-symbolic";
+                    this.button_shuffle.add_css_class ("accent");
+                    this.button_shuffle.tooltip_text = _("Unshuffle");
+                } else {
+                    this.button_shuffle.icon_name = "media-playlist-consecutive-symbolic";
+                    this.button_shuffle.remove_css_class ("accent");
+                    this.button_shuffle.tooltip_text = _("Shuffle");
+                }
+            });
+
             this.button_repeat.clicked.connect (() => {
                 this.queue.cycle_repeat ();
+            });
+
+            this.button_shuffle.clicked.connect (() => {
+                this.queue.set_shuffle (!this.queue._shuffle);
             });
         }
 
