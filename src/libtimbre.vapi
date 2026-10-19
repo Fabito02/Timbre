@@ -103,15 +103,6 @@ namespace Timbre {
         [CCode (cname = "timbre_player_get_library_subscriptions")]
         public bool get_library_subscriptions ([CCode (scope = "async")] JsonCallback cb);
 
-        [CCode (cname = "timbre_player_get_uploads_songs")]
-        public bool get_uploads_songs ([CCode (scope = "async")] JsonCallback cb);
-
-        [CCode (cname = "timbre_player_get_uploads_albums")]
-        public bool get_uploads_albums ([CCode (scope = "async")] JsonCallback cb);
-
-        [CCode (cname = "timbre_player_get_uploads_artists")]
-        public bool get_uploads_artists ([CCode (scope = "async")] JsonCallback cb);
-
         [CCode (cname = "timbre_player_get_history")]
         public bool get_history ([CCode (scope = "async")] JsonCallback cb);
 

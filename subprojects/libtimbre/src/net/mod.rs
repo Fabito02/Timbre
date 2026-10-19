@@ -15,6 +15,5 @@ pub mod potoken;
 pub mod search;
 pub mod session;
 pub mod stream;
-pub mod uploads;
 
 pub use error::NetError;

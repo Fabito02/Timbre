@@ -101,12 +101,6 @@ bool timbre_player_get_library_albums(TimbrePlayerHandle *h, TimbreCallback cb,
                                       void *ud);
 bool timbre_player_get_library_subscriptions(TimbrePlayerHandle *h,
                                              TimbreCallback cb, void *ud);
-bool timbre_player_get_uploads_songs(TimbrePlayerHandle *h, TimbreCallback cb,
-                                     void *ud);
-bool timbre_player_get_uploads_albums(TimbrePlayerHandle *h, TimbreCallback cb,
-                                      void *ud);
-bool timbre_player_get_uploads_artists(TimbrePlayerHandle *h, TimbreCallback cb,
-                                       void *ud);
 bool timbre_player_get_history(TimbrePlayerHandle *h, TimbreCallback cb,
                                void *ud);
 

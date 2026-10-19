@@ -810,21 +810,6 @@ endpoint_json!(timbre_player_get_library_subscriptions, |ctx| {
     library::library_subscriptions(api).await
 });
 
-endpoint_json!(timbre_player_get_uploads_songs, |ctx| {
-    let api = ctx.session.api();
-    playlists::get_upload_songs(&*api).await
-});
-
-endpoint_json!(timbre_player_get_uploads_albums, |ctx| {
-    let api = ctx.session.api();
-    library::upload_albums(api).await
-});
-
-endpoint_json!(timbre_player_get_uploads_artists, |ctx| {
-    let api = ctx.session.api();
-    library::upload_artists(api).await
-});
-
 endpoint_json!(timbre_player_get_history, |ctx| {
     let api = ctx.session.api();
     history::get_history(api).await
