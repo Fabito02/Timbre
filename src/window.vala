@@ -54,8 +54,9 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Box live_widget;
         [GtkChild] private unowned Gtk.Box time_labels;
 
+        [GtkChild] private unowned Adw.NavigationView root_nav;
+        [GtkChild] private unowned Adw.HeaderBar header_bar;
         [GtkChild] private unowned Gtk.SearchBar searchbar;
-        [GtkChild] private unowned Gtk.Button button_back;
         [GtkChild] private unowned Gtk.SearchEntry searchentry;
         [GtkChild] private unowned Adw.ViewStack main_stack;
         [GtkChild] private unowned Adw.NavigationView navigation_view;
@@ -157,7 +158,6 @@ namespace Timbre {
                 if (this.main_stack.visible_child_name == "library") {
                     this.library_page.load_library_data (false);
                 }
-                this.update_back_button ();
             });
 
             this.close_request.connect (() => {
@@ -287,15 +287,15 @@ namespace Timbre {
             page.play_collection.connect ((tracks, start_index) => {
                 this.queue.play_list (tracks, start_index);
             });
-            var nav = target_view ?? this.navigation_view;
-            nav.push (page);
+
+            this.root_nav.push (page);
         }
 
         public void open_artist (string channel_id, string? name, Adw.NavigationView? target_view = null) {
             var page = new Timbre.ArtistPage (this.player, channel_id, name);
             this.wire_artist_page (page, target_view);
-            var nav = target_view ?? this.navigation_view;
-            nav.push (page);
+
+            this.root_nav.push (page);
         }
 
         private void wire_artist_page (Timbre.ArtistPage page, Adw.NavigationView? target_view) {
@@ -339,32 +339,19 @@ namespace Timbre {
                         item.title, item.subtitle_text (), item.thumb, target_view);
                 });
 
-                var nav = target_view ?? this.navigation_view;
-                nav.push (sp);
+                this.root_nav.push (sp);
             });
         }
 
         private void setup_navigation () {
-            this.button_back.clicked.connect (() => {
-                this.navigation_view.pop ();
-            });
-
-            this.navigation_view.pushed.connect (this.update_back_button);
-            this.navigation_view.popped.connect (() => {
-                this.update_back_button ();
+            this.root_nav.pushed.connect (() => {
                 Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                 Timbre.Utils.trim_memory ();
             });
-
-            this.library_view.pushed.connect (this.update_back_button);
-            this.library_view.popped.connect (() => {
-                this.update_back_button ();
+            this.root_nav.popped.connect (() => {
                 Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                 Timbre.Utils.trim_memory ();
             });
-
-            this.search_view.pushed.connect (this.update_back_button);
-            this.search_view.popped.connect (this.update_back_button);
 
             this.button_toggle_queue.toggled.connect (() => {
                 this.split_view.show_sidebar = this.button_toggle_queue.active;
@@ -381,7 +368,7 @@ namespace Timbre {
 
             this.home_page.collection_selected.connect ((item) => {
                 this.open_collection (item.id, kind_to_lower (item.kind),
-                    item.title, item.subtitle_text (), item.thumb, this.navigation_view);
+                    item.title, item.subtitle_text (), item.thumb);
             });
 
             this.home_page.track_selected.connect ((item) => {
@@ -398,33 +385,20 @@ namespace Timbre {
 
                 page.collection_selected.connect ((item) => {
                     this.open_collection (item.id, kind_to_lower (item.kind),
-                        item.title, item.subtitle_text (), item.thumb, this.navigation_view);
+                        item.title, item.subtitle_text (), item.thumb);
                 });
 
-                this.navigation_view.push (page);
+                this.root_nav.push (page);
             });
 
             this.library_page.collection_selected.connect ((item) => {
                 this.open_collection (item.id, kind_to_lower (item.kind),
-                    item.title, item.subtitle_text (), item.thumb, this.library_view);
+                    item.title, item.subtitle_text (), item.thumb);
             });
 
             this.library_page.artist_selected.connect ((id, name) => {
-                this.open_artist (id, name, this.library_view);
+                this.open_artist (id, name);
             });
-        }
-
-        private void update_back_button () {
-            string current = this.main_stack.visible_child_name;
-            if (current == "library") {
-                this.button_back.visible = this.library_view.navigation_stack.get_n_items () > 1;
-            } else if (current == "home") {
-                this.button_back.visible = this.navigation_view.navigation_stack.get_n_items () > 1;
-            } else if (current == "search") {
-                this.button_back.visible = this.search_view.navigation_stack.get_n_items () > 1;
-            } else {
-                this.button_back.visible = false;
-            }
         }
 
         [GtkCallback]
@@ -541,7 +515,7 @@ namespace Timbre {
 
             this.search_page.collection_selected.connect ((item) => {
                 this.open_collection (item.id, kind_to_lower (item.kind),
-                    item.title, item.subtitle_text (), item.thumb, this.search_view);
+                    item.title, item.subtitle_text (), item.thumb);
             });
 
             this.searchbar.notify["search-mode-enabled"].connect (() => {
@@ -564,7 +538,6 @@ namespace Timbre {
                     }
                 }
                 this.update_switcher_visibility ();
-                this.update_back_button ();
             });
 
             this.searchentry.search_changed.connect (() => {
@@ -589,6 +562,15 @@ namespace Timbre {
                     this.search_debounce_id = 0;
                     this.execute_search (query);
                     return GLib.Source.REMOVE;
+                });
+
+                GLib.Timeout.add_seconds (30, () => {
+                    if (this.main_stack.visible_child_name == "home"
+                        && this.queue.current_index < 0
+                        && this.player.get_state () == 0) {
+                        Timbre.Utils.trim_memory ();
+                    }
+                    return GLib.Source.CONTINUE;
                 });
             });
         }
@@ -1037,29 +1019,11 @@ namespace Timbre {
         }
 
         public void open_collection_from_row (string id, string type_name, string title, string subtitle, string? cover) {
-            string current = this.main_stack.visible_child_name;
-            Adw.NavigationView nav = this.navigation_view;
-
-            if (current == "library") {
-                nav = this.library_view;
-            } else if (current == "search") {
-                nav = this.search_view;
-            }
-
-            this.open_collection (id, type_name, title, subtitle, cover, nav);
+            this.open_collection (id, type_name, title, subtitle, cover, this.root_nav);
         }
 
         public void open_artist_from_row (string channel_id, string? name) {
-            string current = this.main_stack.visible_child_name;
-            Adw.NavigationView nav = this.navigation_view;
-
-            if (current == "library") {
-                nav = this.library_view;
-            } else if (current == "search") {
-                nav = this.search_view;
-            }
-
-            this.open_artist (channel_id, name, nav);
+            this.open_artist (channel_id, name, this.root_nav);
         }
 
         private GenericArray<Track> parse_radio_tracks (string json_str) {

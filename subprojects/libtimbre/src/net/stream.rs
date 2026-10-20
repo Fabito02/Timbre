@@ -239,7 +239,7 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
     if let Some(home) = std::env::var_os("HOME") {
         candidates.push(PathBuf::from(home).join(".cargo/bin").join(name));
     }
-    candidates.push(PathBuf::from("/usr/lib/mixtapes/bin").join(name));
+    candidates.push(PathBuf::from("/usr/lib/timbre/bin").join(name));
     candidates.push(PathBuf::from("/usr/local/bin").join(name));
     candidates.push(PathBuf::from("/usr/bin").join(name));
     candidates.into_iter().find(|p| p.is_file())
