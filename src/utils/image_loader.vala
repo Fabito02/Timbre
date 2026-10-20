@@ -26,7 +26,6 @@ namespace Timbre.Utils {
         private const int TRIM_INTERVAL_SEC = 15;
 
         private GLib.HashTable<string, CacheEntry> cache;
-        private GLib.Queue<string> lru_order;
         private uint trim_timer_id = 0;
 
         private Soup.Session session;
@@ -34,8 +33,7 @@ namespace Timbre.Utils {
         private string? auth_cookie = null;
 
         private ImageLoader () {
-            this.cache     = new GLib.HashTable<string, CacheEntry> (str_hash, str_equal);
-            this.lru_order = new GLib.Queue<string> ();
+            this.cache = new GLib.HashTable<string, CacheEntry> (str_hash, str_equal);
 
             this.session = new Soup.Session ();
             this.session.user_agent = "Mozilla/5.0 (X11; Linux x86_64) Timbre/0.1";
@@ -54,8 +52,6 @@ namespace Timbre.Utils {
             var entry = this.cache.lookup (key);
             if (entry == null) return null;
             entry.last_access_usec = GLib.get_monotonic_time ();
-            this.lru_order.remove (key);
-            this.lru_order.push_tail (key);
             return entry.texture;
         }
 
@@ -65,33 +61,50 @@ namespace Timbre.Utils {
             return (int64) w * h * 4;
         }
 
+        private void evict_oldest () {
+            string? oldest_key = null;
+            int64 oldest_ts = int64.MAX;
+
+            var iter = GLib.HashTableIter<string, CacheEntry> (this.cache);
+            string key;
+            CacheEntry entry;
+            while (iter.next (out key, out entry)) {
+                if (entry.last_access_usec < oldest_ts) {
+                    oldest_ts = entry.last_access_usec;
+                    oldest_key = key;
+                }
+            }
+
+            if (oldest_key != null) {
+                var old = this.cache.lookup (oldest_key);
+                if (old != null) {
+                    this.current_cache_bytes -= texture_bytes (old.texture);
+                }
+                this.cache.remove (oldest_key);
+            }
+        }
+
         private void store (string key, Gdk.Texture tex) {
             int64 now = GLib.get_monotonic_time ();
             int64 bytes = texture_bytes (tex);
 
             if (this.cache.contains (key)) {
                 var old = this.cache.lookup (key);
-                this.current_cache_bytes -= texture_bytes (old.texture);
+                if (old != null) {
+                    this.current_cache_bytes -= texture_bytes (old.texture);
+                }
                 this.cache.replace (key, new CacheEntry (tex, now));
-                this.lru_order.remove (key);
-                this.lru_order.push_tail (key);
                 this.current_cache_bytes += bytes;
                 return;
             }
 
             while ((this.current_cache_bytes + bytes > HARD_MEMORY_LIMIT
                     || this.cache.size () >= MAX_TEXTURE_CACHE)
-                   && !this.lru_order.is_empty ()) {
-                var oldest = this.lru_order.pop_head ();
-                var old = this.cache.lookup (oldest);
-                if (old != null) {
-                    this.current_cache_bytes -= texture_bytes (old.texture);
-                    this.cache.remove (oldest);
-                }
+                   && this.cache.size () > 0) {
+                this.evict_oldest ();
             }
 
             this.cache.insert (key, new CacheEntry (tex, now));
-            this.lru_order.push_tail (key);
             this.current_cache_bytes += bytes;
             this.schedule_trim ();
         }
@@ -105,7 +118,6 @@ namespace Timbre.Utils {
                     this.current_cache_bytes -= texture_bytes (old.texture);
                 }
                 this.cache.remove (key);
-                this.lru_order.remove (key);
             }
         }
 
@@ -140,7 +152,6 @@ namespace Timbre.Utils {
                     this.current_cache_bytes -= texture_bytes (old.texture);
                 }
                 this.cache.remove (k);
-                this.lru_order.remove (k);
             }
 
             if (this.cache.size () > 0) {
@@ -149,14 +160,12 @@ namespace Timbre.Utils {
         }
 
         public void shrink_to (int target) {
-            while (this.cache.size () > target
-                   && !this.lru_order.is_empty ()) {
-                var oldest = this.lru_order.pop_head ();
-                var old = this.cache.lookup (oldest);
-                if (old != null) {
-                    this.current_cache_bytes -= texture_bytes (old.texture);
+            while (this.cache.size () > target) {
+                int before = (int) this.cache.size ();
+                this.evict_oldest ();
+                if ((int) this.cache.size () == before) {
+                    break;
                 }
-                this.cache.remove (oldest);
             }
         }
 
@@ -180,7 +189,7 @@ namespace Timbre.Utils {
             int effective_scale = scale_factor < 1 ? 1 : scale_factor;
 
             string upgraded = get_high_res_url (url, target_size, effective_scale);
-            
+
             string key = "%s@%dx%d".printf (upgraded, target_size, effective_scale);
 
             var cached = this.lookup (key);
@@ -209,7 +218,7 @@ namespace Timbre.Utils {
         ) {
             try {
                 GLib.Bytes? blob = null;
-        
+
                 if (url.has_prefix ("file://")) {
                     string path = url.substring (7);
                     int q = path.index_of_char ('?');
@@ -226,35 +235,35 @@ namespace Timbre.Utils {
                         blob = yield this.session.send_and_read_async (
                             msg, Priority.DEFAULT, cancel);
                         if (msg.status_code != 200) return null;
-                        
+
                         this.write_disk_cache (url, blob);
                     }
                 }
-        
+
                 if (blob == null || blob.get_size () == 0) return null;
-        
+
                 var stream = new MemoryInputStream.from_bytes (blob);
                 var original = yield new Gdk.Pixbuf.from_stream_async (stream, cancel);
                 if (original == null) return null;
-        
+
                 int th = target_size * scale_factor;
-        
+
                 int w = original.get_width ();
                 int h = original.get_height ();
                 if (w <= 0 || h <= 0) return null;
-        
+
                 if (h > th) {
                     double s = (double) th / (double) h;
                     int nh = th;
                     int nw = int.max (1, (int) (w * s));
-        
+
                     var scaled = original.scale_simple (
                         nw, nh, Gdk.InterpType.BILINEAR);
                     original = null;
                     if (scaled == null) return null;
                     return Gdk.Texture.for_pixbuf (scaled);
                 }
-        
+
                 return Gdk.Texture.for_pixbuf (original);
             } catch (Error e) {
                 debug ("ImageLoader: %s → %s", url, e.message);
@@ -270,10 +279,10 @@ namespace Timbre.Utils {
                 try {
                     var r1 = new GLib.Regex ("([-=])w\\d+-h\\d+");
                     string res1 = r1.replace (url, -1, 0, "\\1w%d-h%d".printf (min_res, min_res));
-                    
+
                     var r2 = new GLib.Regex ("([-=])s\\d+");
                     string res2 = r2.replace (res1, -1, 0, "\\1s%d".printf (min_res));
-                    
+
                     return res2;
                 } catch (Error e) {
                     return url;
