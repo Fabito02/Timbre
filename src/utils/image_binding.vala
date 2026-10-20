@@ -369,6 +369,7 @@ namespace Timbre.Utils {
 
             ImageLoader.get_default ().load_texture_async.begin (
                 url, display, target, scale, cancel,
+                (obj, res) => {
                     Gdk.Texture? tex = null;
                     try {
                         tex = ImageLoader.get_default ().load_texture_async.end (res);
