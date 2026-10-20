@@ -53,12 +53,14 @@ namespace Timbre {
         }
 
         private void setup_gestures () {
-            this.secondary_click_id = this.secondary_click.released.connect ((n_press, x, y) => {
-                this.show_context_menu (x, y);
+            unowned var self = this;
+        
+            this.secondary_click.released.connect ((n_press, x, y) => {
+                self.show_context_menu (x, y);
             });
-
-            this.long_press_id = this.long_press_gesture.pressed.connect ((x, y) => {
-                this.show_context_menu (x, y);
+        
+            this.long_press_gesture.pressed.connect ((x, y) => {
+                self.show_context_menu (x, y);
             });
         }
 
@@ -236,16 +238,6 @@ namespace Timbre {
         public void release () {
             if (this.released) return;
             this.released = true;
-
-            // Disconnect the gesture signals. This breaks the reference cycle.
-            if (this.secondary_click_id != 0) {
-                this.secondary_click.disconnect (this.secondary_click_id);
-                this.secondary_click_id = 0;
-            }
-            if (this.long_press_id != 0) {
-                this.long_press_gesture.disconnect (this.long_press_id);
-                this.long_press_id = 0;
-            }
 
             if (this.like_btn != null) {
                 var btn = this.like_btn;
