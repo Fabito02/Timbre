@@ -537,6 +537,64 @@ impl AudioPlayer {
         self.append_source(source, my_gen, None, false)
     }
 
+    pub async fn try_play_cached(
+        &self,
+        my_gen: u64,
+        video_id: &VideoId,
+        duration: Option<Duration>,
+    ) -> Result<Option<()>, String> {
+        let Some((kind, entry)) = self.store.lookup(video_id.as_str()).await else {
+            return Ok(None);
+        };
+
+        if !entry.is_playable() {
+            return Ok(None);
+        }
+
+        let path = self.store.bin_path(kind, video_id.as_str());
+
+        tracing::debug!(
+            %video_id,
+            ?kind,
+            bytes = entry.downloaded_bytes,
+            "play_track_id: cache hit, skipping resolve"
+        );
+
+        let cached_info = StreamInfo {
+            uri: format!("file://{}", path.display()),
+            format_id: entry.itag.clone(),
+            protocol: Some("file".to_owned()),
+            ext: entry.ext.clone(),
+            acodec: entry.mime.clone(),
+            title: entry.title.clone(),
+            uploader: entry.artist.clone(),
+            thumbnail: entry.thumb.clone(),
+            is_local: true,
+            from_cache: true,
+            user_agent: None,
+            bitrate: entry
+                .itag
+                .as_deref()
+                .and_then(crate::net::items::parse_duration)
+                .map(|_| 0)
+                .filter(|_| false),
+            sample_rate: None,
+            channels: None,
+        };
+
+        if let Some(old) = self.active_buffer.lock().unwrap().take() {
+            old.cancel();
+        }
+        self.with_player(|p| p.stop());
+        self.position.lock().unwrap().reset();
+
+        self.play_local_file(my_gen, &path, &entry, duration, Some(&cached_info))
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(Some(()))
+    }
+
     async fn prepare_writer(
         &self,
         video_id: Option<&VideoId>,

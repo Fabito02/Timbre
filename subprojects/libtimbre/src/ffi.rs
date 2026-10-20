@@ -247,6 +247,19 @@ pub unsafe extern "C" fn timbre_player_play_track_id(
 
         tracing::debug!(%video, gen = my_gen, ?duration, "play_track_id: started");
 
+        match player.try_play_cached(my_gen, &video, duration).await {
+            Ok(Some(())) => {
+                tracing::debug!(%video, gen = my_gen, "play_track_id: finished (cache)");
+                dispatch_done(cb, user.raw(), Ok(()));
+                return;
+            }
+            Ok(None) => {
+            }
+            Err(e) => {
+                tracing::warn!(%video, %e, "cache fast path failed, falling back to resolve");
+            }
+        }
+
         let outcome = play_once(&player, &resolver, auth.clone(), &video, duration, my_gen).await;
         let outcome = match outcome {
             Ok(()) => Ok(()),
