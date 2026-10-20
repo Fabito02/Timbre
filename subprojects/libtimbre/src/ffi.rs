@@ -1106,6 +1106,16 @@ pub unsafe extern "C" fn timbre_player_record_play_start(
     let my_gen = gen_ctl.fetch_add(1, Ordering::SeqCst) + 1;
     let user = SendPtr::new(ud);
 
+    // Short-circuit for anonymous users: there is no history to record
+    // server-side, and the /player call inside `begin_play` would
+    // otherwise request a PO token — spawning the BotGuard worker
+    // (~40 MB baseline RAM) on every single track played, even though
+    // the VISIONOS resolver already served the audio without any token.
+    if !ctx.session.is_authenticated() {
+        dispatch_done(cb, user.raw(), Ok(()));
+        return true;
+    }
+
     h.runtime.spawn(async move {
         let auth = ctx.session.media_auth();
         let sts = ctx.session.signature_timestamp().await;

@@ -189,10 +189,24 @@ pub async fn begin_play(
     http: &reqwest::Client,
     auth: Option<&HttpAuth>,
     video_id: &str,
-    tokens: &PoTokens,
+    _tokens: &PoTokens,
     signature_timestamp: Option<u64>,
 ) -> Result<PlaySession, NetError> {
-    let po_token = tokens.for_video(video_id).await;
+    // NOTE: We intentionally do NOT mint a PO token here anymore.
+    //
+    // The /player call below is only used to obtain the tracking URLs
+    // (videostatsPlaybackUrl, videostatsWatchtimeUrl, atrUrl) that the
+    // history reporter pings. For a signed-in user those are returned
+    // without a PO token. For an anonymous user this whole function is
+    // skipped upstream by `timbre_player_record_play_start`, so we never
+    // reach this code without a session.
+    //
+    // Minting a PO token here used to spawn the BotGuard worker
+    // (~40 MB baseline RAM) on every single track played, even though
+    // the VISIONOS resolver had already served the audio without any
+    // token. `yt-dlp` (which genuinely needs the token) is invoked
+    // only as a fallback when VISIONOS fails, and mints tokens itself
+    // in that path.
     let visitor = visitor_data(http).await;
     let version = web_remix_version();
 
@@ -220,9 +234,6 @@ pub async fn begin_play(
                 "signatureTimestamp": sts,
             }
         });
-    }
-    if let Some(t) = &po_token {
-        body["serviceIntegrityDimensions"] = json!({ "poToken": t });
     }
 
     let mut request = http
