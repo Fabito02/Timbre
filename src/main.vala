@@ -19,7 +19,7 @@
  */
 
 int main (string[] args) {
-    Timbre.Utils.set_arena_max (1);
+    // Timbre.Utils.set_arena_max (1);
     Intl.setlocale (LocaleCategory.ALL, "");
     Intl.bindtextdomain (Config.GETTEXT_PACKAGE, Config.LOCALEDIR);
     Intl.bind_textdomain_codeset (Config.GETTEXT_PACKAGE, "UTF-8");
