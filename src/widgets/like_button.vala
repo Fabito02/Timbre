@@ -1,6 +1,6 @@
 namespace Timbre {
     public class LikeButton : Gtk.Button {
-        private Gtk.Popover popover;
+        private Gtk.Popover? popover = null;
         private Gtk.Label dislike_label;
         private unowned Timbre.Player player;
 
@@ -86,6 +86,7 @@ namespace Timbre {
 
         private void on_clicked () {
             if (this.video_id == null) return;
+            if (this.popover == null) return;
 
             if (this.suppress_next_click || this.popover.visible) {
                 this.suppress_next_click = false;
@@ -99,7 +100,9 @@ namespace Timbre {
         }
 
         private void on_dislike_clicked () {
-            this.popover.popdown ();
+            if (this.popover != null) {
+                this.popover.popdown ();
+            }
             this.suppress_next_click = false;
 
             var target = (this.status == LikeStatus.DISLIKE)
@@ -110,6 +113,7 @@ namespace Timbre {
 
         private void show_menu () {
             if (this.video_id == null) return;
+            if (this.popover == null) return;
 
             this.dislike_label.label = (this.status == LikeStatus.DISLIKE)
                 ? "Remove Dislike"
@@ -180,7 +184,11 @@ namespace Timbre {
         }
 
         public override void dispose () {
-            this.popover.unparent ();
+            if (this.popover != null) {
+                this.popover.popdown ();
+                this.popover.unparent ();
+                this.popover = null;
+            }
             base.dispose ();
         }
     }
