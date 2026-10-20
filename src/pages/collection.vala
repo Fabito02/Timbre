@@ -1,6 +1,9 @@
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/collection.ui")]
     public class CollectionPage : Adw.NavigationPage {
+        [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
+        extern static void force_dispose (void* obj);
+
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_subtitle;
@@ -68,10 +71,6 @@ namespace Timbre {
 
             this.clear_rows ();
 
-            // Free the Track objects themselves.  After clear_rows() has
-            // released every row, the only remaining refs on the Tracks were
-            // held by this page's `tracks` array — dropping the array frees
-            // them.
             this.tracks = new GenericArray<Timbre.Track> ();
 
             if (this.header_binding != null) {
@@ -83,23 +82,25 @@ namespace Timbre {
         }
 
         private void clear_rows () {
-            var rows = new GLib.List<Timbre.TrackRow> ();
+            this.tracks_list.unselect_all ();
+
+            var rows = new GenericArray<unowned Timbre.TrackRow> ();
             Gtk.Widget? child = this.tracks_list.get_first_child ();
             while (child != null) {
                 if (child is Timbre.TrackRow) {
-                    rows.append ((Timbre.TrackRow) child);
+                    rows.add ((Timbre.TrackRow) child);
                 }
                 child = child.get_next_sibling ();
             }
 
-            foreach (var row in rows) {
+            foreach (unowned var row in rows) {
                 row.release ();
             }
 
-            foreach (var row in rows) {
-                if (row.get_parent () == this.tracks_list) {
-                    this.tracks_list.remove (row);
-                }
+            this.tracks_list.remove_all ();
+
+            foreach (unowned var row in rows) {
+                force_dispose (row);
             }
         }
 
