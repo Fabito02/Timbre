@@ -13,6 +13,7 @@ namespace Timbre.Utils {
         private string? current_url = null;
         private bool loaded = false;
         private bool picture_destroyed = false;
+        private bool disposed = false;
 
         private GLib.Cancellable? cancellable = null;
 
@@ -106,7 +107,7 @@ namespace Timbre.Utils {
         }
 
         private void schedule_check () {
-            if (this.picture_destroyed) return;
+            if (this.picture_destroyed || this.disposed) return;
             if (this.check_idle != 0) return;
 
             this.check_idle = GLib.Idle.add_full (GLib.Priority.LOW, () => {
@@ -117,7 +118,7 @@ namespace Timbre.Utils {
         }
 
         private void check () {
-            if (this.picture_destroyed) return;
+            if (this.picture_destroyed || this.disposed) return;
             var pic = this.picture;
             if (pic == null) return;
 
@@ -166,7 +167,7 @@ namespace Timbre.Utils {
             this.hook_retries++;
             this.hook_retry_id = GLib.Timeout.add (100, () => {
                 this.hook_retry_id = 0;
-                if (this.picture_destroyed) return GLib.Source.REMOVE;
+                if (this.picture_destroyed || this.disposed) return GLib.Source.REMOVE;
                 if (this.hooked) return GLib.Source.REMOVE;
                 this.try_hook ();
                 return GLib.Source.REMOVE;
@@ -248,7 +249,7 @@ namespace Timbre.Utils {
         }
 
         private void on_map () {
-            if (this.picture_destroyed) return;
+            if (this.picture_destroyed || this.disposed) return;
 
             if (this.unload_id != 0) {
                 GLib.Source.remove (this.unload_id);
@@ -261,7 +262,7 @@ namespace Timbre.Utils {
         }
 
         private void on_parent_changed () {
-            if (this.picture_destroyed) return;
+            if (this.picture_destroyed || this.disposed) return;
             if (!this.hooked) {
                 this.try_hook ();
             }
@@ -272,7 +273,7 @@ namespace Timbre.Utils {
         }
 
         private void on_unmap () {
-            if (this.picture_destroyed) return;
+            if (this.picture_destroyed || this.disposed) return;
 
             this.unhook_scrolled ();
 
@@ -284,41 +285,14 @@ namespace Timbre.Utils {
 
         private void on_picture_destroy () {
             this.picture_destroyed = true;
-
-            if (this.cancellable != null) {
-                this.cancellable.cancel ();
-                this.cancellable = null;
-            }
-            if (this.unload_id != 0) {
-                GLib.Source.remove (this.unload_id);
-                this.unload_id = 0;
-            }
-            if (this.check_idle != 0) {
-                GLib.Source.remove (this.check_idle);
-                this.check_idle = 0;
-            }
-            if (this.hook_retry_id != 0) {
-                GLib.Source.remove (this.hook_retry_id);
-                this.hook_retry_id = 0;
-            }
-
-            var pic = this.picture;
-            if (pic != null) {
-                if (this.height_id != 0) pic.disconnect (this.height_id);
-                if (this.parent_id != 0) pic.disconnect (this.parent_id);
-            }
-            this.height_id = 0;
-            this.parent_id = 0;
-
-            this.unhook_scrolled ();
-            this.picture = null;
+            this.teardown ();
         }
 
         private void schedule_unload () {
             if (this.unload_id != 0) return;
             this.unload_id = GLib.Timeout.add_seconds (HIDDEN_UNLOAD_SECS, () => {
                 this.unload_id = 0;
-                if (this.picture_destroyed) return GLib.Source.REMOVE;
+                if (this.picture_destroyed || this.disposed) return GLib.Source.REMOVE;
                 if (this.is_in_viewport ()) return GLib.Source.REMOVE;
 
                 var pic = this.picture;
@@ -377,7 +351,7 @@ namespace Timbre.Utils {
         }
 
         private void start_fetch (string url) {
-            if (this.picture_destroyed) return;
+            if (this.picture_destroyed || this.disposed) return;
             if (this.cancellable != null) return;
 
             var pic = this.picture;
@@ -395,20 +369,21 @@ namespace Timbre.Utils {
 
             ImageLoader.get_default ().load_texture_async.begin (
                 url, display, target, scale, cancel,
-                (obj, res) => {
+                    Gdk.Texture? tex = null;
+                    try {
+                        tex = ImageLoader.get_default ().load_texture_async.end (res);
+                    } catch (Error e) {
+                    }
+
                     if (this.cancellable == cancel) {
                         this.cancellable = null;
                     }
-                    if (cancel.is_cancelled ()) return;
-                    if (this.picture_destroyed) return;
+                    if (this.picture_destroyed || this.disposed) return;
                     if (this.current_url != requested) return;
 
-                    var tex = ImageLoader.get_default ().load_texture_async.end (res);
-
-                    var p = this.picture;
-                    if (p == null) return;
-
                     if (tex != null) {
+                        var p = this.picture;
+                        if (p == null) return;
                         p.paintable = tex;
                         this.loaded = true;
                         if (!this.is_in_viewport () && this.unload_id == 0) {
@@ -420,7 +395,7 @@ namespace Timbre.Utils {
         }
 
         private void apply_placeholder () {
-            if (this.picture_destroyed) return;
+            if (this.picture_destroyed || this.disposed) return;
             var pic = this.picture;
             if (pic == null) return;
             var display = pic.get_display () ?? Gdk.Display.get_default ();
@@ -437,7 +412,7 @@ namespace Timbre.Utils {
             }
         }
 
-        public override void dispose () {
+        private void teardown () {
             if (this.cancellable != null) {
                 this.cancellable.cancel ();
                 this.cancellable = null;
@@ -472,9 +447,16 @@ namespace Timbre.Utils {
             this.parent_id = 0;
 
             this.unhook_scrolled ();
+
             this.picture_destroyed = true;
             this.picture = null;
             this.current_url = null;
+        }
+
+        public override void dispose () {
+            if (this.disposed) return;
+            this.disposed = true;
+            this.teardown ();
             base.dispose ();
         }
     }
