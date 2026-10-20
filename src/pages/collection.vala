@@ -66,12 +66,12 @@ namespace Timbre {
                 this.play_all_id = 0;
             }
 
-            Gtk.Widget? child = this.tracks_list.get_first_child ();
-            while (child != null) {
-                var next = child.get_next_sibling ();
-                this.tracks_list.remove (child);
-                child = next;
-            }
+            this.clear_rows ();
+
+            // Free the Track objects themselves.  After clear_rows() has
+            // released every row, the only remaining refs on the Tracks were
+            // held by this page's `tracks` array — dropping the array frees
+            // them.
             this.tracks = new GenericArray<Timbre.Track> ();
 
             if (this.header_binding != null) {
@@ -80,6 +80,27 @@ namespace Timbre {
             }
 
             base.unroot ();
+        }
+
+        private void clear_rows () {
+            var rows = new GLib.List<Timbre.TrackRow> ();
+            Gtk.Widget? child = this.tracks_list.get_first_child ();
+            while (child != null) {
+                if (child is Timbre.TrackRow) {
+                    rows.append ((Timbre.TrackRow) child);
+                }
+                child = child.get_next_sibling ();
+            }
+
+            foreach (var row in rows) {
+                row.release ();
+            }
+
+            foreach (var row in rows) {
+                if (row.get_parent () == this.tracks_list) {
+                    this.tracks_list.remove (row);
+                }
+            }
         }
 
         private void load_collection_tracks () {
@@ -108,6 +129,7 @@ namespace Timbre {
                 if (error != null) {
                     warning ("collection: %s", (string) error);
                     Timbre.string_free (error);
+                    if (json_ptr != null) Timbre.string_free (json_ptr);
                     return GLib.Source.REMOVE;
                 }
 
@@ -227,12 +249,7 @@ namespace Timbre {
         }
 
         private void populate_tracks_list () {
-            Gtk.Widget? child = this.tracks_list.get_first_child ();
-            while (child != null) {
-                var next = child.get_next_sibling ();
-                this.tracks_list.remove (child);
-                child = next;
-            }
+            this.clear_rows ();
 
             bool is_album = this.collection_type == "album";
             for (int i = 0; i < this.tracks.length; i++) {
