@@ -1,5 +1,4 @@
 namespace Timbre {
-
     public class LikeButton : Gtk.Button {
         private Gtk.Popover popover;
         private Gtk.Label dislike_label;
@@ -10,6 +9,8 @@ namespace Timbre {
         private bool suppress_next_click = false;
 
         public LikeButton (Timbre.Player player) {
+            unowned var self = this;
+
             this.player = player;
 
             this.add_css_class ("flat");
@@ -45,7 +46,7 @@ namespace Timbre {
 
             this.popover.closed.connect (() => {
                 GLib.Idle.add (() => {
-                    this.suppress_next_click = false;
+                    self.suppress_next_click = false;
                     return GLib.Source.REMOVE;
                 });
             });
@@ -53,15 +54,15 @@ namespace Timbre {
             var right_click = new Gtk.GestureClick () {
                 button = Gdk.BUTTON_SECONDARY
             };
-            right_click.pressed.connect (() => this.show_menu ());
+            right_click.pressed.connect (() => self.show_menu ());
             this.add_controller (right_click);
 
             var long_press = new Gtk.GestureLongPress () {
                 touch_only = false
             };
             long_press.pressed.connect (() => {
-                this.suppress_next_click = true;
-                this.show_menu ();
+                self.suppress_next_click = true;
+                self.show_menu ();
             });
             this.add_controller (long_press);
 

@@ -7,6 +7,12 @@ template $TimbreTrackCard: Button {
     "flat",
   ]
 
+  GestureClick secondary_click {
+    button: 3;
+  }
+
+  GestureLongPress long_press_gesture {}
+
   Box {
     orientation: vertical;
     spacing: 12;
@@ -85,6 +91,7 @@ template $TimbreTrackCard: Button {
               "live-overlay-icon",
             ]
           }
+
           Label {
             label: _("Live");
           }
@@ -100,20 +107,23 @@ template $TimbreTrackCard: Button {
       Box {
         orientation: horizontal;
         spacing: 6;
-        
+
         Label label_title {
           xalign: 0.0;
           ellipsize: end;
-  
+
           styles [
             "heading",
           ]
         }
-        
+
         Label explicit_badge {
-            label: "E";
-            valign: center;
-            styles ["explicit-badge"]
+          label: "E";
+          valign: center;
+
+          styles [
+            "explicit-badge",
+          ]
         }
       }
 

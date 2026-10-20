@@ -274,7 +274,7 @@ namespace Timbre {
             }
         }
 
-        private void open_collection (string id, string type_name,
+        public void open_collection (string id, string type_name,
                                       string title, string subtitle,
                                       string? cover, Adw.NavigationView? target_view = null) {
             string kind = type_name.down ();
@@ -1028,16 +1028,38 @@ namespace Timbre {
             });
         }
 
-        public void add_to_queue (Timbre.TrackRow row) {
-            var items = new GenericArray<Timbre.Track> ();
-            items.add (row.media_item.to_track ());
-            this.queue.add_to_queue (items);
+        public void play_next (GenericArray<Track> tracks) {
+            this.queue.play_next (tracks);
         }
 
-        public void play_next (Timbre.TrackRow row) {
-            var items = new GenericArray<Timbre.Track> ();
-            items.add (row.media_item.to_track ());
-            this.queue.play_next (items);
+        public void add_to_queue (GenericArray<Track> tracks) {
+            this.queue.add_to_queue (tracks);
+        }
+
+        public void open_collection_from_row (string id, string type_name, string title, string subtitle, string? cover) {
+            string current = this.main_stack.visible_child_name;
+            Adw.NavigationView nav = this.navigation_view;
+
+            if (current == "library") {
+                nav = this.library_view;
+            } else if (current == "search") {
+                nav = this.search_view;
+            }
+
+            this.open_collection (id, type_name, title, subtitle, cover, nav);
+        }
+
+        public void open_artist_from_row (string channel_id, string? name) {
+            string current = this.main_stack.visible_child_name;
+            Adw.NavigationView nav = this.navigation_view;
+
+            if (current == "library") {
+                nav = this.library_view;
+            } else if (current == "search") {
+                nav = this.search_view;
+            }
+
+            this.open_artist (channel_id, name, nav);
         }
 
         private GenericArray<Track> parse_radio_tracks (string json_str) {
