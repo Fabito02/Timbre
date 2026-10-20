@@ -460,5 +460,9 @@ namespace Timbre.Utils {
             this.teardown ();
             base.dispose ();
         }
+
+        ~ImageBinding () {
+            // GLib.debug ("ImageBinding successfully destroyed");
+        }
     }
 }
