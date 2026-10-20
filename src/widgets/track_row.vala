@@ -22,6 +22,7 @@ namespace Timbre {
 
         private Timbre.Utils.ImageBinding cover_binding;
         private Timbre.LikeButton? like_btn = null;
+        private bool released = false;
 
         public TrackRow.empty () {
             Object ();
@@ -135,7 +136,6 @@ namespace Timbre {
             popover.has_arrow = false;
             popover.halign = Gtk.Align.START;
             popover.set_parent (this);
-            
             popover.insert_action_group ("widget", actions);
 
             unowned Gtk.Popover popover_ref = popover;
@@ -231,8 +231,33 @@ namespace Timbre {
             this.live_badge.visible = item.is_live;
         }
 
+        public void release () {
+            if (this.released) return;
+            this.released = true;
+
+            if (this.like_btn != null) {
+                var btn = this.like_btn;
+                this.like_btn = null;
+                if (btn.get_parent () != null) {
+                    btn.unparent ();
+                }
+                btn.dispose ();
+            }
+
+            if (this.cover_binding != null) {
+                this.cover_binding.dispose ();
+                this.cover_binding = null;
+            }
+
+            if (this.image_cover != null) {
+                this.image_cover.set_paintable (null);
+            }
+
+            this.media_item = null;
+        }
+
         public override void dispose () {
-            this.like_btn = null;
+            this.release ();
             base.dispose ();
         }
     }
