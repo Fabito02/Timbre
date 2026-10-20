@@ -76,6 +76,7 @@ impl PoTokens {
     }
 
     pub async fn for_video(&self, video_id: &str) -> Option<String> {
+        self.cleanup_expired();
         if let Some(token) = self.cached(video_id) {
             return Some(token);
         }
@@ -109,6 +110,12 @@ impl PoTokens {
             },
         );
         Some(value)
+    }
+
+    fn cleanup_expired(&self) {
+        let now = SystemTime::now();
+        let mut minted = self.minted.lock().unwrap();
+        minted.retain(|_, token| token.expires > now);
     }
 
     fn cached(&self, video_id: &str) -> Option<String> {
