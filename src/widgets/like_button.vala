@@ -1,7 +1,7 @@
 namespace Timbre {
     public class LikeButton : Gtk.Button {
         private Gtk.Popover? popover = null;
-        private Gtk.Label dislike_label;
+        private Gtk.Label? dislike_label = null;
         private unowned Timbre.Player player;
 
         private string? video_id = null;
@@ -18,38 +18,7 @@ namespace Timbre {
             this.valign = Gtk.Align.CENTER;
             this.visible = false;
 
-            this.popover = new Gtk.Popover ();
-            this.popover.has_arrow = true;
-            this.popover.set_parent (this);
-
-            var menu_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
-            menu_box.margin_top = 4;
-            menu_box.margin_bottom = 4;
-            menu_box.margin_start = 4;
-            menu_box.margin_end = 4;
-
-            var dislike_content = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
-            dislike_content.append (
-                new Gtk.Image.from_icon_name ("heart-broken-symbolic"));
-            this.dislike_label = new Gtk.Label ("Dislike");
-            dislike_content.append (this.dislike_label);
-
-            var dislike_btn = new Gtk.Button ();
-            dislike_btn.add_css_class ("flat");
-            dislike_btn.child = dislike_content;
-            dislike_btn.clicked.connect (this.on_dislike_clicked);
-            menu_box.append (dislike_btn);
-
-            this.popover.child = menu_box;
-
             this.clicked.connect (this.on_clicked);
-
-            this.popover.closed.connect (() => {
-                GLib.Idle.add (() => {
-                    self.suppress_next_click = false;
-                    return GLib.Source.REMOVE;
-                });
-            });
 
             var right_click = new Gtk.GestureClick () {
                 button = Gdk.BUTTON_SECONDARY
@@ -86,9 +55,12 @@ namespace Timbre {
 
         private void on_clicked () {
             if (this.video_id == null) return;
-            if (this.popover == null) return;
 
-            if (this.suppress_next_click || this.popover.visible) {
+            if (this.popover != null && this.popover.visible) {
+                return;
+            }
+
+            if (this.suppress_next_click) {
                 this.suppress_next_click = false;
                 return;
             }
@@ -113,11 +85,47 @@ namespace Timbre {
 
         private void show_menu () {
             if (this.video_id == null) return;
-            if (this.popover == null) return;
 
-            this.dislike_label.label = (this.status == LikeStatus.DISLIKE)
-                ? "Remove Dislike"
-                : "Dislike";
+            if (this.popover == null) {
+                unowned var self = this;
+
+                this.popover = new Gtk.Popover ();
+                this.popover.has_arrow = true;
+                this.popover.set_parent (this);
+
+                var menu_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+                menu_box.margin_top = 4;
+                menu_box.margin_bottom = 4;
+                menu_box.margin_start = 4;
+                menu_box.margin_end = 4;
+
+                var dislike_content = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+                dislike_content.append (
+                    new Gtk.Image.from_icon_name ("heart-broken-symbolic"));
+                this.dislike_label = new Gtk.Label ("Dislike");
+                dislike_content.append (this.dislike_label);
+
+                var dislike_btn = new Gtk.Button ();
+                dislike_btn.add_css_class ("flat");
+                dislike_btn.child = dislike_content;
+                dislike_btn.clicked.connect (this.on_dislike_clicked);
+                menu_box.append (dislike_btn);
+
+                this.popover.child = menu_box;
+
+                this.popover.closed.connect (() => {
+                    GLib.Idle.add (() => {
+                        self.suppress_next_click = false;
+                        return GLib.Source.REMOVE;
+                    });
+                });
+            }
+
+            if (this.dislike_label != null) {
+                this.dislike_label.label = (this.status == LikeStatus.DISLIKE)
+                    ? "Remove Dislike"
+                    : "Dislike";
+            }
 
             this.popover.pointing_to = Gdk.Rectangle () {
                 x = 0, y = 0,
@@ -189,6 +197,7 @@ namespace Timbre {
                 this.popover.unparent ();
                 this.popover = null;
             }
+            this.dislike_label = null;
             base.dispose ();
         }
     }
