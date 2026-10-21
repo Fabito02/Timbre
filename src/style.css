@@ -318,7 +318,11 @@ button.home-speed-tile-card:focus-visible {
     background: linear-gradient(
         to bottom,
         transparent 0%,
-        alpha(var(--window-bg-color), 0.7) 60%,
+        transparent 50%,
+        alpha(var(--window-bg-color), 0.1) 65%,
+        alpha(var(--window-bg-color), 0.35) 78%,
+        alpha(var(--window-bg-color), 0.65) 88%,
+        alpha(var(--window-bg-color), 0.88) 95%,
         var(--window-bg-color) 100%
     );
 }
