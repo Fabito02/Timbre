@@ -87,7 +87,6 @@ namespace Timbre {
                     }
 
                     string json_str = (string) json;
-                    message (json_str);
                     var sections = HomeParser.parse_sections (json_str);
                     Timbre.string_free (json);
 
