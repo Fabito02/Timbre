@@ -194,6 +194,35 @@ namespace Timbre {
                 info_parts.add (root_obj.get_string_member ("album_type"));
             }
 
+            // Dentro de parse_tracks_json, após obter o root_obj:
+
+            var autores = new GenericArray<string> ();
+
+            if (root_obj.has_member ("author") && !root_obj.get_null_member ("author")) {
+                var author_node = root_obj.get_member ("author");
+                if (author_node.get_node_type () == Json.NodeType.ARRAY) {
+                    foreach (unowned Json.Node a_node in author_node.get_array ().get_elements ()) {
+                        if (a_node.get_node_type () != Json.NodeType.OBJECT) continue;
+                        var a_obj = a_node.get_object ();
+
+                        if (a_obj.has_member ("name") && !a_obj.get_null_member ("name")) {
+                            string nome = a_obj.get_string_member ("name");
+                            if (nome.length > 0) {
+                                autores.add (nome);
+                            }
+                        }
+                    }
+                }
+            }
+
+            var sb = new StringBuilder ();
+            for (int i = 0; i < autores.length; i++) {
+                if (sb.len > 0) sb.append (", ");
+                sb.append (autores.get (i));
+            }
+
+            this.label_subtitle.label = sb.str;
+
             if (root_obj.has_member ("year") && !root_obj.get_null_member ("year")) {
                 info_parts.add (root_obj.get_string_member ("year"));
             }
@@ -208,7 +237,7 @@ namespace Timbre {
                 info_parts.add (root_obj.get_string_member ("duration"));
             }
 
-            var sb = new StringBuilder ();
+            sb = new StringBuilder ();
             for (int i = 0; i < info_parts.length; i++) {
                 if (sb.len > 0) sb.append (" • ");
                 sb.append (info_parts.get (i));
