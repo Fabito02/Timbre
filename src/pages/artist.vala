@@ -266,10 +266,13 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Picture banner_picture;
         [GtkChild] private unowned Gtk.Label label_name;
         [GtkChild] private unowned Gtk.Label label_subscribers;
+        [GtkChild] private unowned Gtk.Label label_info;
         [GtkChild] private unowned Gtk.Button button_play;
         [GtkChild] private unowned Gtk.Button button_shuffle;
         [GtkChild] private unowned Gtk.Button button_radio;
         [GtkChild] private unowned Gtk.Button button_subscribe;
+        [GtkChild] private unowned Gtk.Label button_subscribe_label;
+        [GtkChild] private unowned Gtk.Image button_subscribe_image;
         [GtkChild] private unowned Gtk.Label label_description;
         [GtkChild] private unowned Gtk.Label label_read_more;
         [GtkChild] private unowned Gtk.Box sections_box;
@@ -381,8 +384,6 @@ namespace Timbre {
             }
 
             var parts = new GenericArray<string> ();
-            if (d.subscribers != null && d.subscribers.length > 0)
-                parts.add (d.subscribers);
             if (d.monthly_listeners != null && d.monthly_listeners.length > 0)
                 parts.add (d.monthly_listeners);
             if (d.views != null && d.views.length > 0)
@@ -393,7 +394,10 @@ namespace Timbre {
                 if (sb.len > 0) sb.append (" • ");
                 sb.append (parts.get (i));
             }
-            this.label_subscribers.label = sb.str;
+            this.label_info.label = sb.str;
+            
+            if (d.subscribers != null && d.subscribers.length > 0)
+                this.label_subscribers.label = d.subscribers;
 
             this.set_description (d.description);
 
@@ -768,12 +772,14 @@ namespace Timbre {
 
         private void update_subscribe_button () {
             if (this.is_subscribed) {
-                this.button_subscribe.icon_name = "starred-symbolic";
+                this.button_subscribe_image.icon_name = "starred-symbolic";
                 this.button_subscribe.tooltip_text = _("Unsubscribe");
+                this.button_subscribe_label.label = _("Unsubscribe - ");
                 this.button_subscribe.add_css_class ("liked-button");
             } else {
-                this.button_subscribe.icon_name = "non-starred-symbolic";
+                this.button_subscribe_image.icon_name = "non-starred-symbolic";
                 this.button_subscribe.tooltip_text = _("Subscribe");
+                this.button_subscribe_label.label = _("Subscribe - ");
                 this.button_subscribe.remove_css_class ("liked-button");
             }
         }

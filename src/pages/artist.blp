@@ -80,15 +80,14 @@ template $TimbreArtistPage: Adw.NavigationPage {
                     wrap-mode: word_char;
 
                     styles [
-                      "title-1",
+                      "title-bigger",
                     ]
                   }
 
-                  Label label_subscribers {
+                  Label label_info {
                     halign: start;
 
                     styles [
-                      "caption",
                       "dim-label",
                     ]
                   }
@@ -139,13 +138,27 @@ template $TimbreArtistPage: Adw.NavigationPage {
                     }
 
                     Button button_subscribe {
-                      icon-name: "non-starred-symbolic";
+                      child: Box {
+                        Image button_subscribe_image{
+                          icon-name: "non-starred-symbolic";
+                          pixel-size: 16;
+                          margin-end: 8;
+                        }
+
+                        Label button_subscribe_label{
+                          label: _("Subscribe - ");
+                        }
+
+                        Label label_subscribers {
+                          
+                        }
+                      };
+                      
                       tooltip-text: _("Subscribe");
-                      width-request: 44;
 
                       styles [
-                        "circular",
-                        "flat",
+                        "pill",
+                        "add-button",
                       ]
                     }
                   }
