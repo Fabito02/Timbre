@@ -55,7 +55,9 @@ namespace Timbre.Utils {
             if (url == null) {
                 this.current_url = null;
                 var pic = this.picture;
-                if (pic != null)pic.set_paintable (null);
+                if (pic != null) {
+                    pic.set_paintable (null);
+                }
                 return;
             }
             if (this.picture_destroyed)return;
@@ -189,19 +191,15 @@ namespace Timbre.Utils {
                     var hadj = sw.get_hadjustment ();
 
                     if (vadj != null) {
-                        this.adj_signal_ids.add (
-                                                 vadj.value_changed.connect (this.on_viewport_changed));
-                        this.adj_signal_ids.add (
-                                                 vadj.changed.connect (this.on_viewport_changed));
+                        this.adj_signal_ids.add (vadj.value_changed.connect (this.on_viewport_changed));
+                        this.adj_signal_ids.add (vadj.changed.connect (this.on_viewport_changed));
                     } else {
                         this.adj_signal_ids.add (0);
                         this.adj_signal_ids.add (0);
                     }
                     if (hadj != null) {
-                        this.adj_signal_ids.add (
-                                                 hadj.value_changed.connect (this.on_viewport_changed));
-                        this.adj_signal_ids.add (
-                                                 hadj.changed.connect (this.on_viewport_changed));
+                        this.adj_signal_ids.add (hadj.value_changed.connect (this.on_viewport_changed));
+                        this.adj_signal_ids.add (hadj.changed.connect (this.on_viewport_changed));
                     } else {
                         this.adj_signal_ids.add (0);
                         this.adj_signal_ids.add (0);
@@ -299,10 +297,12 @@ namespace Timbre.Utils {
                 var url = this.current_url;
                 if (url != null) {
                     ImageLoader.get_default ().forget (
-                                                       url, this.target_size, pic.get_scale_factor ());
+                                                       url, this.target_size, pic.get_scale_factor ()
+                    );
                 }
 
-                pic.paintable = null;
+                pic.set_paintable (null);
+                this.apply_placeholder ();
                 this.loaded = false;
                 return GLib.Source.REMOVE;
             });
@@ -369,7 +369,11 @@ namespace Timbre.Utils {
                                                                  url, display, target, scale, cancel,
                                                                  (obj, res) => {
                 Gdk.Texture? tex = null;
-                tex = ImageLoader.get_default ().load_texture_async.end (res);
+                try {
+                    tex = ImageLoader.get_default ().load_texture_async.end (res);
+                } catch (GLib.Error e) {
+                    // Trata erros de cancelamento ou falhas de rede sem crashar
+                }
 
                 if (this.cancellable == cancel) {
                     this.cancellable = null;
