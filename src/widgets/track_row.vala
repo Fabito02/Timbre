@@ -2,6 +2,8 @@ namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/track_row.ui")]
     public class TrackRow : Gtk.ListBoxRow {
         [GtkChild] private unowned Gtk.Picture image_cover;
+        [GtkChild] private unowned Adw.Bin index_cover;
+        [GtkChild] private unowned Gtk.Label label_index;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_artist;
         [GtkChild] private unowned Gtk.Label label_duration;
@@ -33,13 +35,19 @@ namespace Timbre {
             this.setup_gestures ();
         }
 
-        public TrackRow (Timbre.Player player, MediaItem item) {
+        public TrackRow (Timbre.Player player, MediaItem item, int index = -1) {
             Object ();
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
             this.like_btn = new Timbre.LikeButton (player);
             this.like_slot.append (this.like_btn);
             this.setup_gestures ();
             this.set_content (item);
+            
+            if (index >= 0) {
+                this.image_cover.visible = false;
+                this.index_cover.visible = true;
+                this.label_index.label = (index++).to_string ();
+            }
         }
 
         public TrackRow.simple (MediaItem item) {
