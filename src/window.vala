@@ -83,6 +83,14 @@ namespace Timbre {
         public Window (Timbre.Application app) {
             Object (application : app);
 
+            this.close_request.connect (() => {
+                if (this.is_playing) {
+                    this.hide ();
+                    return true;
+                }
+                return false;
+            });
+
             this.player = app.get_player ();
             this.cookies_path = app.cookies_path;
             this.queue = new Timbre.QueueManager ();
