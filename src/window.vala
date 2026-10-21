@@ -81,7 +81,7 @@ namespace Timbre {
         }
 
         public Window (Timbre.Application app) {
-            Object (application: app);
+            Object (application : app);
 
             this.player = app.get_player ();
             this.cookies_path = app.cookies_path;
@@ -98,11 +98,11 @@ namespace Timbre {
             var key_ctrl = new Gtk.EventControllerKey ();
             key_ctrl.propagation_phase = Gtk.PropagationPhase.CAPTURE;
             key_ctrl.key_pressed.connect ((keyval, keycode, state) => {
-                if (this.searchbar.search_mode_enabled) return false;
-                if ((state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.SUPER_MASK)) != 0) return false;
+                if (this.searchbar.search_mode_enabled)return false;
+                if ((state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.SUPER_MASK)) != 0)return false;
 
                 var focused = this.get_focus ();
-                if (focused is Gtk.Editable || focused is Gtk.TextView) return false;
+                if (focused is Gtk.Editable || focused is Gtk.TextView)return false;
 
                 unichar c = (unichar) Gdk.keyval_to_unicode (keyval);
                 if (c != 0 && c.isprint ()) {
@@ -114,7 +114,7 @@ namespace Timbre {
                 }
                 return false;
             });
-            ((Gtk.Widget)this).add_controller (key_ctrl);
+            ((Gtk.Widget) this).add_controller (key_ctrl);
 
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
             this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 512);
@@ -160,13 +160,13 @@ namespace Timbre {
 
             this.queue.repeat_changed.connect ((mode) => {
                 switch (mode) {
-                    case Timbre.QueueManager.RepeatMode.OFF:
+                    case Timbre.QueueManager.RepeatMode.OFF :
                         this.button_repeat.icon_name = "media-playlist-no-repeat-symbolic";
                         this.button_repeat.remove_css_class ("accent");
                         this.button_repeat.add_css_class ("flat");
                         this.button_repeat.tooltip_text = _("Repeat: off");
                         break;
-                    case Timbre.QueueManager.RepeatMode.ALL:
+                    case Timbre.QueueManager.RepeatMode.ALL :
                         this.button_repeat.icon_name = "media-playlist-repeat-symbolic";
                         this.button_repeat.add_css_class ("accent");
                         this.button_repeat.remove_css_class ("flat");
@@ -214,7 +214,7 @@ namespace Timbre {
 
         public void open_preferences () {
             var settings_win = new Timbre.SettingsWindow (
-                this.player, this.cookies_path, this.home_page);
+                                                          this.player, this.cookies_path, this.home_page);
             settings_win.present (this);
         }
 
@@ -234,7 +234,7 @@ namespace Timbre {
 
             this.mpris.set_position_provider (() => this.adjustment_progress.value);
             this.mpris.set_duration_provider (() => {
-                if (this.metadata_duration > 0.0) return this.metadata_duration;
+                if (this.metadata_duration > 0.0)return this.metadata_duration;
                 return this.adjustment_progress.upper;
             });
 
@@ -257,27 +257,27 @@ namespace Timbre {
 
         private static string kind_to_lower (ItemKind kind) {
             switch (kind) {
-                case ItemKind.SONG:     return "song";
-                case ItemKind.VIDEO:    return "video";
-                case ItemKind.ALBUM:    return "album";
-                case ItemKind.ARTIST:   return "artist";
-                case ItemKind.PLAYLIST: return "playlist";
-                default:                return "song";
+            case ItemKind.SONG:     return "song";
+            case ItemKind.VIDEO:    return "video";
+            case ItemKind.ALBUM:    return "album";
+            case ItemKind.ARTIST:   return "artist";
+            case ItemKind.PLAYLIST: return "playlist";
+            default:                return "song";
             }
         }
 
         public void open_collection (string id, string type_name,
-                                      string title, string subtitle,
-                                      string? cover, Adw.NavigationView? target_view = null) {
+                                     string title, string subtitle,
+                                     string? cover, Adw.NavigationView? target_view = null) {
             string kind = type_name.down ();
             if (kind == "artist") {
                 this.open_artist (id, title, target_view);
                 return;
             }
             var page = new Timbre.CollectionPage (
-                this.player, id, type_name, title, subtitle, cover);
+                                                  this.player, id, type_name, title, subtitle, cover);
             page.play_collection.connect ((tracks, start_index, shuffle) => {
-                if (tracks.length == 0) return;
+                if (tracks.length == 0)return;
 
                 if (shuffle) {
                     int random_index = Random.int_range (0, tracks.length);
@@ -306,11 +306,11 @@ namespace Timbre {
 
             page.collection_selected.connect ((item) => {
                 this.open_collection (item.id, kind_to_lower (item.kind),
-                    item.title, item.subtitle_text (), item.thumb, target_view);
+                                      item.title, item.subtitle_text (), item.thumb, target_view);
             });
 
             page.play_songs_requested.connect ((tracks, start_index, shuffle) => {
-                if (tracks.length == 0) return;
+                if (tracks.length == 0)return;
 
                 if (shuffle) {
                     int random_index = Random.int_range (0, tracks.length);
@@ -324,7 +324,7 @@ namespace Timbre {
 
             page.show_all_requested.connect ((browse_id, params_json, title, seed) => {
                 var sp = new Timbre.SectionPage (
-                    this.player, browse_id, params_json, title, seed);
+                                                 this.player, browse_id, params_json, title, seed);
 
                 sp.track_selected.connect ((item) => {
                     this.queue.play_single (item.to_track ());
@@ -332,7 +332,7 @@ namespace Timbre {
 
                 sp.collection_selected.connect ((item) => {
                     this.open_collection (item.id, kind_to_lower (item.kind),
-                        item.title, item.subtitle_text (), item.thumb, target_view);
+                                          item.title, item.subtitle_text (), item.thumb, target_view);
                 });
 
                 this.root_nav.push (sp);
@@ -364,7 +364,7 @@ namespace Timbre {
 
             this.home_page.collection_selected.connect ((item) => {
                 this.open_collection (item.id, kind_to_lower (item.kind),
-                    item.title, item.subtitle_text (), item.thumb);
+                                      item.title, item.subtitle_text (), item.thumb);
             });
 
             this.home_page.track_selected.connect ((item) => {
@@ -373,7 +373,7 @@ namespace Timbre {
 
             this.home_page.show_all_requested.connect ((browse_id, params_json, title, seed) => {
                 var page = new Timbre.SectionPage (
-                    this.player, browse_id, params_json, title, seed);
+                                                   this.player, browse_id, params_json, title, seed);
 
                 page.track_selected.connect ((item) => {
                     this.queue.play_single (item.to_track ());
@@ -381,7 +381,7 @@ namespace Timbre {
 
                 page.collection_selected.connect ((item) => {
                     this.open_collection (item.id, kind_to_lower (item.kind),
-                        item.title, item.subtitle_text (), item.thumb);
+                                          item.title, item.subtitle_text (), item.thumb);
                 });
 
                 this.root_nav.push (page);
@@ -389,7 +389,7 @@ namespace Timbre {
 
             this.library_page.collection_selected.connect ((item) => {
                 this.open_collection (item.id, kind_to_lower (item.kind),
-                    item.title, item.subtitle_text (), item.thumb);
+                                      item.title, item.subtitle_text (), item.thumb);
             });
 
             this.library_page.artist_selected.connect ((id, name) => {
@@ -405,7 +405,7 @@ namespace Timbre {
                 this.cover_fullscreen_binding.load (this.pending_track.thumb);
             }
 
-            this.fullscreen_sheet_content.height_request = this.get_height();
+            this.fullscreen_sheet_content.height_request = this.get_height ();
             this.fullscreen_sheet.open = true;
         }
 
@@ -511,7 +511,7 @@ namespace Timbre {
 
             this.search_page.collection_selected.connect ((item) => {
                 this.open_collection (item.id, kind_to_lower (item.kind),
-                    item.title, item.subtitle_text (), item.thumb);
+                                      item.title, item.subtitle_text (), item.thumb);
             });
 
             this.searchbar.notify["search-mode-enabled"].connect (() => {
@@ -554,19 +554,10 @@ namespace Timbre {
                     return;
                 }
 
-                this.search_debounce_id = GLib.Timeout.add (100, () => {
+                this.search_debounce_id = GLib.Timeout.add (350, () => {
                     this.search_debounce_id = 0;
                     this.execute_search (query);
                     return GLib.Source.REMOVE;
-                });
-
-                GLib.Timeout.add_seconds (30, () => {
-                    if (this.main_stack.visible_child_name == "home"
-                        && this.queue.current_index < 0
-                        && this.player.get_state () == 0) {
-                        Timbre.Utils.trim_memory ();
-                    }
-                    return GLib.Source.CONTINUE;
                 });
             });
         }
@@ -606,9 +597,9 @@ namespace Timbre {
 
         private static LikeStatus parse_like_status (string s) {
             switch (s) {
-                case "Like":    return LikeStatus.LIKE;
-                case "Dislike": return LikeStatus.DISLIKE;
-                default:        return LikeStatus.INDIFFERENT;
+            case "Like" : return LikeStatus.LIKE;
+            case "Dislike" : return LikeStatus.DISLIKE;
+                default : return LikeStatus.INDIFFERENT;
             }
         }
 
@@ -636,17 +627,17 @@ namespace Timbre {
             this.player.get_watch_playlist (track.id, "", (json, error) => {
                 Idle.add (() => {
                     if (gen != this.like_fetch_gen) {
-                        if (json != null) Timbre.string_free (json);
-                        if (error != null) Timbre.string_free (error);
+                        if (json != null)Timbre.string_free (json);
+                        if (error != null)Timbre.string_free (error);
                         return GLib.Source.REMOVE;
                     }
                     uint64 dur = track.duration_seconds ?? 0;
                     if (error == null) {
                         var info = this.extract_track_info ((string) json, track.id);
-                        if (info.duration > 0) dur = (uint64) info.duration;
+                        if (info.duration > 0)dur = (uint64) info.duration;
                     }
-                    if (json != null) Timbre.string_free (json);
-                    if (error != null) Timbre.string_free (error);
+                    if (json != null)Timbre.string_free (json);
+                    if (error != null)Timbre.string_free (error);
                     this.start_playback (track, dur);
                     if (!this.fullscreen_sheet.open) {
                         bottom_bar_revealer.reveal_child = true;
@@ -658,7 +649,7 @@ namespace Timbre {
 
         private void start_playback (Timbre.Track track, uint64 duration) {
             message ("start_playback: id=%s dur=%lu title=%s".printf (
-                track.id, (ulong) duration, track.title));
+                                                                      track.id, (ulong) duration, track.title));
 
             this.pending_track = track;
 
@@ -729,7 +720,7 @@ namespace Timbre {
 
                     var err_msg = error != null ? (string) error : "(none)";
                     message ("play callback: id=%s success=%s error=%s".printf (
-                        track_id, success.to_string (), err_msg));
+                                                                                track_id, success.to_string (), err_msg));
 
                     this.button_play_pause.sensitive = true;
 
@@ -768,8 +759,8 @@ namespace Timbre {
             this.player.get_watch_playlist (track_id, "", (json, error) => {
                 Idle.add (() => {
                     if (gen != this.like_fetch_gen) {
-                        if (error != null) Timbre.string_free (error);
-                        if (json != null) Timbre.string_free (json);
+                        if (error != null)Timbre.string_free (error);
+                        if (json != null)Timbre.string_free (json);
                         return GLib.Source.REMOVE;
                     }
 
@@ -815,16 +806,16 @@ namespace Timbre {
                     return info;
                 }
                 var obj = root.get_object ();
-                if (!obj.has_member ("tracks")) return info;
+                if (!obj.has_member ("tracks"))return info;
 
                 var arr = obj.get_array_member ("tracks");
                 foreach (unowned Json.Node node in arr.get_elements ()) {
-                    if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                    if (node.get_node_type () != Json.NodeType.OBJECT)continue;
                     var wrapper = node.get_object ();
-                    if (!wrapper.has_member ("track")) continue;
+                    if (!wrapper.has_member ("track"))continue;
                     var t = wrapper.get_object_member ("track");
-                    if (!t.has_member ("video_id")) continue;
-                    if (t.get_string_member ("video_id") != track_id) continue;
+                    if (!t.has_member ("video_id"))continue;
+                    if (t.get_string_member ("video_id") != track_id)continue;
 
                     if (t.has_member ("like_status") && !t.get_null_member ("like_status")) {
                         info.status = parse_like_status (t.get_string_member ("like_status"));
@@ -855,7 +846,7 @@ namespace Timbre {
         }
 
         private void finish_recording () {
-            if (!this.play_recorded) return;
+            if (!this.play_recorded)return;
             this.play_recorded = false;
             string tid = this.recorded_track_id;
             this.recorded_track_id = "";
@@ -866,7 +857,7 @@ namespace Timbre {
 
         private void log_player_stats () {
             var raw = this.player.get_stats ();
-            if (raw == null) return;
+            if (raw == null)return;
 
             var json_str = (string) raw;
             Timbre.string_free (raw);
@@ -875,7 +866,7 @@ namespace Timbre {
                 var parser = new Json.Parser ();
                 parser.load_from_data (json_str);
                 var root = parser.get_root ();
-                if (root == null || root.get_node_type () != Json.NodeType.OBJECT) return;
+                if (root == null || root.get_node_type () != Json.NodeType.OBJECT)return;
 
                 var obj = root.get_object ();
                 string codec = obj.has_member ("acodec") && !obj.get_null_member ("acodec")
@@ -896,8 +887,8 @@ namespace Timbre {
                     ? obj.get_boolean_member ("from_cache") : false;
 
                 var line = "codec=%s container=%s itag=%s bitrate=%d kbps rate=%.1f kHz channels=%d protocol=%s cached=%s".printf (
-                    codec, container, itag, bitrate, rate / 1000.0, channels, protocol,
-                    cached ? "yes" : "no"
+                                                                                                                                   codec, container, itag, bitrate, rate / 1000.0, channels, protocol,
+                                                                                                                                   cached ? "yes" : "no"
                 );
                 message ("player stats: %s", line);
             } catch (Error e) {
@@ -906,10 +897,10 @@ namespace Timbre {
         }
 
         private void settle_pending_seek () {
-            if (!this.slider_locked || this.pending_seek_target < 0.0) return;
+            if (!this.slider_locked || this.pending_seek_target < 0.0)return;
 
             double pos = this.player.get_position ();
-            if (Math.fabs (pos - this.pending_seek_target) > 0.5) return;
+            if (Math.fabs (pos - this.pending_seek_target) > 0.5)return;
 
             if (this.slider_unlock_id != 0) {
                 GLib.Source.remove (this.slider_unlock_id);
@@ -920,9 +911,9 @@ namespace Timbre {
         }
 
         private bool update_ui_tick () {
-            if (this.player == null) return true;
+            if (this.player == null)return true;
 
-            if (this.loading_track) return true;
+            if (this.loading_track)return true;
 
             int state = this.player.get_state ();
             bool backend_playing = (state == 1);
@@ -949,7 +940,7 @@ namespace Timbre {
 
             this.settle_pending_seek ();
 
-            if (this.slider_locked) return true;
+            if (this.slider_locked)return true;
 
             double current_pos = this.player.get_position ();
             this.set_slider_silently (current_pos);
@@ -975,9 +966,9 @@ namespace Timbre {
         }
 
         public void play_radio (string id, bool increment) {
-            if (this.radio_loading) return;
+            if (this.radio_loading)return;
 
-            if (id.length == 0) return;
+            if (id.length == 0)return;
 
             this.radio_loading = true;
 
@@ -988,7 +979,7 @@ namespace Timbre {
                     if (error != null) {
                         warning ("radio: %s", (string) error);
                         Timbre.string_free (error);
-                        if (json != null) Timbre.string_free (json);
+                        if (json != null)Timbre.string_free (json);
                         return GLib.Source.REMOVE;
                     }
 
@@ -1032,19 +1023,19 @@ namespace Timbre {
                     return tracks;
                 }
                 var obj = root.get_object ();
-                if (!obj.has_member ("tracks")) return tracks;
+                if (!obj.has_member ("tracks"))return tracks;
 
                 var arr = obj.get_array_member ("tracks");
                 foreach (unowned Json.Node node in arr.get_elements ()) {
-                    if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                    if (node.get_node_type () != Json.NodeType.OBJECT)continue;
                     var wrapper = node.get_object ();
-                    if (!wrapper.has_member ("track")) continue;
+                    if (!wrapper.has_member ("track"))continue;
                     var t = wrapper.get_object_member ("track");
 
                     string vid = "";
                     if (t.has_member ("video_id") && !t.get_null_member ("video_id"))
                         vid = t.get_string_member ("video_id");
-                    if (vid.length == 0) continue;
+                    if (vid.length == 0)continue;
 
                     var track = new Timbre.Track ();
                     track.id = vid;
@@ -1055,7 +1046,7 @@ namespace Timbre {
                         var a_node = t.get_member ("artists");
                         if (a_node.get_node_type () == Json.NodeType.ARRAY) {
                             foreach (unowned Json.Node an in a_node.get_array ().get_elements ()) {
-                                if (an.get_node_type () != Json.NodeType.OBJECT) continue;
+                                if (an.get_node_type () != Json.NodeType.OBJECT)continue;
                                 var ao = an.get_object ();
                                 var p = new Person ();
                                 if (ao.has_member ("name") && !ao.get_null_member ("name"))
@@ -1084,14 +1075,14 @@ namespace Timbre {
 
         [GtkCallback]
         private void on_seek_changed () {
-            if (this.slider_locked) return;
-            if (this.is_seeking) return;
+            if (this.slider_locked)return;
+            if (this.is_seeking)return;
 
             double target_pos = this.adjustment_progress.value;
             int total_secs = (int) target_pos;
             this.label_time_current.label = "%d:%02d".printf (total_secs / 60, total_secs % 60);
 
-            if (this.seek_debounce_id != 0) GLib.Source.remove (this.seek_debounce_id);
+            if (this.seek_debounce_id != 0)GLib.Source.remove (this.seek_debounce_id);
             this.seek_debounce_id = GLib.Timeout.add (250, () => {
                 this.seek_debounce_id = 0;
 
