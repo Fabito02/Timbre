@@ -207,11 +207,17 @@ picture.image-placeholder {
 
 button.home-speed-tile-card {
     padding: 0;
+    color: #ffffff;
     border-radius: 12px;
     background-color: #00000030;
     background-image: none;
     box-shadow: none;
     border: none;
+}
+
+.home-speed-tile-card .explicit-badge {
+    background-color: alpha(#ffffff, 0.3);
+    color: #ffffff;
 }
 
 button.home-speed-tile-card .overlay-speed-tile {
