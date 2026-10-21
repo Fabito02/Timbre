@@ -8,19 +8,18 @@ namespace Timbre.HomeSection {
     }
 
     public Gtk.Widget build_header (HomePage page, HomeSectionModel section, bool show_all = false) {
-        var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12) {
+        var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8) {
             halign = Gtk.Align.FILL,
             valign = Gtk.Align.CENTER,
-            margin_bottom = 4
         };
 
         if (section.strapline_thumb != null && section.strapline_thumb.length > 0) {
-            var class = (section.kind == "hero_dial" || section.kind == "hero_dial_cards") ? "home-section-user-cover" : "home-section-artist-cover";
+            var class_name = (section.kind == "hero_dial" || section.kind == "hero_dial_cards") ? "home-section-user-cover" : "home-section-artist-cover";
             var pic = new Gtk.Picture () {
                 width_request = 32, height_request = 32,
                 content_fit = Gtk.ContentFit.COVER,
                 valign = Gtk.Align.CENTER,
-                css_classes = { class }
+                css_classes = { class_name }
             };
             var b = new Timbre.Utils.ImageBinding (pic, 32);
             attach_binding (pic, b);
@@ -29,7 +28,7 @@ namespace Timbre.HomeSection {
         }
 
         var text_col = new Gtk.Box (Gtk.Orientation.VERTICAL, 2) {
-            valign = Gtk.Align.CENTER,
+            valign = Gtk.Align.END,
             hexpand = true
         };
 
@@ -89,7 +88,7 @@ namespace Timbre.HomeSection {
     public void add_speed_dial (HomePage page, Gtk.Box parent,
                                 HomeSectionModel section, int rows,
                                 string? fixed_title = null) {
-        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
         box.append (build_header (page, section, true));
 
         var scroll_box = new Timbre.Utils.HorizontalScrollBox ();
@@ -101,7 +100,7 @@ namespace Timbre.HomeSection {
             line_spacing = SPEED_DIAL_SPACING,
             child_spacing = SPEED_DIAL_SPACING,
             valign = Gtk.Align.START,
-            margin_top = SPEED_DIAL_BLEED,
+            margin_top = 12,
             margin_bottom = SPEED_DIAL_BLEED,
             margin_start = SPEED_DIAL_BLEED,
             margin_end = SPEED_DIAL_BLEED
@@ -129,7 +128,7 @@ namespace Timbre.HomeSection {
     public void add_speed_dial_card (HomePage page, Gtk.Box parent,
                                      HomeSectionModel section, int rows,
                                      string? fixed_title = null) {
-        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
         box.append (build_header (page, section, true));
 
         var scroll_box = new Timbre.Utils.HorizontalScrollBox ();
@@ -141,7 +140,7 @@ namespace Timbre.HomeSection {
             line_spacing = SPEED_DIAL_SPACING,
             child_spacing = SPEED_DIAL_SPACING,
             valign = Gtk.Align.START,
-            margin_top = SPEED_DIAL_BLEED,
+            margin_top = 12,
             margin_bottom = SPEED_DIAL_BLEED,
             margin_start = SPEED_DIAL_BLEED,
             margin_end = SPEED_DIAL_BLEED
@@ -193,7 +192,7 @@ namespace Timbre.HomeSection {
     }
 
     private void add_card_strip (HomePage page, Gtk.Box parent, HomeSectionModel section) {
-        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
         box.append (build_header (page, section, true));
 
         var scroll_box = new Timbre.Utils.HorizontalScrollBox ();
@@ -202,7 +201,7 @@ namespace Timbre.HomeSection {
         var strip = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
         strip.margin_start = SPEED_DIAL_BLEED;
         strip.margin_end = SPEED_DIAL_BLEED;
-        strip.margin_top = SPEED_DIAL_BLEED;
+        strip.margin_top = 12;
         strip.margin_bottom = SPEED_DIAL_BLEED;
 
         for (int i = 0; i < section.items.length; i++) {

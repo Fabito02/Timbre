@@ -93,6 +93,8 @@ template $TimbreHomeSpeedTileCard: Button {
         orientation: horizontal;
         spacing: 6;
         margin-bottom: 6;
+        margin-start: 8;
+        margin-end: 8;
 
         Label label_title {
           halign: start;
@@ -102,7 +104,6 @@ template $TimbreHomeSpeedTileCard: Button {
           wrap: true;
           wrap-mode: word_char;
           max-width-chars: 24;
-          margin-start: 8;
 
           styles [
             "home-speed-title",
@@ -112,7 +113,6 @@ template $TimbreHomeSpeedTileCard: Button {
         Label explicit_badge {
           label: "E";
           valign: center;
-          margin-end: 8;
 
           styles [
             "explicit-badge",
