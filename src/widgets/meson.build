@@ -1,5 +1,6 @@
 widgets_blueprints = files(
   'home_speed_tile.blp',
+  'home_speed_tile_card.blp',
   'search.blp',
   'theme_selector.blp',
   'track_card.blp',
@@ -8,6 +9,7 @@ widgets_blueprints = files(
 
 widgets_sources = files(
   'home_speed_tile.vala',
+  'home_speed_tile_card.vala',
   'horizontal_scroll_box.vala',
   'like_button.vala',
   'login_window.vala',

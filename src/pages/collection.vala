@@ -169,8 +169,6 @@ namespace Timbre {
         private GenericArray<Timbre.Track> parse_tracks_json (string json_data) {
             var list = new GenericArray<Timbre.Track> ();
 
-            message ("Collection Data: " + json_data);
-
             var parser = new Json.Parser ();
             try {
                 parser.load_from_data (json_data);

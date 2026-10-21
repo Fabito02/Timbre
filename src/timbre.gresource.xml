@@ -19,6 +19,10 @@
             compressed="true"
         >home_speed_tile.ui</file>
     <file
+            alias="widgets/home_speed_tile_card.ui"
+            compressed="true"
+        >home_speed_tile_card.ui</file>
+    <file
             alias="widgets/theme_selector.ui"
             compressed="true"
         >theme_selector.ui</file>

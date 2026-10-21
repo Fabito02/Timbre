@@ -88,6 +88,7 @@ namespace Timbre {
                     }
 
                     string json_str = (string) json;
+                    message (json_str);
                     var sections = HomeParser.parse_sections (json_str);
                     Timbre.string_free (json);
 
@@ -223,6 +224,8 @@ namespace Timbre {
 
                 if (sec.kind == "hero_dial") {
                     HomeSection.add_speed_dial (this, this.content_box, sec, 3);
+                } else if (sec.kind == "hero_dial_cards") {
+                    HomeSection.add_speed_dial_card (this, this.content_box, sec, 2);
                 } else {
                     HomeSection.add_section (this, this.content_box, sec);
                 }

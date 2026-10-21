@@ -120,22 +120,25 @@ fn parse_section(shelf: &Value) -> Option<HomeSection> {
 }
 
 fn mark_hero_dial(sections: &mut [HomeSection]) {
-    let by_id = sections
+    let listen_again = sections
         .iter()
         .position(|s| s.browse_id.as_deref() == Some("FEmusic_listen_again"));
 
-    let by_shape = || {
-        sections.iter().position(|s| {
-            if s.items.len() < 6 {
-                return false;
-            }
-            let playable = s.items.iter().filter(|i| i.kind.is_playable()).count();
-            playable == s.items.len()
-        })
-    };
+    for (i, section) in sections.iter_mut().enumerate() {
+        if section.kind == "hero_dial" || section.kind == "hero_dial_cards" {
+            continue;
+        }
 
-    if let Some(i) = by_id.or_else(by_shape) {
-        sections[i].kind = "hero_dial".into();
+        let by_id = Some(i) == listen_again;
+
+        let by_shape =
+            section.items.len() >= 12 && section.items.iter().all(|it| it.kind.is_playable());
+
+        if by_id {
+            section.kind = "hero_dial_cards".into();
+        } else if by_shape {
+            section.kind = "hero_dial".into();
+        }
     }
 }
 

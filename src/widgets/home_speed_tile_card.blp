@@ -1,0 +1,145 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $TimbreHomeSpeedTileCard: Button {
+  styles [
+    "home-speed-tile-card",
+    "flat",
+  ]
+
+  GestureClick secondary_click {
+    button: 3;
+  }
+
+  GestureLongPress long_press_gesture {}
+
+  Box {
+    orientation: horizontal;
+    spacing: 10;
+
+    Overlay {
+      valign: center;
+
+      Box {
+        width-request: 120;
+        height-request: 120;
+      }
+
+      [overlay]
+      Picture image_cover {
+        can-shrink: true;
+        keep-aspect-ratio: false;
+        content-fit: contain;
+        halign: fill;
+        valign: fill;
+
+        styles [
+          "home-speed-card-cover",
+        ]
+      }
+
+      [overlay]
+      Box gradient_overlay {
+        halign: fill;
+        valign: fill;
+
+        styles [
+          "overlay-speed-tile",
+        ]
+      }
+
+      [overlay]
+      Adw.Bin play_overlay {
+        halign: center;
+        valign: center;
+
+        styles [
+          "play-overlay",
+        ]
+
+        Image {
+          icon-name: "media-playback-start-symbolic";
+          pixel-size: 16;
+
+          styles [
+            "play-overlay-icon-speed-tile",
+          ]
+        }
+      }
+
+      [overlay]
+      Adw.Bin album_overlay {
+        halign: end;
+        valign: end;
+
+        styles [
+          "album-overlay",
+        ]
+
+        Image {
+          icon-name: "media-optical-symbolic";
+          pixel-size: 14;
+
+          styles [
+            "album-overlay-icon-speed-tile",
+          ]
+        }
+      }
+
+      [overlay]
+      Box {
+        halign: center;
+        valign: end;
+        orientation: horizontal;
+        spacing: 6;
+        margin-bottom: 6;
+
+        Label label_title {
+          halign: start;
+          xalign: 0;
+          ellipsize: end;
+          lines: 1;
+          wrap: true;
+          wrap-mode: word_char;
+          max-width-chars: 24;
+          margin-start: 8;
+          margin-end: 8;
+
+          styles [
+            "home-speed-title",
+          ]
+        }
+
+        Label explicit_badge {
+          label: "E";
+          valign: center;
+
+          styles [
+            "explicit-badge",
+          ]
+        }
+      }
+
+      [overlay]
+      Adw.Bin live_badge {
+        halign: end;
+        valign: start;
+        margin-end: 8;
+        margin-top: 8;
+
+        styles [
+          "live-overlay",
+        ]
+
+        Image {
+          icon-name: "radio-wave-symbolic";
+          pixel-size: 12;
+
+          styles [
+            "live-overlay-icon",
+          ]
+        }
+      }
+    }
+  }
+}

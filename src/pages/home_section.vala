@@ -15,7 +15,7 @@ namespace Timbre.HomeSection {
         };
 
         if (section.strapline_thumb != null && section.strapline_thumb.length > 0) {
-            var class = (section.kind == "hero_dial") ? "home-section-user-cover" : "home-section-artist-cover";
+            var class = (section.kind == "hero_dial" || section.kind == "hero_dial_cards") ? "home-section-user-cover" : "home-section-artist-cover";
             var pic = new Gtk.Picture () {
                 width_request = 32, height_request = 32,
                 content_fit = Gtk.ContentFit.COVER,
@@ -110,6 +110,46 @@ namespace Timbre.HomeSection {
         for (int i = 0; i < section.items.length; i++) {
             var item = section.items.get (i);
             var tile = new Timbre.HomeSpeedTile (item);
+            tile.clicked.connect (() => {
+                if (item.kind.is_playable ())
+                    page.track_selected (item);
+                else
+                    page.collection_selected (item);
+            });
+            wrap.append (tile);
+        }
+
+        scroll_box.set_content (wrap);
+        box.append (scroll_box);
+        parent.append (box);
+
+        fix_dial_height (wrap, rows);
+    }
+
+    public void add_speed_dial_card (HomePage page, Gtk.Box parent,
+                                     HomeSectionModel section, int rows,
+                                     string? fixed_title = null) {
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+        box.append (build_header (page, section, true));
+
+        var scroll_box = new Timbre.Utils.HorizontalScrollBox ();
+        scroll_box.add_css_class ("home-speed-scroll");
+
+        var wrap = new Adw.WrapBox () {
+            orientation = Gtk.Orientation.VERTICAL,
+            line_homogeneous = true,
+            line_spacing = SPEED_DIAL_SPACING,
+            child_spacing = SPEED_DIAL_SPACING,
+            valign = Gtk.Align.START,
+            margin_top = SPEED_DIAL_BLEED,
+            margin_bottom = SPEED_DIAL_BLEED,
+            margin_start = SPEED_DIAL_BLEED,
+            margin_end = SPEED_DIAL_BLEED
+        };
+
+        for (int i = 0; i < section.items.length; i++) {
+            var item = section.items.get (i);
+            var tile = new Timbre.HomeSpeedTileCard (item);
             tile.clicked.connect (() => {
                 if (item.kind.is_playable ())
                     page.track_selected (item);
