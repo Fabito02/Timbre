@@ -748,12 +748,13 @@ namespace Timbre {
         }
 
         private void on_radio_clicked () {
-            if (this.released)return;
-            if (this.data == null || this.data.songs == null)return;
-            if (this.data.songs.results.length == 0)return;
-            string vid = this.data.songs.results.get (Random.int_range (0, this.data.songs.results.length)).id;
+            if (this.data == null || this.data.radio_id == null || this.data.radio_id.length == 0) {
+                return;
+            }
 
-            this.player.get_radio (vid, (json, error) => {
+            string radio_id = this.data.radio_id;
+
+            this.player.get_radio (radio_id, (json, error) => {
                 GLib.Idle.add (() => {
                     if (this.released) {
                         if (error != null)Timbre.string_free (error);

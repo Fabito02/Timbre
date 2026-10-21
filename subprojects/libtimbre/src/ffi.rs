@@ -787,7 +787,7 @@ endpoint_json_str!(timbre_player_browse_section, |ctx, args_json| {
 
 endpoint_json_str!(timbre_player_get_radio, |ctx, id| {
     let api = ctx.session.api();
-    if id.starts_with("RDAMPL") {
+    if id.starts_with("RDAMPL") || id.starts_with("RDEM") {
         playlists::radio_tracks(&*api, None, Some(&id)).await
     } else {
         playlists::radio_tracks(&*api, Some(&id), None).await
