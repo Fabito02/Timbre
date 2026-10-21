@@ -348,11 +348,11 @@ namespace Timbre {
                 };
                 this.root.visible = false;
 
-                var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12) { height_request = 34 };
+                var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12) {};
                 var title_label = new Gtk.Label (title) {
                     halign = Gtk.Align.START, valign = Gtk.Align.CENTER, hexpand = true
                 };
-                title_label.add_css_class ("heading");
+                title_label.add_css_class ("title-3");
                 header.append (title_label);
                 if (action_widget != null)header.append (action_widget);
                 this.root.append (header);
@@ -378,8 +378,6 @@ namespace Timbre {
                     orientation = Gtk.Orientation.HORIZONTAL,
                     child_spacing = 12,
                     line_spacing = 12,
-                    margin_top = 4,
-                    margin_bottom = 4,
                     vexpand = false,
                     valign = Gtk.Align.START
                 };
