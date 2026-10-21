@@ -62,16 +62,14 @@ template $TimbreArtistPage: Adw.NavigationPage {
 
               [overlay]
               Adw.Clamp header_clamp {
-                maximum-size: 1024;
-                tightening-threshold: 600;
+                maximum-size: 1080;
+                tightening-threshold: 720;
                 valign: end;
 
                 Box info_box {
                   orientation: vertical;
                   spacing: 4;
-                  margin-start: 28;
-                  margin-end: 28;
-                  margin-bottom: 24;
+                  margin-bottom: 16;
 
                   Label label_name {
                     halign: start;
@@ -139,21 +137,19 @@ template $TimbreArtistPage: Adw.NavigationPage {
 
                     Button button_subscribe {
                       child: Box {
-                        Image button_subscribe_image{
+                        Image button_subscribe_image {
                           icon-name: "non-starred-symbolic";
                           pixel-size: 16;
                           margin-end: 8;
                         }
 
-                        Label button_subscribe_label{
+                        Label button_subscribe_label {
                           label: _("Subscribe - ");
                         }
 
-                        Label label_subscribers {
-                          
-                        }
+                        Label label_subscribers {}
                       };
-                      
+
                       tooltip-text: _("Subscribe");
 
                       styles [
@@ -167,22 +163,17 @@ template $TimbreArtistPage: Adw.NavigationPage {
             }
 
             Adw.Clamp {
-              maximum-size: 1024;
-              tightening-threshold: 600;
+              maximum-size: 1080;
+              tightening-threshold: 720;
 
               Box content_box {
                 orientation: vertical;
-                margin-top: 12;
-                margin-bottom: 24;
-                margin-start: 12;
-                margin-end: 12;
+                margin-bottom: 32;
 
                 Box description_box {
                   orientation: vertical;
                   spacing: 4;
-                  margin-start: 16;
-                  margin-end: 16;
-                  margin-bottom: 16;
+                  margin-bottom: 24;
 
                   Label label_description {
                     halign: start;
@@ -208,7 +199,7 @@ template $TimbreArtistPage: Adw.NavigationPage {
                 Box sections_box {
                   orientation: vertical;
                   spacing: 32;
-                  margin-top: 12;
+                  margin-top: 8;
                 }
               }
             }

@@ -4,10 +4,10 @@ using Adw 1;
 template $TimbreCollectionPage: Adw.NavigationPage {
   title: _("Details");
 
-  Overlay page_overlay {
+  child: Overlay page_overlay {
     ScrolledWindow scroll {
       hscrollbar-policy: never;
-      overlay-scrolling: true;
+      vscrollbar-policy: automatic;
       vexpand: true;
 
       Box page_box {
@@ -42,16 +42,14 @@ template $TimbreCollectionPage: Adw.NavigationPage {
 
           [overlay]
           Adw.Clamp header_clamp {
-            maximum-size: 1280;
-            tightening-threshold: 600;
+            maximum-size: 1080;
+            tightening-threshold: 720;
             valign: end;
 
             Box info_box {
               orientation: vertical;
               spacing: 4;
-              margin-start: 28;
-              margin-end: 28;
-              margin-bottom: 24;
+              margin-bottom: 16;
 
               Label label_title {
                 halign: start;
@@ -69,6 +67,7 @@ template $TimbreCollectionPage: Adw.NavigationPage {
                 xalign: 0;
 
                 styles [
+                  "subtitle-label",
                   "dim-label",
                 ]
               }
@@ -115,7 +114,6 @@ template $TimbreCollectionPage: Adw.NavigationPage {
 
                   styles [
                     "circular",
-                    "collection-button",
                   ]
                 }
 
@@ -126,7 +124,6 @@ template $TimbreCollectionPage: Adw.NavigationPage {
 
                   styles [
                     "circular",
-                    "collection-button",
                   ]
                 }
 
@@ -137,33 +134,6 @@ template $TimbreCollectionPage: Adw.NavigationPage {
 
                   styles [
                     "circular",
-                    "collection-button",
-                  ]
-                }
-              }
-
-              Box description_box {
-                orientation: vertical;
-                spacing: 4;
-                margin-top: 12;
-
-                Label label_description {
-                  halign: start;
-                  xalign: 0;
-                  wrap: true;
-                  wrap-mode: word_char;
-
-                  styles [
-                    "body",
-                  ]
-                }
-
-                Label label_read_more {
-                  halign: start;
-                  use-markup: true;
-
-                  styles [
-                    "caption",
                   ]
                 }
               }
@@ -172,23 +142,52 @@ template $TimbreCollectionPage: Adw.NavigationPage {
         }
 
         Adw.Clamp {
-          maximum-size: 1280;
-          tightening-threshold: 600;
+          maximum-size: 1080;
+          tightening-threshold: 720;
 
           Box content_box {
             orientation: vertical;
-            margin-top: 12;
-            margin-bottom: 24;
-            margin-start: 24;
-            margin-end: 24;
+            margin-bottom: 32;
 
-            ListBox tracks_list {
-              selection-mode: none;
-              visible: false;
+            Box description_box {
+              orientation: vertical;
+              spacing: 4;
+              margin-bottom: 24;
 
-              styles [
-                "boxed-list",
-              ]
+              Label label_description {
+                halign: start;
+                xalign: 0;
+                wrap: true;
+                wrap-mode: word_char;
+
+                styles [
+                  "body",
+                ]
+              }
+
+              Label label_read_more {
+                halign: start;
+                use-markup: true;
+
+                styles [
+                  "caption",
+                ]
+              }
+            }
+
+            Box sections_box {
+              orientation: vertical;
+              spacing: 32;
+              margin-top: 8;
+
+              ListBox tracks_list {
+                selection-mode: none;
+                visible: false;
+
+                styles [
+                  "boxed-list",
+                ]
+              }
             }
           }
         }
@@ -223,5 +222,5 @@ template $TimbreCollectionPage: Adw.NavigationPage {
         action-name: "navigation.pop";
       }
     }
-  }
+  };
 }

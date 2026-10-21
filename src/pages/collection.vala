@@ -194,8 +194,6 @@ namespace Timbre {
                 info_parts.add (root_obj.get_string_member ("album_type"));
             }
 
-            // Dentro de parse_tracks_json, após obter o root_obj:
-
             var autores = new GenericArray<string> ();
 
             if (root_obj.has_member ("author") && !root_obj.get_null_member ("author")) {
