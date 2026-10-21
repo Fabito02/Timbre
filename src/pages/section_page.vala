@@ -7,7 +7,6 @@ namespace Timbre {
         [GtkChild] private unowned Adw.StatusPage empty_page;
 
         private const int LOAD_THRESHOLD_PX = 300;
-        private const int CARD_WIDTH = 160;
 
         private unowned Timbre.Player player;
         private string browse_id;
@@ -152,8 +151,7 @@ namespace Timbre {
                 if (this.seen_ids.contains (item.id)) continue;
                 this.seen_ids.insert (item.id, true);
 
-                var card = new Timbre.TrackCard (item);
-                card.width_request = CARD_WIDTH;
+                var card = new Timbre.TrackCard (item, false);
 
                 card.clicked.connect (() => {
                     if (item.kind.is_playable ())

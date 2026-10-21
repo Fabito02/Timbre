@@ -97,20 +97,22 @@ button.no-hover:hover {
     border-radius: 8px;
 }
 
-.row-cover-img,
-.cover-bar-img,
-.home-speed-cover {
-    border-radius: 8px;
+.row-cover-img {
+    border-radius: 10px;
     background-color: #00000060;
+}
+
+.songs-list {
+    border-radius: 16px;
 }
 
 .card-btn {
     padding: 10px;
-    border-radius: 18px;
+    border-radius: 24px;
 }
 
 .card-cover-img {
-    border-radius: 12px;
+    border-radius: 16px;
     background-color: #00000060;
 }
 
@@ -166,7 +168,7 @@ picture.image-placeholder {
 
 .home-speed-tile {
     padding: 8px;
-    border-radius: 12px;
+    border-radius: 16px;
     background-color: @card_bg_color;
     background-image: none;
     transition: background-color 180ms cubic-bezier(0.25, 1, 0.5, 1);
@@ -186,8 +188,9 @@ picture.image-placeholder {
     padding: 6px;
 }
 
-.home-speed-cover {
-    border-radius: 8px;
+.home-speed-cover, .cover-bar-img {
+    border-radius: 10px;
+    background-color: #00000060;
 }
 
 .home-speed-title {

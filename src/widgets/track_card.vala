@@ -2,6 +2,7 @@ namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/track_card.ui")]
     public class TrackCard : Gtk.Button {
         [GtkChild] private unowned Gtk.Picture image_cover;
+        [GtkChild] private unowned Gtk.Box image_cover_box;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_artist;
         [GtkChild] private unowned Gtk.Label explicit_badge;
@@ -17,7 +18,7 @@ namespace Timbre {
 
         private Timbre.Utils.ImageBinding cover_binding;
 
-        public TrackCard (MediaItem item) {
+        public TrackCard (MediaItem item, bool landscape_video_image = true) {
             Object ();
             this.media_item = item;
 
@@ -36,16 +37,16 @@ namespace Timbre {
             this.live_overlay.visible = item.is_live;
             this.explicit_badge.visible = item.explicit;
 
-            if (item.kind == ItemKind.VIDEO) {
-                this.image_cover.width_request = 256;
-                this.image_cover.height_request = 144;
+            if (item.kind == ItemKind.VIDEO && landscape_video_image) {
+                this.image_cover_box.width_request = 256;
+                this.image_cover_box.height_request = 144;
             } else {
-                this.image_cover.width_request = 144;
-                this.image_cover.height_request = 144;
+                this.image_cover_box.width_request = 144;
+                this.image_cover_box.height_request = 144;
             }
 
-            this.label_title.max_width_chars = (item.kind == ItemKind.VIDEO) ? 32 : 20;
-            this.label_artist.max_width_chars = (item.kind == ItemKind.VIDEO) ? 32 : 20;
+            this.label_title.max_width_chars = (item.kind == ItemKind.VIDEO && landscape_video_image) ? 32 : 20;
+            this.label_artist.max_width_chars = (item.kind == ItemKind.VIDEO && landscape_video_image) ? 32 : 20;
 
             this.setup_gestures ();
         }

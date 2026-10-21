@@ -19,15 +19,20 @@ template $TimbreTrackCard: Button {
 
     Adw.Bin {
       Overlay {
-        Picture image_cover {
-          can-shrink: true;
-          content-fit: contain;
-          valign: center;
-          halign: center;
+        Overlay {
+          Box image_cover_box {}
 
-          styles [
-            "card-cover-img",
-          ]
+          [overlay]
+          Picture image_cover {
+            can-shrink: true;
+            content-fit: contain;
+            halign: fill;
+            valign: fill;
+
+            styles [
+              "card-cover-img",
+            ]
+          }
         }
 
         [overlay]
