@@ -51,6 +51,7 @@ namespace Timbre {
 
         public void play_list (GenericArray<Track> new_tracks, int start_index = 0) {
             this._shuffle = false;
+            this.shuffle_changed (this._shuffle);
             this._saved_order = null;
             this.store.remove_all ();
 
