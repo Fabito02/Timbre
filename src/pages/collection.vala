@@ -2,7 +2,6 @@ namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/collection.ui")]
     public class CollectionPage : Adw.NavigationPage {
         [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
-        extern static void force_dispose (void* obj);
 
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Label label_title;
@@ -115,9 +114,6 @@ namespace Timbre {
 
             this.tracks_list.remove_all ();
 
-            foreach (unowned var row in rows) {
-                force_dispose (row);
-            }
         }
 
         private void load_collection_tracks () {

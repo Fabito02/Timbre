@@ -323,7 +323,6 @@ namespace Timbre {
 
         private class Section : Object {
             [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
-            extern static void force_dispose (void* obj);
 
             public Gtk.Box root;
             public int count = 0;
@@ -473,9 +472,6 @@ namespace Timbre {
                     this.grid_box.remove (c);
                     c = next;
                 }
-
-                foreach (unowned var row in rows)force_dispose (row);
-                foreach (unowned var card in cards)force_dispose (card);
             }
 
             public void clear () {

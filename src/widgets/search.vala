@@ -2,7 +2,6 @@ namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/search.ui")]
     public class SearchPage : Gtk.Box {
         [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
-        extern static void force_dispose (void* obj);
 
         [GtkChild] private unowned Adw.ViewStack stack;
         [GtkChild] private unowned Gtk.Box toggle_container;
@@ -320,9 +319,6 @@ namespace Timbre {
 
                 lb.remove_all ();
 
-                foreach (unowned var row in rows) {
-                    force_dispose (row);
-                }
             }
         }
 

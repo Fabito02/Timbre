@@ -263,7 +263,6 @@ namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/artist.ui")]
     public class ArtistPage : Adw.NavigationPage {
         [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
-        extern static void force_dispose (void* obj);
 
         [GtkChild] private unowned Adw.ViewStack stack;
         [GtkChild] private unowned Gtk.Picture banner_picture;
@@ -460,9 +459,6 @@ namespace Timbre {
                 this.sections_box.remove (c);
                 c = next;
             }
-
-            foreach (unowned var row in rows)force_dispose (row);
-            foreach (unowned var card in cards)force_dispose (card);
         }
 
         private void collect_releasables (Gtk.Widget widget,

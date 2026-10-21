@@ -2,7 +2,6 @@ namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/section_page.ui")]
     public class SectionPage : Adw.NavigationPage {
         [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
-        extern static void force_dispose (void* obj);
 
         [GtkChild] private unowned Gtk.Stack stack;
         [GtkChild] private unowned Adw.WrapBox wrap;
@@ -87,10 +86,6 @@ namespace Timbre {
                 var next = child.get_next_sibling ();
                 this.wrap.remove (child);
                 child = next;
-            }
-
-            foreach (unowned var card in cards) {
-                force_dispose (card);
             }
         }
 
