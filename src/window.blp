@@ -491,6 +491,13 @@ template $TimbreWindow: Adw.ApplicationWindow {
                   policy: wide;
                 };
 
+                [start]
+                ToggleButton button_search {
+                  icon-name: "edit-find-symbolic";
+                  tooltip-text: _("Search");
+                  active: bind searchbar.search-mode-enabled bidirectional;
+                }
+
                 [end]
                 MenuButton primary_menu_btn {
                   icon-name: "open-menu-symbolic";
