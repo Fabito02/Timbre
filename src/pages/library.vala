@@ -15,6 +15,7 @@ namespace Timbre {
         private unowned Timbre.Player? player;
         private bool loading = false;
         private bool loaded = false;
+        private bool released = false;
         private int pending_requests = 0;
         private bool load_had_data = false;
         private bool load_had_error = false;
@@ -43,6 +44,17 @@ namespace Timbre {
             this.build_header_and_sections ();
             this.stack.visible_child_name = "placeholder";
             this.built = true;
+        }
+
+        protected override void unroot () {
+            this.released = true;
+            this.pending_requests = 0;
+            this.loading = false;
+            foreach (var sec in get_sections ()) {
+                sec.clear ();
+            }
+            this.player = null;
+            base.unroot ();
         }
 
         private Section[] get_sections () {
@@ -80,6 +92,7 @@ namespace Timbre {
             this.player = player;
             if (player.is_authenticated ()) {
                 GLib.Idle.add (() => {
+                    if (this.released)return GLib.Source.REMOVE;
                     this.load_library_data (false);
                     return GLib.Source.REMOVE;
                 });
@@ -98,10 +111,11 @@ namespace Timbre {
         }
 
         public void load_library_data (bool force) {
-            if (!this.built || this.player == null || this.loading || (this.loaded && !force)) return;
+            if (this.released)return;
+            if (!this.built || this.player == null || this.loading || (this.loaded && !force))return;
 
             this.loading = true;
-            if (force) this.loaded = false;
+            if (force)this.loaded = false;
             this.pending_requests = 3;
             this.load_had_data = false;
             this.load_had_error = false;
@@ -124,9 +138,15 @@ namespace Timbre {
         }
 
         private void on_request_done (char* json, char* error, Section section, ItemKind default_kind) {
+            if (this.released) {
+                if (error != null)Timbre.string_free (error);
+                if (json != null)Timbre.string_free (json);
+                return;
+            }
+
             if (!this.built || section == null) {
-                if (error != null) Timbre.string_free (error);
-                if (json != null) Timbre.string_free (json);
+                if (error != null)Timbre.string_free (error);
+                if (json != null)Timbre.string_free (json);
                 return;
             }
 
@@ -147,7 +167,7 @@ namespace Timbre {
             }
 
             this.pending_requests--;
-            if (this.pending_requests > 0) return;
+            if (this.pending_requests > 0)return;
 
             this.loading = false;
             this.loaded = true;
@@ -169,6 +189,7 @@ namespace Timbre {
         }
 
         private void show_status_error () {
+            if (this.released)return;
             this.status_page.icon_name = "dialog-warning-symbolic";
             this.status_page.title = _("Couldn't load Library");
             this.status_page.description = _("Check your connection and try again.");
@@ -220,17 +241,17 @@ namespace Timbre {
             }
 
             var root = parser.get_root ();
-            if (root == null || root.get_node_type () != Json.NodeType.ARRAY) return items;
+            if (root == null || root.get_node_type () != Json.NodeType.ARRAY)return items;
 
             foreach (unowned Json.Node node in root.get_array ().get_elements ()) {
-                if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                if (node.get_node_type () != Json.NodeType.OBJECT)continue;
                 var o = node.get_object ();
 
                 var item = new MediaItem ();
                 string kind_str = this.json_str (o, "kind");
                 item.kind = kind_str.length > 0 ? ItemKind.parse (kind_str) : default_kind;
                 item.id = this.json_str (o, "id");
-                if (item.id.length == 0) continue;
+                if (item.id.length == 0)continue;
                 item.title = this.json_str (o, "title");
                 item.description = this.json_str (o, "description");
                 item.count = this.json_str (o, "count");
@@ -251,7 +272,7 @@ namespace Timbre {
                     var artists_node = o.get_member ("artists");
                     if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
                         foreach (unowned Json.Node a in artists_node.get_array ().get_elements ()) {
-                            if (a.get_node_type () != Json.NodeType.OBJECT) continue;
+                            if (a.get_node_type () != Json.NodeType.OBJECT)continue;
                             var ao = a.get_object ();
                             var p = new Person ();
                             if (ao.has_member ("name") && !ao.get_null_member ("name"))
@@ -269,12 +290,13 @@ namespace Timbre {
         }
 
         private string json_str (Json.Object obj, string key) {
-            if (!obj.has_member (key) || obj.get_null_member (key)) return "";
+            if (!obj.has_member (key) || obj.get_null_member (key))return "";
             var n = obj.get_member (key);
             return (n.get_node_type () == Json.NodeType.VALUE) ? n.get_string () : "";
         }
 
         private void on_item_activated (MediaItem item) {
+            if (this.released)return;
             if (item.kind == ItemKind.ARTIST) {
                 this.artist_selected (item.id, item.title);
             } else {
@@ -283,6 +305,7 @@ namespace Timbre {
         }
 
         private void on_view_toggle_clicked () {
+            if (this.released)return;
             this.view_mode = (this.view_mode == "grid") ? "list" : "grid";
 
             if (this.view_mode == "grid") {
@@ -299,6 +322,9 @@ namespace Timbre {
         }
 
         private class Section : Object {
+            [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
+            extern static void force_dispose (void* obj);
+
             public Gtk.Box root;
             public int count = 0;
             public signal void item_activated (MediaItem item);
@@ -329,7 +355,7 @@ namespace Timbre {
                 };
                 title_label.add_css_class ("heading");
                 header.append (title_label);
-                if (action_widget != null) header.append (action_widget);
+                if (action_widget != null)header.append (action_widget);
                 this.root.append (header);
 
                 this.view_stack = new Gtk.Stack () {
@@ -401,12 +427,12 @@ namespace Timbre {
                         || item.subtitle_text ().down ().contains (query);
 
                     var row = this.row_map.lookup (item);
-                    if (row != null) row.visible = match;
+                    if (row != null)row.visible = match;
 
                     var card = this.card_map.lookup (item);
-                    if (card != null) card.visible = match;
+                    if (card != null)card.visible = match;
 
-                    if (match) this.count++;
+                    if (match)this.count++;
                 }
                 this.root.visible = this.count > 0;
                 this.view_stack.visible_child_name = this.view_mode;
@@ -418,7 +444,24 @@ namespace Timbre {
                 this.row_map.remove_all ();
                 this.card_map.remove_all ();
 
+                var rows = new GenericArray<unowned Timbre.TrackRow> ();
                 Gtk.Widget? c = this.list_box.get_first_child ();
+                while (c != null) {
+                    if (c is Timbre.TrackRow)rows.add ((Timbre.TrackRow) c);
+                    c = c.get_next_sibling ();
+                }
+
+                var cards = new GenericArray<unowned Timbre.TrackCard> ();
+                c = this.grid_box.get_first_child ();
+                while (c != null) {
+                    if (c is Timbre.TrackCard)cards.add ((Timbre.TrackCard) c);
+                    c = c.get_next_sibling ();
+                }
+
+                foreach (unowned var row in rows)row.release ();
+                foreach (unowned var card in cards)card.release ();
+
+                c = this.list_box.get_first_child ();
                 while (c != null) {
                     var next = c.get_next_sibling ();
                     this.list_box.remove (c);
@@ -430,6 +473,9 @@ namespace Timbre {
                     this.grid_box.remove (c);
                     c = next;
                 }
+
+                foreach (unowned var row in rows)force_dispose (row);
+                foreach (unowned var card in cards)force_dispose (card);
             }
 
             public void clear () {

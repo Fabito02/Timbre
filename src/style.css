@@ -1,311 +1,315 @@
 /* theme selector */
 
 themeselector {
-    margin: 9px;
+  margin: 9px;
 }
 
 themeselector checkbutton {
-    padding: 0;
-    padding: 1px;
-    min-height: 44px;
-    min-width: 44px;
-    background-clip: content-box;
-    border-radius: 9999px;
-    box-shadow: inset 0 0 0 1px @borders;
+  padding: 0;
+  padding: 1px;
+  min-height: 44px;
+  min-width: 44px;
+  background-clip: content-box;
+  border-radius: 9999px;
+  box-shadow: inset 0 0 0 1px @borders;
 }
 
 themeselector checkbutton.follow:checked,
 themeselector checkbutton.light:checked,
 themeselector checkbutton.dark:checked {
-    box-shadow: inset 0 0 0 2px @theme_selected_bg_color;
+  box-shadow: inset 0 0 0 2px @theme_selected_bg_color;
 }
 
 themeselector checkbutton.follow {
-    background-image: linear-gradient(
-        to bottom right,
-        #fff 49.99%,
-        #202020 50.01%
-    );
+  background-image: linear-gradient(
+    to bottom right,
+    #fff 49.99%,
+    #202020 50.01%
+  );
 }
 
 themeselector checkbutton.light {
-    background-color: #fff;
+  background-color: #fff;
 }
 
 themeselector checkbutton.dark {
-    background-color: #202020;
+  background-color: #202020;
 }
 
 themeselector checkbutton radio {
-    -gtk-icon-source: none;
-    border: none;
-    background: none;
-    box-shadow: none;
-    min-width: 12px;
-    min-height: 12px;
-    padding: 2px;
-    transform: translate(27px, 14px);
+  -gtk-icon-source: none;
+  border: none;
+  background: none;
+  box-shadow: none;
+  min-width: 12px;
+  min-height: 12px;
+  padding: 2px;
+  transform: translate(27px, 14px);
 }
 
 themeselector checkbutton.theme-selector radio:checked {
-    -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
-    background-color: @theme_selected_bg_color;
-    color: @theme_selected_fg_color;
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+  background-color: @theme_selected_bg_color;
+  color: @theme_selected_fg_color;
 }
 
 /* playback bar */
 
 scale.playback-bar {
-    padding: 0;
-    margin: 0;
-    min-height: 4px;
+  padding: 0;
+  margin: 0;
+  min-height: 4px;
 }
 
 scale.playback-bar highlight {
-    padding: 0;
-    margin: 0;
-    min-height: 4px;
-    border-radius: 0;
+  padding: 0;
+  margin: 0;
+  min-height: 4px;
+  border-radius: 0;
 }
 
 scale.playback-bar trough {
-    min-height: 4px;
+  min-height: 4px;
 }
 
 scale.playback-bar slider {
-    min-width: 14px;
-    min-height: 14px;
-    opacity: 0;
-    transition: opacity 200ms ease;
+  min-width: 14px;
+  min-height: 14px;
+  opacity: 0;
+  transition: opacity 200ms ease;
 }
 
 scale.playback-bar:hover slider {
-    opacity: 1;
+  opacity: 1;
 }
 
 button.no-hover:hover {
-    background-color: transparent;
+  background-color: transparent;
 }
 
 .play-btn {
-    padding: 6px 14px;
+  padding: 6px 14px;
 }
 
 /* covers and shapes */
 
 .cover-bar-container {
-    border-radius: 8px;
+  border-radius: 8px;
 }
 
 .row-cover-img {
-    border-radius: 10px;
-    background-color: #00000060;
+  border-radius: 10px;
+  background-color: #00000060;
 }
 
 .songs-list {
-    border-radius: 16px;
+  border-radius: 16px;
 }
 
 .card-btn {
-    padding: 10px;
-    border-radius: 24px;
+  padding: 10px;
+  border-radius: 24px;
 }
 
 .card-cover-img {
-    border-radius: 16px;
-    background-color: #00000060;
+  border-radius: 16px;
+  background-color: #00000060;
 }
 
 .search-bar {
-    min-width: 260px;
-    padding: 2px 12px;
-    border-radius: 50px;
+  min-width: 260px;
+  padding: 2px 12px;
+  border-radius: 50px;
 }
 
 .artist .card-cover-img,
 .artist .row-cover-img,
 .artist .home-speed-cover {
-    border-radius: 50%;
+  border-radius: 50%;
 }
 
 picture.image-placeholder {
-    background: linear-gradient(
-        135deg,
-        alpha(@accent_bg_color, 0.22),
-        alpha(@accent_bg_color, 0.08)
-    );
+  background: linear-gradient(
+    135deg,
+    alpha(@accent_bg_color, 0.22),
+    alpha(@accent_bg_color, 0.08)
+  );
 }
 
 /* like button */
 
 .liked-button {
-    color: @accent_bg_color;
+  color: @accent_bg_color;
 }
 
 .disliked-button {
-    color: @destructive_color;
+  color: @destructive_color;
 }
 
 /* home */
 
 .home-section-icon {
-    opacity: 0.55;
+  opacity: 0.55;
 }
 
 .home-section-strapline {
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .home-section-user-cover {
-    border-radius: 8px;
+  border-radius: 8px;
 }
 
 .home-section-artist-cover {
-    border-radius: 50%;
+  border-radius: 50%;
 }
 
 .home-speed-tile {
-    padding: 8px;
-    border-radius: 16px;
-    background-color: @card_bg_color;
-    background-image: none;
-    transition: background-color 180ms cubic-bezier(0.25, 1, 0.5, 1);
+  padding: 8px;
+  border-radius: 16px;
+  background-color: @card_bg_color;
+  background-image: none;
+  transition: background-color 180ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .home-speed-tile:hover {
-    background-color: mix(@card_bg_color, @card_fg_color, 0.07);
-    background-image: none;
+  background-color: mix(@card_bg_color, @card_fg_color, 0.07);
+  background-image: none;
 }
 
 .home-speed-tile:active {
-    background-color: mix(@card_bg_color, @card_fg_color, 0.14);
-    background-image: none;
+  background-color: mix(@card_bg_color, @card_fg_color, 0.14);
+  background-image: none;
 }
 
 .home-speed-tile.compact {
-    padding: 6px;
+  padding: 6px;
 }
 
-.home-speed-cover, .cover-bar-img {
-    border-radius: 10px;
-    background-color: #00000060;
+.home-speed-cover,
+.cover-bar-img {
+  border-radius: 10px;
+  background-color: #00000060;
 }
 
 .home-speed-title {
-    font-weight: 600;
-    font-size: 0.95em;
+  font-weight: 600;
+  font-size: 0.95em;
 }
 
 .home-speed-scroll,
 .home-card-strip {
-    margin-left: -8px;
-    margin-right: -8px;
+  margin-left: -8px;
+  margin-right: -8px;
 }
 
 .home-card-strip button.card:hover {
-    filter: brightness(1.06);
+  filter: brightness(1.06);
 }
 
 .skeleton {
-    border-radius: 12px;
-    background-color: alpha(@window_fg_color, 0.08);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: 12px;
+  background-color: alpha(@window_fg_color, 0.08);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
 
 .skeleton.skeleton-title {
-    border-radius: 6px;
+  border-radius: 6px;
 }
 
 .play-overlay-icon,
 .album-overlay-icon {
-    background-color: #00000070;
-    border-radius: 50%;
-    padding: 8px;
-    padding: 8px;
-    margin: 6px;
+  background-color: #00000070;
+  color: #ffffff;
+  border-radius: 50%;
+  padding: 8px;
+  padding: 8px;
+  margin: 6px;
 }
 
 .play-overlay-icon-speed-tile,
 .album-overlay-icon-speed-tile {
-    background-color: #00000070;
-    border-radius: 50%;
-    padding: 6px;
-    padding: 6px;
-    margin: 2px;
+  background-color: #00000070;
+  color: #ffffff;
+  border-radius: 50%;
+  padding: 6px;
+  padding: 6px;
+  margin: 2px;
 }
 
 .live-overlay {
-    background-color: #ed333b;
-    padding: 4px 6px;
-    border-radius: 8px;
+  background-color: #ed333b;
+  color: #ffffff;
+  padding: 4px 6px;
+  border-radius: 8px;
 }
 
 .explicit-badge {
-    font-size: 0.85em;
-    font-weight: bolder;
-    background-color: alpha(@window_fg_color, 0.3);
-    color: @window_fg_color;
-    border-radius: 2px;
-    padding: 2px 4px;
+  font-size: 0.85em;
+  font-weight: bolder;
+  background-color: alpha(@window_fg_color, 0.3);
+  color: @window_fg_color;
+  border-radius: 2px;
+  padding: 2px 4px;
 }
 
 @keyframes skeleton-pulse {
-    0%,
-    100% {
-        opacity: 0.6;
-    }
-    50% {
-        opacity: 1;
-    }
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* artist banner */
 .banner-scrim {
-    background: linear-gradient(
-        to bottom,
-        transparent 0%,
-        alpha(var(--window-bg-color), 0.7) 60%,
-        var(--window-bg-color) 100%
-    );
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    alpha(var(--window-bg-color), 0.7) 60%,
+    var(--window-bg-color) 100%
+  );
 }
 
 .header-gradient {
-    background-image: linear-gradient(
-        to bottom,
-        alpha(var(--window-bg-color), 0.8) 0%,
-        transparent 100%
-    );
-    background-color: transparent;
-    box-shadow: none;
+  background-image: linear-gradient(
+    to bottom,
+    alpha(var(--window-bg-color), 0.8) 0%,
+    transparent 100%
+  );
+  background-color: transparent;
+  box-shadow: none;
 }
 
 /* fullscreen player */
 
 .fullscreen_overlay_background {
-    background-color: @window_bg_color;
+  background-color: @window_bg_color;
 }
 
 .fullscreen-img {
-    border-radius: 20px;
+  border-radius: 20px;
 }
 
 .add-button {
-    padding-left: 16px;
-    padding-right: 16px;
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 .track_row {
-    padding: 6px;
+  padding: 6px;
 }
 
 .title-bigger {
-    font-weight: 700;
-    font-size: 2.35rem;
+  font-weight: 700;
+  font-size: 2.35rem;
 }
 
 .subtitle-label {
-    font-weight: 500;
-    font-size: 1.15rem;
+  font-weight: 500;
+  font-size: 1.15rem;
 }

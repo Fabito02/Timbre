@@ -17,7 +17,7 @@ namespace Timbre.HomeParser {
         }
 
         foreach (unowned Json.Node sec_node in root.get_array ().get_elements ()) {
-            if (sec_node.get_node_type () != Json.NodeType.OBJECT) continue;
+            if (sec_node.get_node_type () != Json.NodeType.OBJECT)continue;
             var sec_obj = sec_node.get_object ();
 
             string sec_title = sec_obj.has_member ("title") && !sec_obj.get_null_member ("title")
@@ -51,9 +51,9 @@ namespace Timbre.HomeParser {
             }
 
             foreach (unowned Json.Node item_node in items_node.get_array ().get_elements ()) {
-                if (item_node.get_node_type () != Json.NodeType.OBJECT) continue;
+                if (item_node.get_node_type () != Json.NodeType.OBJECT)continue;
                 var item = parse_item (item_node.get_object ());
-                if (item != null) section.items.add (item);
+                if (item != null)section.items.add (item);
             }
 
             list.add (section);
@@ -62,7 +62,7 @@ namespace Timbre.HomeParser {
         return list;
     }
 
-    private HomeItemModel? parse_item (Json.Object obj) {
+    private HomeItemModel ? parse_item (Json.Object obj) {
         var item = new HomeItemModel ();
 
         string kind_str = "";
@@ -95,7 +95,7 @@ namespace Timbre.HomeParser {
             var artists_node = obj.get_member ("artists");
             if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
                 foreach (unowned Json.Node a in artists_node.get_array ().get_elements ()) {
-                    if (a.get_node_type () != Json.NodeType.OBJECT) continue;
+                    if (a.get_node_type () != Json.NodeType.OBJECT)continue;
                     var ao = a.get_object ();
                     var p = new Person ();
                     if (ao.has_member ("name") && !ao.get_null_member ("name"))

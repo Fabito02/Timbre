@@ -13,12 +13,12 @@ namespace Timbre {
 
         public static ItemKind parse (string s) {
             switch (s.down ()) {
-                case "song":     return ItemKind.SONG;
-                case "video":    return ItemKind.VIDEO;
-                case "album":    return ItemKind.ALBUM;
-                case "artist":   return ItemKind.ARTIST;
-                case "playlist": return ItemKind.PLAYLIST;
-                default:         return ItemKind.SONG;
+            case "song":     return ItemKind.SONG;
+            case "video":    return ItemKind.VIDEO;
+            case "album":    return ItemKind.ALBUM;
+            case "artist":   return ItemKind.ARTIST;
+            case "playlist": return ItemKind.PLAYLIST;
+            default:         return ItemKind.SONG;
             }
         }
     }
@@ -30,9 +30,9 @@ namespace Timbre {
 
         public static LikeStatus parse (string status) {
             switch (status) {
-                case "LIKE":    return LikeStatus.LIKE;
-                case "DISLIKE": return LikeStatus.DISLIKE;
-                default:        return LikeStatus.INDIFFERENT;
+            case "LIKE":    return LikeStatus.LIKE;
+            case "DISLIKE": return LikeStatus.DISLIKE;
+            default:        return LikeStatus.INDIFFERENT;
             }
         }
     }
@@ -81,13 +81,13 @@ namespace Timbre {
             if (this.kind == ItemKind.ARTIST && this.subscribers != null && this.subscribers.length > 0)
                 return this.subscribers;
             if (this.kind == ItemKind.PLAYLIST) {
-                if (this.count != null && this.count.length > 0) return _("%s songs").printf (this.count);
-                if (this.description != null && this.description.length > 0) return this.description;
+                if (this.count != null && this.count.length > 0)return _("%s songs").printf (this.count);
+                if (this.description != null && this.description.length > 0)return this.description;
             }
             string at = this.artists_text ();
-            if (at.length > 0) return at;
-            if (this.description != null) return this.description;
-            if (this.year != null) return this.year;
+            if (at.length > 0)return at;
+            if (this.description != null)return this.description;
+            if (this.year != null)return this.year;
             return "";
         }
 

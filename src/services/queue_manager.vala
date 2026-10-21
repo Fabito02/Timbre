@@ -264,7 +264,7 @@ namespace Timbre {
 
             var in_saved = new HashTable<Track, bool> (null, null);
             for (int i = 0; i < this._saved_order.length; i++) {
-                in_saved.add (this._saved_order.get (i));
+                in_saved.insert (this._saved_order.get (i), true);
             }
 
             var extras = new GenericArray<Track> ();

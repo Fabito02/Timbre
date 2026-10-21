@@ -27,19 +27,15 @@ namespace Timbre {
         private string recorded_track_id = "";
         private int64 last_tick_us = 0;
 
-        [GtkChild] private unowned Gtk.Scale scale_progress;
         [GtkChild] private unowned Gtk.Adjustment adjustment_progress;
         [GtkChild] private unowned Gtk.Label label_time_current;
         [GtkChild] private unowned Gtk.Label label_time_total;
         [GtkChild] private unowned Gtk.Button button_play_pause;
-        [GtkChild] private unowned Gtk.Button button_prev;
         [GtkChild] private unowned Gtk.Button button_next;
 
         [GtkChild] private unowned Adw.OverlaySplitView split_view;
         [GtkChild] private unowned Gtk.ToggleButton button_toggle_queue;
         [GtkChild] private unowned Gtk.ToggleButton fullscreen_button_toggle_queue;
-        [GtkChild] private unowned Gtk.Button button_open_fullscreen;
-        [GtkChild] private unowned Gtk.Button button_close_fullscreen;
         [GtkChild] private unowned Gtk.ListView queue_list;
         [GtkChild] private unowned Gtk.Label label_queue_count;
         [GtkChild] private unowned Gtk.Button button_clear_queue;
@@ -55,12 +51,9 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Box time_labels;
 
         [GtkChild] private unowned Adw.NavigationView root_nav;
-        [GtkChild] private unowned Adw.HeaderBar header_bar;
         [GtkChild] private unowned Gtk.SearchBar searchbar;
         [GtkChild] private unowned Gtk.SearchEntry searchentry;
         [GtkChild] private unowned Adw.ViewStack main_stack;
-        [GtkChild] private unowned Adw.NavigationView navigation_view;
-        [GtkChild] private unowned Adw.NavigationView library_view;
         [GtkChild] private unowned Adw.NavigationView search_view;
         [GtkChild] private unowned Gtk.Revealer bottom_bar_revealer;
 
@@ -231,7 +224,6 @@ namespace Timbre {
             this.mpris.raise_requested.connect (() => {
                 this.set_visible (true);
                 this.present ();
-                this.present_with_time ((uint32) time_t ());
             });
 
             this.mpris.quit_requested.connect (() => {

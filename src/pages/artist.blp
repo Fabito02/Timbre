@@ -11,7 +11,7 @@ template $TimbreArtistPage: Adw.NavigationPage {
       Adw.ViewStackPage {
         name: "loading";
 
-        child: Box {
+        child: Adw.Bin {
           valign: center;
           halign: center;
 
@@ -97,6 +97,8 @@ template $TimbreArtistPage: Adw.NavigationPage {
                     valign: center;
 
                     Button button_play {
+                      tooltip-text: _("Play");
+
                       child: Box {
                         Image {
                           icon-name: "media-playback-start-symbolic";

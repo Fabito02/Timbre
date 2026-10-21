@@ -8,18 +8,18 @@ public class Timbre.Application : Adw.Application {
 
     public Application () {
         Object (
-            application_id: "io.github.fabito02.Timbre",
-            flags: ApplicationFlags.DEFAULT_FLAGS,
-            resource_base_path: "/io/github/fabito02/Timbre"
+                application_id: "io.github.fabito02.Timbre",
+                flags: ApplicationFlags.DEFAULT_FLAGS,
+                resource_base_path: "/io/github/fabito02/Timbre"
         );
 
         this.add_main_option (
-            "debug",
-            'd',
-            GLib.OptionFlags.NONE,
-            GLib.OptionArg.NONE,
-            "Enable debug logging on stderr",
-            null
+                              "debug",
+                              'd',
+                              GLib.OptionFlags.NONE,
+                              GLib.OptionArg.NONE,
+                              "Enable debug logging on stderr",
+                              null
         );
     }
 
@@ -33,11 +33,6 @@ public class Timbre.Application : Adw.Application {
 
         var provider = new Gtk.CssProvider ();
         provider.load_from_resource ("/io/github/fabito02/Timbre/style.css");
-        Gtk.StyleContext.add_provider_for_display (
-            Gdk.Display.get_default (),
-            provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-        );
 
         string hl = detect_hl ();
         string gl = detect_gl ();
@@ -58,12 +53,12 @@ public class Timbre.Application : Adw.Application {
     // Locale
     private string detect_hl () {
         unowned string[] names = Intl.get_language_names ();
-        if (names.length == 0) return "en";
+        if (names.length == 0)return "en";
         string first = names[0];
-        if (first == "C" || first == "POSIX" || first.has_prefix ("C.")) return "en";
+        if (first == "C" || first == "POSIX" || first.has_prefix ("C."))return "en";
 
         int dot = first.index_of_char ('.');
-        if (dot >= 0) first = first.substring (0, dot);
+        if (dot >= 0)first = first.substring (0, dot);
         return first.replace ("_", "-");
     }
 
@@ -77,14 +72,14 @@ public class Timbre.Application : Adw.Application {
     }
 
     private void restore_image_auth () {
-        if (!GLib.FileUtils.test (this.cookies_path, GLib.FileTest.EXISTS)) return;
+        if (!GLib.FileUtils.test (this.cookies_path, GLib.FileTest.EXISTS))return;
 
         try {
             var file = GLib.File.new_for_path (this.cookies_path);
             uint8[] raw;
             string etag;
-            if (!file.load_contents (null, out raw, out etag)) return;
-            if (raw.length == 0) return;
+            if (!file.load_contents (null, out raw, out etag))return;
+            if (raw.length == 0)return;
 
             string json_str = (string) raw;
 
@@ -92,12 +87,12 @@ public class Timbre.Application : Adw.Application {
             parser.load_from_data (json_str);
 
             var root = parser.get_root ();
-            if (root == null || root.get_node_type () != Json.NodeType.OBJECT) return;
+            if (root == null || root.get_node_type () != Json.NodeType.OBJECT)return;
 
             var obj = root.get_object ();
             if (obj.has_member ("Cookie") && !obj.get_null_member ("Cookie")) {
                 Timbre.Utils.ImageLoader.get_default ().set_auth_cookie (
-                    obj.get_string_member ("Cookie"));
+                                                                         obj.get_string_member ("Cookie"));
             }
         } catch (Error e) {
             debug ("restore_image_auth: %s", e.message);
@@ -118,9 +113,9 @@ public class Timbre.Application : Adw.Application {
         this.add_action (about_action);
 
         var theme_action = new SimpleAction.stateful (
-            "color-scheme",
-            VariantType.STRING,
-            new Variant.string ("default")
+                                                      "color-scheme",
+                                                      VariantType.STRING,
+                                                      new Variant.string ("default")
         );
         theme_action.change_state.connect ((action, state) => {
             action.set_state (state);
@@ -150,7 +145,6 @@ public class Timbre.Application : Adw.Application {
 
         win.set_visible (true);
         win.present ();
-        win.present_with_time (Gdk.CURRENT_TIME);
     }
 
     private void on_about_action () {
@@ -171,7 +165,7 @@ public class Timbre.Application : Adw.Application {
 
     private void on_preferences_action () {
         var win = this.active_window as Timbre.Window;
-        if (win == null) return;
+        if (win == null)return;
         win.open_preferences ();
     }
 }

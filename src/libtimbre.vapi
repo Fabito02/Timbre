@@ -2,6 +2,7 @@
 namespace Timbre {
 
     public delegate void JsonCallback (char* json, char* error);
+
     public delegate void DoneCallback (bool success, char* error);
 
     [Compact]
@@ -16,52 +17,61 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_play_url")]
         public bool play_url (string url, uint64 duration_secs,
-                              [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_play_track_id")]
         public bool play_track_id (string track_id, uint64 duration_secs,
-                                   [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_pause")]  public void pause ();
+
         [CCode (cname = "timbre_player_resume")] public void resume ();
+
         [CCode (cname = "timbre_player_stop")]   public void stop ();
+
         [CCode (cname = "timbre_player_reset")]   public void reset ();
 
         [CCode (cname = "timbre_player_seek")]
         public bool seek (double target_secs);
 
         [CCode (cname = "timbre_player_get_position")] public double get_position ();
-        [CCode (cname = "timbre_player_get_duration")] public double get_duration ();
-        [CCode (cname = "timbre_player_is_finished")]  public bool   is_finished ();
-        [CCode (cname = "timbre_player_is_paused")]    public bool   is_paused ();
 
-        [CCode (cname = "timbre_player_set_volume")] public void  set_volume (float v);
+        [CCode (cname = "timbre_player_get_duration")] public double get_duration ();
+
+        [CCode (cname = "timbre_player_is_finished")]  public bool is_finished ();
+
+        [CCode (cname = "timbre_player_is_paused")]    public bool is_paused ();
+
+        [CCode (cname = "timbre_player_set_volume")] public void set_volume (float v);
+
         [CCode (cname = "timbre_player_get_volume")] public float get_volume ();
 
-        [CCode (cname = "timbre_player_get_state")]       public int   get_state ();
-        [CCode (cname = "timbre_player_take_last_error")] public char* take_last_error ();
-        [CCode (cname = "timbre_player_get_stats")]       public char* get_stats ();
+        [CCode (cname = "timbre_player_get_state")]       public int get_state ();
+
+        [CCode (cname = "timbre_player_take_last_error")] public char * take_last_error ();
+
+        [CCode (cname = "timbre_player_get_stats")]       public char * get_stats ();
 
         [CCode (cname = "timbre_audio_stats")]
-        public char* audio_stats ();
+        public char * audio_stats ();
 
         [CCode (cname = "timbre_audio_list")]
-        public char* audio_list (int kind);
+        public char * audio_list (int kind);
 
         [CCode (cname = "timbre_audio_remove")]
         public bool audio_remove (string video_id,
-                                  [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_audio_clear")]
         public bool audio_clear (int kind,
-                                 [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_audio_set_cache_limit")]
         public void audio_set_cache_limit (uint64 bytes);
 
         [CCode (cname = "timbre_audio_download")]
         public bool audio_download (string track_id,
-                                    [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_get_home")]
         public bool get_home ([CCode (scope = "async")] JsonCallback cb);
@@ -92,7 +102,7 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_get_watch_playlist")]
         public bool get_watch_playlist (string video_id, string playlist_id,
-                                        [CCode (scope = "async")] JsonCallback cb);
+            [CCode (scope = "async")] JsonCallback cb);
 
         [CCode (cname = "timbre_player_get_library_playlists")]
         public bool get_library_playlists ([CCode (scope = "async")] JsonCallback cb);
@@ -126,36 +136,36 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_rate_track")]
         public bool rate_track (string track_id, int rating,
-                                [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_subscribe_artist")]
         public bool subscribe_artist (string channel_id, bool subscribe,
-                                      [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_remove_history")]
         public bool remove_history (string tokens_json,
-                                    [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_add_to_playlist")]
         public bool add_to_playlist (string playlist_id, string track_ids_json,
-                                     [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_create_playlist")]
         public bool create_playlist (string title, string description, string privacy,
-                                     [CCode (scope = "async")] JsonCallback cb);
+            [CCode (scope = "async")] JsonCallback cb);
 
         [CCode (cname = "timbre_player_delete_playlist")]
         public bool delete_playlist (string playlist_id,
-                                     [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_edit_playlist")]
         public bool edit_playlist (string playlist_id, string title, string description,
-                                   string privacy,
-                                   [CCode (scope = "async")] DoneCallback cb);
+            string privacy,
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_record_play_start")]
         public bool record_play_start (string track_id,
-                                        [CCode (scope = "async")] DoneCallback cb);
+            [CCode (scope = "async")] DoneCallback cb);
 
         [CCode (cname = "timbre_player_record_play_tick")]
         public void record_play_tick (string track_id, double position_secs);
@@ -174,7 +184,7 @@ namespace Timbre {
 
         [CCode (cname = "timbre_player_browse_section")]
         public bool browse_section (string args_json,
-                                    [CCode (scope = "async")] JsonCallback cb);
+            [CCode (scope = "async")] JsonCallback cb);
     }
 
     [CCode (cname = "timbre_string_free")]

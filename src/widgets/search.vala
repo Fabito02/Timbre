@@ -1,6 +1,9 @@
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/search.ui")]
     public class SearchPage : Gtk.Box {
+        [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
+        extern static void force_dispose (void* obj);
+
         [GtkChild] private unowned Adw.ViewStack stack;
         [GtkChild] private unowned Gtk.Box toggle_container;
         [GtkChild] private unowned Gtk.Stack results_stack;
@@ -31,6 +34,7 @@ namespace Timbre {
 
         public void show_loading () {
             if (this.released) return;
+            this.clear_results ();
             this.stack.visible_child_name = "loading";
         }
 
@@ -270,8 +274,23 @@ namespace Timbre {
             parent.append (section);
         }
 
+        protected override void unroot () {
+            this.released = true;
+            this.clear_results ();
+            this.player = null;
+            base.unroot ();
+        }
+
         private void clear_results () {
             this.current_group = null;
+
+            Gtk.Widget? page = this.results_stack.get_first_child ();
+            while (page != null) {
+                var next_page = page.get_next_sibling ();
+                this.dispose_page_rows (page);
+                this.results_stack.remove (page);
+                page = next_page;
+            }
 
             Gtk.Widget? c = this.toggle_container.get_first_child ();
             while (c != null) {
@@ -279,19 +298,44 @@ namespace Timbre {
                 this.toggle_container.remove (c);
                 c = next;
             }
+        }
 
-            Gtk.Widget? child = this.results_stack.get_first_child ();
-            while (child != null) {
-                var next = child.get_next_sibling ();
-                this.results_stack.remove (child);
-                child = next;
+        private void dispose_page_rows (Gtk.Widget page) {
+            var listboxes = new GenericArray<Gtk.ListBox> ();
+            this.collect_listboxes (page, listboxes);
+
+            foreach (unowned var lb in listboxes) {
+                var rows = new GenericArray<unowned Timbre.TrackRow> ();
+                Gtk.Widget? child = lb.get_first_child ();
+                while (child != null) {
+                    if (child is Timbre.TrackRow) {
+                        rows.add ((Timbre.TrackRow) child);
+                    }
+                    child = child.get_next_sibling ();
+                }
+
+                foreach (unowned var row in rows) {
+                    row.release ();
+                }
+
+                lb.remove_all ();
+
+                foreach (unowned var row in rows) {
+                    force_dispose (row);
+                }
             }
         }
 
-        protected override void unroot () {
-            this.released = true;
-            this.player = null;
-            base.unroot ();
+        private void collect_listboxes (Gtk.Widget widget, GenericArray<Gtk.ListBox> listboxes) {
+            if (widget is Gtk.ListBox) {
+                listboxes.add ((Gtk.ListBox) widget);
+                return;
+            }
+            Gtk.Widget? child = widget.get_first_child ();
+            while (child != null) {
+                this.collect_listboxes (child, listboxes);
+                child = child.get_next_sibling ();
+            }
         }
     }
 }

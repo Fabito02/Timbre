@@ -1,6 +1,6 @@
 namespace Timbre.SectionParser {
 
-    public HomeItemModel? parse_item (Json.Object obj) {
+    public HomeItemModel ? parse_item (Json.Object obj) {
         var item = new HomeItemModel ();
 
         if (obj.has_member ("kind") && !obj.get_null_member ("kind"))
@@ -16,7 +16,7 @@ namespace Timbre.SectionParser {
             var artists = obj.get_member ("artists");
             if (artists.get_node_type () == Json.NodeType.ARRAY) {
                 foreach (unowned Json.Node a in artists.get_array ().get_elements ()) {
-                    if (a.get_node_type () != Json.NodeType.OBJECT) continue;
+                    if (a.get_node_type () != Json.NodeType.OBJECT)continue;
                     var ao = a.get_object ();
                     var p = new Person ();
                     if (ao.has_member ("name") && !ao.get_null_member ("name"))

@@ -89,6 +89,8 @@ template $TimbreCollectionPage: Adw.NavigationPage {
                 valign: center;
 
                 Button button_play_all {
+                  tooltip-text: _("Play All");
+
                   child: Box {
                     Image {
                       icon-name: "media-playback-start-symbolic";
@@ -175,9 +177,7 @@ template $TimbreCollectionPage: Adw.NavigationPage {
               }
             }
 
-            Box sections_box {
-              orientation: vertical;
-              spacing: 32;
+            Adw.Bin sections_box {
               margin-top: 8;
 
               ListBox tracks_list {
@@ -195,7 +195,7 @@ template $TimbreCollectionPage: Adw.NavigationPage {
     }
 
     [overlay]
-    Box loading_box {
+    Adw.Bin loading_box {
       halign: center;
       valign: center;
 

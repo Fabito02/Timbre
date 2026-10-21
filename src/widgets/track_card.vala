@@ -17,6 +17,7 @@ namespace Timbre {
         public string item_type { get { return media_item.kind.to_string (); } }
 
         private Timbre.Utils.ImageBinding cover_binding;
+        private bool released = false;
 
         public TrackCard (MediaItem item, bool landscape_video_image = true) {
             Object ();
@@ -54,24 +55,26 @@ namespace Timbre {
         private void setup_gestures () {
             unowned var self = this;
             this.secondary_click.released.connect ((n_press, x, y) => {
+                if (self.released)return;
                 self.show_context_menu (x, y);
             });
             this.long_press_gesture.pressed.connect ((x, y) => {
+                if (self.released)return;
                 self.show_context_menu (x, y);
             });
         }
 
         private void show_context_menu (double x, double y) {
             var win = this.get_root () as Timbre.Window;
-            if (win == null) return;
+            if (win == null)return;
 
             unowned var self = this;
             var menu = new GLib.Menu ();
 
             var section1 = new GLib.Menu ();
             section1.append ("Start Radio", "widget.radio");
-            section1.append ("Play Next",  "widget.add_next");
-            section1.append ("Add to Queue",   "widget.add_queue");
+            section1.append ("Play Next", "widget.add_next");
+            section1.append ("Add to Queue", "widget.add_queue");
             menu.append_section (null, section1);
 
             var section2 = new GLib.Menu ();
@@ -97,39 +100,39 @@ namespace Timbre {
             var actions = new GLib.SimpleActionGroup ();
 
             var radio = new GLib.SimpleAction ("radio", null);
-            radio.activate.connect (() => self.handle_action ("radio"));
+            radio.activate.connect (() => { if (!self.released)self.handle_action ("radio"); });
             actions.add_action (radio);
 
             var add_queue = new GLib.SimpleAction ("add_queue", null);
-            add_queue.activate.connect (() => self.handle_action ("add_queue"));
+            add_queue.activate.connect (() => { if (!self.released)self.handle_action ("add_queue"); });
             actions.add_action (add_queue);
 
             var add_next = new GLib.SimpleAction ("add_next", null);
-            add_next.activate.connect (() => self.handle_action ("add_next"));
+            add_next.activate.connect (() => { if (!self.released)self.handle_action ("add_next"); });
             actions.add_action (add_next);
 
             if (has_album) {
                 var go_album = new GLib.SimpleAction ("go_album", null);
-                go_album.activate.connect (() => self.handle_action ("go_album"));
+                go_album.activate.connect (() => { if (!self.released)self.handle_action ("go_album"); });
                 actions.add_action (go_album);
             }
 
             if (has_artist) {
                 var go_artist = new GLib.SimpleAction ("go_artist", null);
-                go_artist.activate.connect (() => self.handle_action ("go_artist"));
+                go_artist.activate.connect (() => { if (!self.released)self.handle_action ("go_artist"); });
                 actions.add_action (go_artist);
             }
 
             var download = new GLib.SimpleAction ("download", null);
-            download.activate.connect (() => self.handle_action ("download"));
+            download.activate.connect (() => { if (!self.released)self.handle_action ("download"); });
             actions.add_action (download);
 
             var add_playlist = new GLib.SimpleAction ("add_playlist", null);
-            add_playlist.activate.connect (() => self.handle_action ("add_playlist"));
+            add_playlist.activate.connect (() => { if (!self.released)self.handle_action ("add_playlist"); });
             actions.add_action (add_playlist);
 
             var copy_link = new GLib.SimpleAction ("copy_link", null);
-            copy_link.activate.connect (() => self.handle_action ("copy_link"));
+            copy_link.activate.connect (() => { if (!self.released)self.handle_action ("copy_link"); });
             actions.add_action (copy_link);
 
             var popover = new Gtk.PopoverMenu.from_model (menu);
@@ -158,49 +161,70 @@ namespace Timbre {
 
         private void handle_action (string action_name) {
             var win = this.get_root () as Timbre.Window;
-            if (win == null) return;
+            if (win == null)return;
 
             switch (action_name) {
-                case "radio":
-                    win.play_radio (this.media_item.id, false);
-                    break;
-                case "add_next":
-                    var tracks = new GenericArray<Timbre.Track> ();
-                    tracks.add (this.media_item.to_track ());
-                    win.play_next (tracks);
-                    break;
-                case "add_queue":
-                    var tracks = new GenericArray<Timbre.Track> ();
-                    tracks.add (this.media_item.to_track ());
-                    win.add_to_queue (tracks);
-                    break;
-                case "go_album":
-                    if (this.media_item.album != null && this.media_item.album.id != null) {
-                        win.open_collection_from_row (this.media_item.album.id, "Album",
-                                                      this.media_item.album.name,
-                                                      this.media_item.artists_text (),
-                                                      this.media_item.thumb);
+            case "radio":
+                win.play_radio (this.media_item.id, false);
+                break;
+            case "add_next":
+                var tracks = new GenericArray<Timbre.Track> ();
+                tracks.add (this.media_item.to_track ());
+                win.play_next (tracks);
+                break;
+            case "add_queue":
+                var tracks = new GenericArray<Timbre.Track> ();
+                tracks.add (this.media_item.to_track ());
+                win.add_to_queue (tracks);
+                break;
+            case "go_album":
+                if (this.media_item.album != null && this.media_item.album.id != null) {
+                    win.open_collection_from_row (this.media_item.album.id, "Album",
+                                                  this.media_item.album.name,
+                                                  this.media_item.artists_text (),
+                                                  this.media_item.thumb);
+                }
+                break;
+            case "go_artist":
+                if (this.media_item.artists.length > 0) {
+                    var first_artist = this.media_item.artists.get (0);
+                    if (first_artist.id != null) {
+                        win.open_artist_from_row (first_artist.id, first_artist.name);
                     }
-                    break;
-                case "go_artist":
-                    if (this.media_item.artists.length > 0) {
-                        var first_artist = this.media_item.artists.get (0);
-                        if (first_artist.id != null) {
-                            win.open_artist_from_row (first_artist.id, first_artist.name);
-                        }
-                    }
-                    break;
-                case "download":
-                    GLib.message ("Download clicado");
-                    break;
-                case "add_playlist":
-                    GLib.message ("Adicionar à playlist clicado");
-                    break;
-                case "copy_link":
-                    var clipboard = Gdk.Display.get_default ().get_clipboard ();
-                    clipboard.set_text ("https://music.youtube.com/watch?v=" + this.media_item.id);
-                    break;
+                }
+                break;
+            case "download":
+                GLib.message ("Download clicado");
+                break;
+            case "add_playlist":
+                GLib.message ("Adicionar à playlist clicado");
+                break;
+            case "copy_link":
+                var clipboard = Gdk.Display.get_default ().get_clipboard ();
+                clipboard.set_text ("https://music.youtube.com/watch?v=" + this.media_item.id);
+                break;
             }
+        }
+
+        public void release () {
+            if (this.released)return;
+            this.released = true;
+
+            if (this.cover_binding != null) {
+                this.cover_binding.dispose ();
+                this.cover_binding = null;
+            }
+
+            if (this.image_cover != null) {
+                this.image_cover.set_paintable (null);
+            }
+
+            this.media_item = null;
+        }
+
+        public override void dispose () {
+            this.release ();
+            base.dispose ();
         }
     }
 }

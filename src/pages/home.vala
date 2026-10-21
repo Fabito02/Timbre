@@ -1,6 +1,9 @@
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/home.ui")]
     public class HomePage : Adw.NavigationPage {
+        [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
+        extern static void force_dispose (void* obj);
+
         [GtkChild] private unowned Gtk.Stack stack;
         [GtkChild] private unowned Gtk.Box content_box;
         [GtkChild] private unowned Gtk.Box skeleton_box;
@@ -10,6 +13,7 @@ namespace Timbre {
         private unowned Timbre.Player? player;
         private bool loaded = false;
         private bool loading = false;
+        private bool released = false;
         private int retry_count = 0;
         private int64 last_refresh_usec = 0;
 
@@ -26,13 +30,24 @@ namespace Timbre {
             this.show_skeleton ();
 
             this.feed_scroll.edge_overshot.connect ((pos) => {
-                if (pos != Gtk.PositionType.TOP) return;
-                if (this.loading) return;
+                if (this.released)return;
+                if (pos != Gtk.PositionType.TOP)return;
+                if (this.loading)return;
                 int64 now = GLib.get_monotonic_time ();
-                if (now - this.last_refresh_usec < 2000000) return;
+                if (now - this.last_refresh_usec < 2000000)return;
                 this.last_refresh_usec = now;
                 this.load_home_data (true);
             });
+        }
+
+        protected override void unroot () {
+            this.released = true;
+            this.populate_gen++;
+            this.loading = false;
+            this.populate_queue = new HomeSectionModel[0];
+            this.clear_list ();
+            this.player = null;
+            base.unroot ();
         }
 
         public void set_player (Timbre.Player player) {
@@ -45,18 +60,25 @@ namespace Timbre {
         }
 
         public void load_home_data (bool force) {
-            if (this.player == null) return;
-            if (this.loading) return;
-            if (this.loaded && !force) return;
+            if (this.released)return;
+            if (this.player == null)return;
+            if (this.loading)return;
+            if (this.loaded && !force)return;
 
             this.loading = true;
-            if (force) this.loaded = false;
+            if (force)this.loaded = false;
 
             this.show_skeleton ();
 
             this.player.get_home ((json, error) => {
                 Idle.add (() => {
                     this.loading = false;
+
+                    if (this.released) {
+                        if (error != null)Timbre.string_free (error);
+                        if (json != null)Timbre.string_free (json);
+                        return GLib.Source.REMOVE;
+                    }
 
                     if (error != null) {
                         warning ("home: %s", (string) error);
@@ -84,10 +106,12 @@ namespace Timbre {
         }
 
         private void on_load_failed () {
+            if (this.released)return;
             this.retry_count++;
             if (this.retry_count < 3) {
                 uint delay = (uint) (1500 * this.retry_count);
                 GLib.Timeout.add (delay, () => {
+                    if (this.released)return GLib.Source.REMOVE;
                     this.load_home_data (true);
                     return GLib.Source.REMOVE;
                 });
@@ -118,6 +142,7 @@ namespace Timbre {
         }
 
         private void show_status (string icon, string title, string description, bool with_retry) {
+            if (this.released)return;
             this.status_page.icon_name = icon;
             this.status_page.title = title;
             this.status_page.description = description;
@@ -129,6 +154,7 @@ namespace Timbre {
                 retry.add_css_class ("pill");
                 retry.add_css_class ("suggested-action");
                 retry.clicked.connect (() => {
+                    if (this.released)return;
                     this.retry_count = 0;
                     this.load_home_data (true);
                 });
@@ -178,6 +204,8 @@ namespace Timbre {
         }
 
         private void populate_async (GenericArray<HomeSectionModel> sections) {
+            if (this.released)return;
+
             this.populate_gen++;
             int gen = this.populate_gen;
 
@@ -191,7 +219,8 @@ namespace Timbre {
             this.populate_idx = 0;
 
             GLib.Idle.add_full (GLib.Priority.LOW, () => {
-                if (this.populate_gen != gen) return GLib.Source.REMOVE;
+                if (this.released)return GLib.Source.REMOVE;
+                if (this.populate_gen != gen)return GLib.Source.REMOVE;
                 if (this.populate_idx >= this.populate_queue.length) {
                     return GLib.Source.REMOVE;
                 }
@@ -210,11 +239,40 @@ namespace Timbre {
         }
 
         private void clear_list () {
+            var cards = new GenericArray<unowned Timbre.TrackCard> ();
+            var tiles = new GenericArray<unowned Timbre.HomeSpeedTile> ();
+
+            this.collect_releasables (this.content_box, cards, tiles);
+
+            foreach (unowned var c in cards)c.release ();
+            foreach (unowned var t in tiles)t.release ();
+
             Gtk.Widget? child = this.content_box.get_first_child ();
             while (child != null) {
                 var next = child.get_next_sibling ();
                 this.content_box.remove (child);
                 child = next;
+            }
+
+            foreach (unowned var c in cards)force_dispose (c);
+            foreach (unowned var t in tiles)force_dispose (t);
+        }
+
+        private void collect_releasables (Gtk.Widget widget,
+                                          GenericArray<unowned Timbre.TrackCard> cards,
+                                          GenericArray<unowned Timbre.HomeSpeedTile> tiles) {
+            if (widget is Timbre.TrackCard) {
+                cards.add ((Timbre.TrackCard) widget);
+                return;
+            }
+            if (widget is Timbre.HomeSpeedTile) {
+                tiles.add ((Timbre.HomeSpeedTile) widget);
+                return;
+            }
+            Gtk.Widget? child = widget.get_first_child ();
+            while (child != null) {
+                this.collect_releasables (child, cards, tiles);
+                child = child.get_next_sibling ();
             }
         }
     }

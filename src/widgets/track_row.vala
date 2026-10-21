@@ -24,9 +24,6 @@ namespace Timbre {
         private Timbre.LikeButton? like_btn = null;
         private bool released = false;
 
-        private ulong secondary_click_id = 0;
-        private ulong long_press_id = 0;
-
         public TrackRow.empty () {
             Object ();
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
@@ -93,7 +90,7 @@ namespace Timbre {
 
             var section3 = new GLib.Menu ();
             section3.append ("Download", "widget.download");
-            section3.append ("Add to Playlist...", "widget.add_playlist");
+            section3.append ("Add to Playlist…", "widget.add_playlist");
             section3.append ("Copy Link", "widget.copy_link");
             menu.append_section (null, section3);
 

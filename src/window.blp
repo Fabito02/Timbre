@@ -394,6 +394,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
 
                     Button button_prev {
                       icon-name: "media-skip-backward-symbolic";
+                      tooltip-text: _("Previous");
 
                       styles [
                         "circular",
@@ -405,6 +406,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
 
                     Button button_play_pause {
                       icon-name: "media-playback-start-symbolic";
+                      tooltip-text: _("Play/Pause");
 
                       styles [
                         "suggested-action",
@@ -417,6 +419,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
 
                     Button button_next {
                       icon-name: "media-skip-forward-symbolic";
+                      tooltip-text: _("Next");
 
                       styles [
                         "circular",
@@ -503,7 +506,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
                     "search-bar",
                   ]
 
-                  placeholder-text: _("Search for songs, albums, artists...");
+                  placeholder-text: _("Search for songs, albums, artists…");
                 }
               }
 
@@ -540,7 +543,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
 
                   child: Adw.NavigationView search_view {
                     Adw.NavigationPage {
-                      title: "Search";
+                      title: _("Search");
 
                       child: $TimbreSearchPage search_page {};
                     }

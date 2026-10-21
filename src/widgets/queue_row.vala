@@ -113,7 +113,7 @@ namespace Timbre {
 
             var section3 = new GLib.Menu ();
             section3.append ("Download", "widget.download");
-            section3.append ("Add to Playlist...", "widget.add_playlist");
+            section3.append ("Add to Playlist…", "widget.add_playlist");
             section3.append ("Copy Link", "widget.copy_link");
             menu.append_section (null, section3);
 

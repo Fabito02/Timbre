@@ -1,10 +1,7 @@
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/widgets/theme_selector.ui")]
     public class ThemeSelector : Gtk.Widget {
-        [GtkChild] private unowned Gtk.Box box;
         [GtkChild] private unowned Gtk.CheckButton follow;
-        [GtkChild] private unowned Gtk.CheckButton light;
-        [GtkChild] private unowned Gtk.CheckButton dark;
 
         static construct {
             set_css_name ("themeselector");

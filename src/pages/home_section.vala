@@ -82,7 +82,7 @@ namespace Timbre.HomeSection {
     }
 
     public void add_section (HomePage page, Gtk.Box parent, HomeSectionModel section) {
-        if (section.items.length == 0) return;
+        if (section.items.length == 0)return;
         add_card_strip (page, parent, section);
     }
 
@@ -128,7 +128,7 @@ namespace Timbre.HomeSection {
 
     private void fix_dial_height (Adw.WrapBox wrap, int rows) {
         var first = wrap.get_first_child ();
-        if (first == null) return;
+        if (first == null)return;
 
         int min_h, nat_h, min_b, nat_b;
         first.measure (Gtk.Orientation.VERTICAL, -1,

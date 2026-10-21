@@ -2,8 +2,8 @@ pages_blueprints = files(
   'artist.blp',
   'collection.blp',
   'home.blp',
-  'section_page.blp',
   'library.blp',
+  'section_page.blp',
 )
 
 pages_sources = files(
@@ -12,7 +12,7 @@ pages_sources = files(
   'home.vala',
   'home_parser.vala',
   'home_section.vala',
+  'library.vala',
   'section_page.vala',
   'section_parser.vala',
-  'library.vala',
 )

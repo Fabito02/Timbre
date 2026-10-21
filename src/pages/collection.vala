@@ -12,7 +12,7 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Button button_play_shuffle;
         [GtkChild] private unowned Gtk.Button button_play_radio;
         [GtkChild] private unowned Gtk.ListBox tracks_list;
-        [GtkChild] private unowned Gtk.Box loading_box;
+        [GtkChild] private unowned Adw.Bin loading_box;
         [GtkChild] private unowned Gtk.Overlay header_overlay;
         [GtkChild] private unowned Gtk.Label label_description;
         [GtkChild] private unowned Gtk.Label label_read_more;
@@ -33,14 +33,12 @@ namespace Timbre {
 
         public signal void play_collection (GenericArray<Timbre.Track> tracks, int start_index, bool shuffle);
 
-        public CollectionPage (
-            Timbre.Player player,
+        public CollectionPage (Timbre.Player player,
             string id,
             string type_name,
             string title,
             string subtitle,
-            string? cover_url
-        ) {
+            string? cover_url) {
             Object (title: title);
 
             this.player = player;
@@ -133,8 +131,8 @@ namespace Timbre {
         private void on_collection_loaded (char* json_ptr, char* error) {
             Idle.add (() => {
                 if (this.released) {
-                    if (error != null) Timbre.string_free (error);
-                    if (json_ptr != null) Timbre.string_free (json_ptr);
+                    if (error != null)Timbre.string_free (error);
+                    if (json_ptr != null)Timbre.string_free (json_ptr);
                     return GLib.Source.REMOVE;
                 }
 
@@ -143,7 +141,7 @@ namespace Timbre {
                 if (error != null) {
                     warning ("collection: %s", (string) error);
                     Timbre.string_free (error);
-                    if (json_ptr != null) Timbre.string_free (json_ptr);
+                    if (json_ptr != null)Timbre.string_free (json_ptr);
                     return GLib.Source.REMOVE;
                 }
 
@@ -162,9 +160,9 @@ namespace Timbre {
 
         private static LikeStatus parse_like_status (string s) {
             switch (s) {
-                case "Like":    return LikeStatus.LIKE;
-                case "Dislike": return LikeStatus.DISLIKE;
-                default:        return LikeStatus.INDIFFERENT;
+            case "Like" : return LikeStatus.LIKE;
+            case "Dislike": return LikeStatus.DISLIKE;
+            default:        return LikeStatus.INDIFFERENT;
             }
         }
 
@@ -200,7 +198,7 @@ namespace Timbre {
                 var author_node = root_obj.get_member ("author");
                 if (author_node.get_node_type () == Json.NodeType.ARRAY) {
                     foreach (unowned Json.Node a_node in author_node.get_array ().get_elements ()) {
-                        if (a_node.get_node_type () != Json.NodeType.OBJECT) continue;
+                        if (a_node.get_node_type () != Json.NodeType.OBJECT)continue;
                         var a_obj = a_node.get_object ();
 
                         if (a_obj.has_member ("name") && !a_obj.get_null_member ("name")) {
@@ -215,7 +213,7 @@ namespace Timbre {
 
             var sb = new StringBuilder ();
             for (int i = 0; i < autores.length; i++) {
-                if (sb.len > 0) sb.append (", ");
+                if (sb.len > 0)sb.append (", ");
                 sb.append (autores.get (i));
             }
 
@@ -237,7 +235,7 @@ namespace Timbre {
 
             sb = new StringBuilder ();
             for (int i = 0; i < info_parts.length; i++) {
-                if (sb.len > 0) sb.append (" • ");
+                if (sb.len > 0)sb.append (" • ");
                 sb.append (info_parts.get (i));
             }
 
@@ -249,7 +247,7 @@ namespace Timbre {
             }
             this.set_description (raw_desc);
 
-            if (!root_obj.has_member ("tracks")) return list;
+            if (!root_obj.has_member ("tracks"))return list;
 
             var tracks_node = root_obj.get_member ("tracks");
             if (tracks_node == null || tracks_node.get_node_type () != Json.NodeType.ARRAY) {
@@ -257,7 +255,7 @@ namespace Timbre {
             }
 
             foreach (unowned Json.Node node in tracks_node.get_array ().get_elements ()) {
-                if (node == null || node.get_node_type () != Json.NodeType.OBJECT) continue;
+                if (node == null || node.get_node_type () != Json.NodeType.OBJECT)continue;
                 var obj = node.get_object ();
                 var track = new Timbre.Track ();
 
@@ -275,7 +273,7 @@ namespace Timbre {
                     var artists_node = obj.get_member ("artists");
                     if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
                         foreach (unowned Json.Node a_node in artists_node.get_array ().get_elements ()) {
-                            if (a_node.get_node_type () != Json.NodeType.OBJECT) continue;
+                            if (a_node.get_node_type () != Json.NodeType.OBJECT)continue;
                             var a_obj = a_node.get_object ();
                             var p = new Person ();
                             if (a_obj.has_member ("name") && !a_obj.get_null_member ("name"))
@@ -314,7 +312,7 @@ namespace Timbre {
 
                 if (obj.has_member ("like_status") && !obj.get_null_member ("like_status")) {
                     track.like_status = parse_like_status (
-                        obj.get_string_member ("like_status"));
+                                                           obj.get_string_member ("like_status"));
                 }
 
                 if (obj.has_member ("is_live") && !obj.get_null_member ("is_live")) {
@@ -364,8 +362,8 @@ namespace Timbre {
                 this.player.get_radio (vid, (json, error) => {
                     GLib.Idle.add (() => {
                         if (this.released) {
-                            if (error != null) Timbre.string_free (error);
-                            if (json != null) Timbre.string_free (json);
+                            if (error != null)Timbre.string_free (error);
+                            if (json != null)Timbre.string_free (json);
                             return GLib.Source.REMOVE;
                         }
                         if (error != null) {
@@ -389,16 +387,16 @@ namespace Timbre {
                 var parser = new Json.Parser ();
                 parser.load_from_data (json_str);
                 var root = parser.get_root ();
-                if (root == null || root.get_node_type () != Json.NodeType.OBJECT) return tracks;
+                if (root == null || root.get_node_type () != Json.NodeType.OBJECT)return tracks;
                 var obj = root.get_object ();
-                if (!obj.has_member ("tracks")) return tracks;
+                if (!obj.has_member ("tracks"))return tracks;
                 var arr = obj.get_array_member ("tracks");
                 foreach (unowned Json.Node node in arr.get_elements ()) {
-                    if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                    if (node.get_node_type () != Json.NodeType.OBJECT)continue;
                     var wrapper = node.get_object ();
-                    if (!wrapper.has_member ("track")) continue;
+                    if (!wrapper.has_member ("track"))continue;
                     var t = ArtistParser.parse_track (wrapper.get_object_member ("track"));
-                    if (t != null) tracks.add (t);
+                    if (t != null)tracks.add (t);
                 }
             } catch (Error e) {
                 debug ("radio parse: %s", e.message);
@@ -416,8 +414,8 @@ namespace Timbre {
             }
 
             var clean = raw.replace ("From Wikipedia", "").strip ();
-            while (clean.contains ("  ")) clean = clean.replace ("  ", " ");
-            while (clean.contains ("\n\n\n")) clean = clean.replace ("\n\n\n", "\n\n");
+            while (clean.contains ("  "))clean = clean.replace ("  ", " ");
+            while (clean.contains ("\n\n\n"))clean = clean.replace ("\n\n\n", "\n\n");
 
             this.description_full = clean;
             this.description_expanded = false;
@@ -437,12 +435,12 @@ namespace Timbre {
             int cut = int.min (DESCRIPTION_PREVIEW, text.length);
             string head = text.substring (0, cut);
             int sp = head.last_index_of_char (' ');
-            if (sp > 0) head = head.substring (0, sp);
+            if (sp > 0)head = head.substring (0, sp);
             return head + "…";
         }
 
         private void toggle_description () {
-            if (this.description_full.length == 0) return;
+            if (this.description_full.length == 0)return;
             this.description_expanded = !this.description_expanded;
             if (this.description_expanded) {
                 this.label_description.label = this.description_full;
