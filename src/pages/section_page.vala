@@ -7,7 +7,6 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Stack stack;
         [GtkChild] private unowned Adw.WrapBox wrap;
         [GtkChild] private unowned Gtk.ScrolledWindow scroller;
-        [GtkChild] private unowned Adw.StatusPage empty_page;
 
         private const int LOAD_THRESHOLD_PX = 300;
 

@@ -23,8 +23,7 @@ template $TimbreSectionPage: Adw.NavigationPage {
       Gtk.StackPage {
         name: "loading";
 
-        child: Gtk.Box {
-          orientation: vertical;
+        child: Adw.Bin {
           vexpand: true;
           halign: center;
           valign: center;
