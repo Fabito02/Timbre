@@ -117,27 +117,20 @@ namespace Timbre {
                 });
                 return;
             }
-            this.show_error ();
+            this.show_offline ();
         }
 
         private void show_offline () {
             this.show_status ("network-offline-symbolic",
                               _("You're offline"),
                               _("Home requires an internet connection.\nYour downloaded songs are still available."),
-                              false);
+                              true);
         }
 
         private void show_empty () {
             this.show_status ("folder-symbolic",
                               _("Nothing new here"),
                               _("There's nothing to show right now. Check back later."),
-                              true);
-        }
-
-        private void show_error () {
-            this.show_status ("dialog-warning-symbolic",
-                              _("Couldn't load Home"),
-                              _("Try refreshing in a moment."),
                               true);
         }
 
