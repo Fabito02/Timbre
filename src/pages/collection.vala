@@ -30,6 +30,8 @@ namespace Timbre {
         private string description_full = "";
         private const int DESCRIPTION_PREVIEW = 280;
 
+        private string thumb_album_url = "";
+
         public signal void play_collection (GenericArray<Timbre.Track> tracks, int start_index, bool shuffle);
 
         public CollectionPage (Timbre.Player player,
@@ -47,6 +49,8 @@ namespace Timbre {
 
             this.label_title.label = title;
             this.label_subtitle.label = subtitle;
+
+            this.thumb_album_url = cover_url;
 
             this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1024);
             this.header_binding.load (cover_url);
@@ -328,6 +332,7 @@ namespace Timbre {
             bool is_album = this.collection_type == "album";
             for (int i = 0; i < this.tracks.length; i++) {
                 var track = this.tracks.get (i);
+                if (is_album)track.thumb = this.thumb_album_url;
                 var index = is_album ? i : -1;
                 this.tracks_list.append (new Timbre.TrackRow (this.player, track, index));
             }
