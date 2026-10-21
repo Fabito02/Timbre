@@ -18,7 +18,7 @@ namespace Timbre {
         public string track_title { get { return media_item.title; } }
         public string track_artist { owned get { return media_item.artists_text (); } }
         public string? track_cover { get { return media_item.thumb; } }
-        public uint64 duration_secs { get { return (uint64)(media_item.duration_seconds ?? 0); } }
+        public uint64 duration_secs { get { return (uint64) (media_item.duration_seconds ?? 0); } }
         public bool is_live { get { return media_item.is_live; } }
         public bool explicit { get { return media_item.explicit; } }
 
@@ -42,11 +42,11 @@ namespace Timbre {
             this.like_slot.append (this.like_btn);
             this.setup_gestures ();
             this.set_content (item);
-            
+
             if (index >= 0) {
                 this.image_cover.visible = false;
                 this.index_cover.visible = true;
-                this.label_index.label = (index++).to_string ();
+                this.label_index.label = (index + 1).to_string ();
             }
         }
 
@@ -59,11 +59,11 @@ namespace Timbre {
 
         private void setup_gestures () {
             unowned var self = this;
-        
+
             this.secondary_click.released.connect ((n_press, x, y) => {
                 self.show_context_menu (x, y);
             });
-        
+
             this.long_press_gesture.pressed.connect ((x, y) => {
                 self.show_context_menu (x, y);
             });
@@ -71,15 +71,15 @@ namespace Timbre {
 
         private void show_context_menu (double x, double y) {
             var win = this.get_root () as Timbre.Window;
-            if (win == null) return;
+            if (win == null)return;
 
             unowned var self = this;
             var menu = new GLib.Menu ();
 
             var section1 = new GLib.Menu ();
             section1.append ("Start Radio", "widget.radio");
-            section1.append ("Play Next",  "widget.add_next");
-            section1.append ("Add to Queue",   "widget.add_queue");
+            section1.append ("Play Next", "widget.add_next");
+            section1.append ("Add to Queue", "widget.add_queue");
             menu.append_section (null, section1);
 
             var section2 = new GLib.Menu ();
@@ -167,48 +167,48 @@ namespace Timbre {
 
         private void handle_action (string action_name) {
             var win = this.get_root () as Timbre.Window;
-            if (win == null) return;
+            if (win == null)return;
 
             switch (action_name) {
-                case "radio":
-                    win.play_radio (this.media_item.id, false);
-                    break;
-                case "add_next":
-                    var tracks = new GenericArray<Timbre.Track> ();
-                    tracks.add (this.media_item.to_track ());
-                    win.play_next (tracks);
-                    break;
-                case "add_queue":
-                    var tracks = new GenericArray<Timbre.Track> ();
-                    tracks.add (this.media_item.to_track ());
-                    win.add_to_queue (tracks);
-                    break;
-                case "go_album":
-                    if (this.media_item.album != null && this.media_item.album.id != null) {
-                        win.open_collection_from_row (this.media_item.album.id, "Album",
-                                                      this.media_item.album.name,
-                                                      this.media_item.artists_text (),
-                                                      this.media_item.thumb);
+            case "radio" :
+                win.play_radio (this.media_item.id, false);
+                break;
+            case "add_next":
+                var tracks = new GenericArray<Timbre.Track> ();
+                tracks.add (this.media_item.to_track ());
+                win.play_next (tracks);
+                break;
+            case "add_queue":
+                var tracks = new GenericArray<Timbre.Track> ();
+                tracks.add (this.media_item.to_track ());
+                win.add_to_queue (tracks);
+                break;
+            case "go_album":
+                if (this.media_item.album != null && this.media_item.album.id != null) {
+                    win.open_collection_from_row (this.media_item.album.id, "Album",
+                                                  this.media_item.album.name,
+                                                  this.media_item.artists_text (),
+                                                  this.media_item.thumb);
+                }
+                break;
+            case "go_artist":
+                if (this.media_item.artists.length > 0) {
+                    var first_artist = this.media_item.artists.get (0);
+                    if (first_artist.id != null) {
+                        win.open_artist_from_row (first_artist.id, first_artist.name);
                     }
-                    break;
-                case "go_artist":
-                    if (this.media_item.artists.length > 0) {
-                        var first_artist = this.media_item.artists.get (0);
-                        if (first_artist.id != null) {
-                            win.open_artist_from_row (first_artist.id, first_artist.name);
-                        }
-                    }
-                    break;
-                case "download":
-                    GLib.message ("Download clicado");
-                    break;
-                case "add_playlist":
-                    GLib.message ("Adicionar à playlist clicado");
-                    break;
-                case "copy_link":
-                    var clipboard = Gdk.Display.get_default ().get_clipboard ();
-                    clipboard.set_text ("https://music.youtube.com/watch?v=" + this.media_item.id);
-                    break;
+                }
+                break;
+            case "download":
+                GLib.message ("Download clicado");
+                break;
+            case "add_playlist":
+                GLib.message ("Adicionar à playlist clicado");
+                break;
+            case "copy_link":
+                var clipboard = Gdk.Display.get_default ().get_clipboard ();
+                clipboard.set_text ("https://music.youtube.com/watch?v=" + this.media_item.id);
+                break;
             }
         }
 
@@ -241,7 +241,7 @@ namespace Timbre {
         }
 
         public void release () {
-            if (this.released) return;
+            if (this.released)return;
             this.released = true;
 
             if (this.like_btn != null) {

@@ -113,7 +113,6 @@ namespace Timbre {
             }
 
             this.tracks_list.remove_all ();
-
         }
 
         private void load_collection_tracks () {
@@ -329,11 +328,8 @@ namespace Timbre {
             bool is_album = this.collection_type == "album";
             for (int i = 0; i < this.tracks.length; i++) {
                 var track = this.tracks.get (i);
-                if (is_album) {
-                    track.title = "%d. %s".printf (i + 1, track.title);
-                    track.thumb = null;
-                }
-                this.tracks_list.append (new Timbre.TrackRow (this.player, track));
+                var index = is_album ? i : -1;
+                this.tracks_list.append (new Timbre.TrackRow (this.player, track, index));
             }
         }
 
