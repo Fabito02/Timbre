@@ -37,9 +37,7 @@ fn to_int(text: &str) -> Option<u32> {
 }
 
 fn is_auto_playlist(playlist_id: &str) -> bool {
-    playlist_id.starts_with("RD")
-        || playlist_id.starts_with("VLLM")
-        || playlist_id == "SE"
+    playlist_id.starts_with("RD") || playlist_id.starts_with("VLLM") || playlist_id == "SE"
 }
 
 fn is_radio_playlist(playlist_id: &str) -> bool {
@@ -89,7 +87,7 @@ pub async fn get_playlist(
     if is_auto_playlist(playlist_id) {
         return get_auto_playlist(api, playlist_id, limit).await;
     }
-    
+
     let browse_id = if playlist_id.starts_with("VL") {
         playlist_id.to_owned()
     } else {
@@ -237,7 +235,12 @@ fn parse_playlist_header(response: &Value) -> Option<PlaylistDetails> {
         ..PlaylistDetails::default()
     };
     details.description = owned_at(header, "/description/runs/0/text")
-        .or_else(|| owned_at(header, "/description/musicDescriptionShelfRenderer/description/runs/0/text"))
+        .or_else(|| {
+            owned_at(
+                header,
+                "/description/musicDescriptionShelfRenderer/description/runs/0/text",
+            )
+        })
         .unwrap_or_default();
     details.title = runs_text(array_at(header, "/title/runs"));
     details.thumbnails = thumbnails_at(
@@ -298,11 +301,16 @@ pub async fn get_album(api: &dyn Browse, browse_id: &str) -> Result<PlaylistDeta
         header,
         "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails",
     );
-    
+
     details.description = owned_at(header, "/description/runs/0/text")
-        .or_else(|| owned_at(header, "/description/musicDescriptionShelfRenderer/description/runs/0/text"))
+        .or_else(|| {
+            owned_at(
+                header,
+                "/description/musicDescriptionShelfRenderer/description/runs/0/text",
+            )
+        })
         .unwrap_or_default();
-    
+
     let subtitle = array_at(header, "/subtitle/runs");
     details.year = parse_song_runs(subtitle.get(2..).unwrap_or(&[])).year;
     details.author = parse_artists_runs(array_at(header, "/straplineTextOne/runs"));
@@ -436,17 +444,20 @@ pub async fn get_watch_playlist(
     limit: usize,
     radio: bool,
 ) -> Result<WatchPlaylist, NetError> {
-    let mut body = json!({
-        "enablePersistentPlaylistPanel": true,
-        "isAudioOnly": true,
-        "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
-    });
     if video_id.is_none() && playlist_id.is_none() {
         return Err(message(
             "You must provide either a video id, a playlist id, or both",
         ));
     }
+
+    let mut body = json!({
+        "enablePersistentPlaylistPanel": true,
+        "isAudioOnly": true,
+        "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
+    });
+
     let mut playlist_id = playlist_id.map(str::to_owned);
+
     if let Some(v) = video_id {
         body["videoId"] = json!(v);
         if playlist_id.is_none() {
@@ -461,6 +472,7 @@ pub async fn get_watch_playlist(
             });
         }
     }
+
     let mut is_playlist = false;
     if let Some(p) = &playlist_id {
         let pid = p.trim_start_matches("VL");
@@ -470,13 +482,28 @@ pub async fn get_watch_playlist(
             || pid == "SE";
         body["playlistId"] = json!(pid);
     }
+
     if radio {
         body["params"] = json!("wAEB");
     }
+
+    tracing::debug!(
+        video_id = ?video_id,
+        playlist_id = ?playlist_id,
+        radio,
+        is_playlist,
+        body = %body,
+        "get_watch_playlist: sending"
+    );
+
     let response = api.post("next", body.clone()).await?;
+
     let watch_next = response
-        .pointer("/contents/singleColumnMusicWatchNextResultsRenderer/tabbedRenderer/watchNextTabbedResultsRenderer")
+        .pointer(
+            "/contents/singleColumnMusicWatchNextResultsRenderer/tabbedRenderer/watchNextTabbedResultsRenderer",
+        )
         .ok_or_else(|| message("No content returned by the server."))?;
+
     let results = watch_next
         .pointer("/tabs/0/tabRenderer/content/musicQueueRenderer/content/playlistPanelRenderer")
         .ok_or_else(|| {
@@ -488,25 +515,42 @@ pub async fn get_watch_playlist(
             }
             message(msg)
         })?;
+
     let panel_playlist = array_at(results, "/contents").iter().find_map(|x| {
         owned_at(
             x,
             "/playlistPanelVideoRenderer/navigationEndpoint/watchEndpoint/playlistId",
         )
     });
+
     let mut tracks = parse_watch_playlist(array_at(results, "/contents"));
-    let key = if is_playlist {
+
+    let primary_key = if radio || !is_playlist {
+        "/continuations/0/nextRadioContinuationData/continuation"
+    } else {
+        "/continuations/0/nextContinuationData/continuation"
+    };
+    let fallback_key = if radio || !is_playlist {
         "/continuations/0/nextContinuationData/continuation"
     } else {
         "/continuations/0/nextRadioContinuationData/continuation"
     };
-    let token = owned_at(results, key);
+    let token = owned_at(results, primary_key).or_else(|| owned_at(results, fallback_key));
+
+    tracing::debug!(
+        tracks_so_far = tracks.len(),
+        has_token = token.is_some(),
+        primary_key,
+        "get_watch_playlist: primeira página"
+    );
+
     let rest = Continuation::query(api, "next", body, token)
         .limit(limit.saturating_sub(tracks.len()))
         .pages(MAX_CONTINUATION_PAGES)
         .collect(|entries| parse_watch_playlist(entries.iter().copied()))
         .await;
     tracks.extend(rest.strict()?);
+
     Ok(WatchPlaylist {
         tracks,
         playlist_id: panel_playlist,

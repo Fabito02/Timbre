@@ -18,6 +18,7 @@ namespace Timbre {
 
         private unowned Timbre.Player player;
         private string collection_id;
+        private string audio_playlist_id = null;
         private string collection_type;
         private GenericArray<Timbre.Track> tracks;
 
@@ -244,6 +245,10 @@ namespace Timbre {
             }
             this.set_description (raw_desc);
 
+            if (root_obj.has_member ("audio_playlist_id") && !root_obj.get_null_member ("audio_playlist_id")) {
+                this.audio_playlist_id = root_obj.get_string_member ("audio_playlist_id");
+            }
+
             if (!root_obj.has_member ("tracks"))return list;
 
             var tracks_node = root_obj.get_member ("tracks");
@@ -351,29 +356,41 @@ namespace Timbre {
         }
 
         private void on_radio_clicked () {
-            if (this.tracks.length > 0) {
-                string vid = this.tracks.get (Random.int_range (0, this.tracks.length)).id;
+            if (this.tracks.length == 0)return;
 
-                this.player.get_radio (vid, (json, error) => {
-                    GLib.Idle.add (() => {
-                        if (this.released) {
-                            if (error != null)Timbre.string_free (error);
-                            if (json != null)Timbre.string_free (json);
-                            return GLib.Source.REMOVE;
-                        }
-                        if (error != null) {
-                            warning ("radio: %s", (string) error);
-                            Timbre.string_free (error);
-                            return GLib.Source.REMOVE;
-                        }
-                        var tracks = this.parse_radio_tracks ((string) json);
-                        Timbre.string_free (json);
-                        if (tracks.length > 0)
-                            this.play_collection (tracks, 0, false);
-                        return GLib.Source.REMOVE;
-                    });
-                });
+            string radio_id;
+
+            if (this.collection_type == "album") {
+                if (this.audio_playlist_id != null) {
+                    radio_id = "RDAMPL" + this.audio_playlist_id;
+                } else {
+                    radio_id = this.tracks.get (Random.int_range (0, this.tracks.length)).id;
+                }
+            } else {
+                string cid = this.collection_id;
+                if (cid.has_prefix ("VL"))cid = cid.substring (2);
+                radio_id = "RDAMPL" + cid;
             }
+
+            this.player.get_radio (radio_id, (json, error) => {
+                GLib.Idle.add (() => {
+                    if (this.released) {
+                        if (error != null)Timbre.string_free (error);
+                        if (json != null)Timbre.string_free (json);
+                        return GLib.Source.REMOVE;
+                    }
+                    if (error != null) {
+                        warning ("radio: %s", (string) error);
+                        Timbre.string_free (error);
+                        return GLib.Source.REMOVE;
+                    }
+                    var tracks = this.parse_radio_tracks ((string) json);
+                    Timbre.string_free (json);
+                    if (tracks.length > 0)
+                        this.play_collection (tracks, 0, false);
+                    return GLib.Source.REMOVE;
+                });
+            });
         }
 
         private GenericArray<Track> parse_radio_tracks (string json_str) {

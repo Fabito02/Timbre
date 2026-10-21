@@ -785,9 +785,13 @@ endpoint_json_str!(timbre_player_browse_section, |ctx, args_json| {
     crate::net::playlists::browse_section_page(&*api, &args).await
 });
 
-endpoint_json_str!(timbre_player_get_radio, |ctx, track_id| {
+endpoint_json_str!(timbre_player_get_radio, |ctx, id| {
     let api = ctx.session.api();
-    playlists::radio_tracks(&*api, Some(&track_id), None).await
+    if id.starts_with("RDAMPL") {
+        playlists::radio_tracks(&*api, None, Some(&id)).await
+    } else {
+        playlists::radio_tracks(&*api, Some(&id), None).await
+    }
 });
 
 endpoint_json_str2!(
