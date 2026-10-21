@@ -7,9 +7,15 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_subtitle;
+        [GtkChild] private unowned Gtk.Label label_info;
         [GtkChild] private unowned Gtk.Button button_play_all;
-        [GtkChild] private unowned Gtk.Spinner spinner_loading;
+        [GtkChild] private unowned Gtk.Button button_play_shuffle;
+        [GtkChild] private unowned Gtk.Button button_play_radio;
         [GtkChild] private unowned Gtk.ListBox tracks_list;
+        [GtkChild] private unowned Gtk.Box loading_box;
+        [GtkChild] private unowned Gtk.Overlay header_overlay;
+        [GtkChild] private unowned Gtk.Label label_description;
+        [GtkChild] private unowned Gtk.Label label_read_more;
 
         private unowned Timbre.Player player;
         private string collection_id;
@@ -18,11 +24,14 @@ namespace Timbre {
 
         private Timbre.Utils.ImageBinding header_binding;
         private ulong row_activated_id = 0;
-        private ulong play_all_id = 0;
 
         private bool released = false;
 
-        public signal void play_collection (GenericArray<Timbre.Track> tracks, int start_index);
+        private bool description_expanded = false;
+        private string description_full = "";
+        private const int DESCRIPTION_PREVIEW = 280;
+
+        public signal void play_collection (GenericArray<Timbre.Track> tracks, int start_index, bool shuffle);
 
         public CollectionPage (
             Timbre.Player player,
@@ -42,17 +51,30 @@ namespace Timbre {
             this.label_title.label = title;
             this.label_subtitle.label = subtitle;
 
-            this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 160);
+            this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1024);
             this.header_binding.load (cover_url);
 
-            this.play_all_id = this.button_play_all.clicked.connect (this.on_play_all_clicked);
+            this.button_play_all.clicked.connect (this.on_play_all_clicked);
+            this.button_play_shuffle.clicked.connect (this.on_play_shuffle_clicked);
+            this.button_play_radio.clicked.connect (this.on_radio_clicked);
 
             this.row_activated_id = this.tracks_list.row_activated.connect ((row) => {
                 int index = row.get_index ();
                 if (index >= 0 && index < this.tracks.length) {
-                    this.play_collection (this.tracks, index);
+                    this.play_collection (this.tracks, index, false);
                 }
             });
+
+            this.label_read_more.activate_link.connect (() => {
+                GLib.Idle.add (() => {
+                    this.toggle_description ();
+                    return GLib.Source.REMOVE;
+                });
+                return true;
+            });
+
+            this.header_overlay.visible = false;
+            this.loading_box.visible = true;
 
             this.load_collection_tracks ();
         }
@@ -63,10 +85,6 @@ namespace Timbre {
             if (this.row_activated_id != 0) {
                 this.tracks_list.disconnect (this.row_activated_id);
                 this.row_activated_id = 0;
-            }
-            if (this.play_all_id != 0) {
-                this.button_play_all.disconnect (this.play_all_id);
-                this.play_all_id = 0;
             }
 
             this.clear_rows ();
@@ -105,10 +123,6 @@ namespace Timbre {
         }
 
         private void load_collection_tracks () {
-            this.spinner_loading.visible = true;
-            this.spinner_loading.spinning = true;
-            this.tracks_list.visible = false;
-
             if (this.collection_type == "album") {
                 this.player.get_album (this.collection_id, this.on_collection_loaded);
             } else {
@@ -124,8 +138,7 @@ namespace Timbre {
                     return GLib.Source.REMOVE;
                 }
 
-                this.spinner_loading.spinning = false;
-                this.spinner_loading.visible = false;
+                this.loading_box.visible = false;
 
                 if (error != null) {
                     warning ("collection: %s", (string) error);
@@ -135,8 +148,13 @@ namespace Timbre {
                 }
 
                 this.tracks = this.parse_tracks_json ((string) json_ptr);
-                this.populate_tracks_list ();
-                this.tracks_list.visible = true;
+
+                if (this.tracks.length > 0) {
+                    this.header_overlay.visible = true;
+                    this.populate_tracks_list ();
+                    this.tracks_list.visible = true;
+                }
+
                 Timbre.string_free (json_ptr);
                 return GLib.Source.REMOVE;
             });
@@ -153,6 +171,8 @@ namespace Timbre {
         private GenericArray<Timbre.Track> parse_tracks_json (string json_data) {
             var list = new GenericArray<Timbre.Track> ();
 
+            message ("Collection Data: " + json_data);
+
             var parser = new Json.Parser ();
             try {
                 parser.load_from_data (json_data);
@@ -167,6 +187,41 @@ namespace Timbre {
             }
 
             var root_obj = root.get_object ();
+
+            var info_parts = new GenericArray<string> ();
+
+            if (root_obj.has_member ("album_type") && !root_obj.get_null_member ("album_type")) {
+                info_parts.add (root_obj.get_string_member ("album_type"));
+            }
+
+            if (root_obj.has_member ("year") && !root_obj.get_null_member ("year")) {
+                info_parts.add (root_obj.get_string_member ("year"));
+            }
+
+            if (root_obj.has_member ("track_count") && !root_obj.get_null_member ("track_count")) {
+                int count = (int) root_obj.get_int_member ("track_count");
+                string label = (count == 1) ? _("1 song") : _("%d songs").printf (count);
+                info_parts.add (label);
+            }
+
+            if (root_obj.has_member ("duration") && !root_obj.get_null_member ("duration")) {
+                info_parts.add (root_obj.get_string_member ("duration"));
+            }
+
+            var sb = new StringBuilder ();
+            for (int i = 0; i < info_parts.length; i++) {
+                if (sb.len > 0) sb.append (" • ");
+                sb.append (info_parts.get (i));
+            }
+
+            this.label_info.label = sb.str;
+
+            string? raw_desc = null;
+            if (root_obj.has_member ("description") && !root_obj.get_null_member ("description")) {
+                raw_desc = root_obj.get_string_member ("description");
+            }
+            this.set_description (raw_desc);
+
             if (!root_obj.has_member ("tracks")) return list;
 
             var tracks_node = root_obj.get_member ("tracks");
@@ -265,7 +320,109 @@ namespace Timbre {
 
         private void on_play_all_clicked () {
             if (this.tracks.length > 0) {
-                this.play_collection (this.tracks, 0);
+                this.play_collection (this.tracks, 0, false);
+            }
+        }
+
+        private void on_play_shuffle_clicked () {
+            if (this.tracks.length > 0) {
+                this.play_collection (this.tracks, 0, true);
+            }
+        }
+
+        private void on_radio_clicked () {
+            if (this.tracks.length > 0) {
+                string vid = this.tracks.get (Random.int_range (0, this.tracks.length)).id;
+
+                this.player.get_radio (vid, (json, error) => {
+                    GLib.Idle.add (() => {
+                        if (this.released) {
+                            if (error != null) Timbre.string_free (error);
+                            if (json != null) Timbre.string_free (json);
+                            return GLib.Source.REMOVE;
+                        }
+                        if (error != null) {
+                            warning ("radio: %s", (string) error);
+                            Timbre.string_free (error);
+                            return GLib.Source.REMOVE;
+                        }
+                        var tracks = this.parse_radio_tracks ((string) json);
+                        Timbre.string_free (json);
+                        if (tracks.length > 0)
+                            this.play_collection (tracks, 0, false);
+                        return GLib.Source.REMOVE;
+                    });
+                });
+            }
+        }
+
+        private GenericArray<Track> parse_radio_tracks (string json_str) {
+            var tracks = new GenericArray<Track> ();
+            try {
+                var parser = new Json.Parser ();
+                parser.load_from_data (json_str);
+                var root = parser.get_root ();
+                if (root == null || root.get_node_type () != Json.NodeType.OBJECT) return tracks;
+                var obj = root.get_object ();
+                if (!obj.has_member ("tracks")) return tracks;
+                var arr = obj.get_array_member ("tracks");
+                foreach (unowned Json.Node node in arr.get_elements ()) {
+                    if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                    var wrapper = node.get_object ();
+                    if (!wrapper.has_member ("track")) continue;
+                    var t = ArtistParser.parse_track (wrapper.get_object_member ("track"));
+                    if (t != null) tracks.add (t);
+                }
+            } catch (Error e) {
+                debug ("radio parse: %s", e.message);
+            }
+            return tracks;
+        }
+
+        private void set_description (string? raw) {
+            if (raw == null || raw.length == 0) {
+                this.description_full = "";
+                this.description_expanded = false;
+                this.label_description.visible = false;
+                this.label_read_more.visible = false;
+                return;
+            }
+
+            var clean = raw.replace ("From Wikipedia", "").strip ();
+            while (clean.contains ("  ")) clean = clean.replace ("  ", " ");
+            while (clean.contains ("\n\n\n")) clean = clean.replace ("\n\n\n", "\n\n");
+
+            this.description_full = clean;
+            this.description_expanded = false;
+
+            if (clean.length > DESCRIPTION_PREVIEW) {
+                this.label_description.label = this.preview_of (clean);
+                this.label_read_more.label = "<a href='toggle'>" + _("Read more") + "</a>";
+                this.label_read_more.visible = true;
+            } else {
+                this.label_description.label = clean;
+                this.label_read_more.visible = false;
+            }
+            this.label_description.visible = true;
+        }
+
+        private string preview_of (string text) {
+            int cut = int.min (DESCRIPTION_PREVIEW, text.length);
+            string head = text.substring (0, cut);
+            int sp = head.last_index_of_char (' ');
+            if (sp > 0) head = head.substring (0, sp);
+            return head + "…";
+        }
+
+        private void toggle_description () {
+            if (this.description_full.length == 0) return;
+            this.description_expanded = !this.description_expanded;
+            if (this.description_expanded) {
+                this.label_description.label = this.description_full;
+                this.label_read_more.label = "<a href='toggle'>" + _("Show less") + "</a>";
+            } else {
+                this.label_description.label = this.preview_of (this.description_full);
+                this.label_read_more.label = "<a href='toggle'>" + _("Read more") + "</a>";
             }
         }
     }

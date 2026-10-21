@@ -35,7 +35,7 @@ template $TimbreArtistPage: Adw.NavigationPage {
 
             Overlay header_overlay {
               hexpand: true;
-              height-request: 320;
+              height-request: 400;
 
               Picture banner_picture {
                 content-fit: cover;
@@ -100,7 +100,17 @@ template $TimbreArtistPage: Adw.NavigationPage {
                     valign: center;
 
                     Button button_play {
-                      label: _("Play");
+                      child: Box {
+                        Image {
+                          icon-name: "media-playback-start-symbolic";
+                          pixel-size: 16;
+                          margin-end: 8;
+                        }
+
+                        Label {
+                          label: _("Play");
+                        }
+                      };
 
                       styles [
                         "suggested-action",
@@ -111,6 +121,7 @@ template $TimbreArtistPage: Adw.NavigationPage {
                     Button button_shuffle {
                       icon-name: "media-playlist-shuffle-symbolic";
                       tooltip-text: _("Shuffle");
+                      width-request: 44;
 
                       styles [
                         "circular",
@@ -118,8 +129,9 @@ template $TimbreArtistPage: Adw.NavigationPage {
                     }
 
                     Button button_radio {
-                      icon-name: "triangular-antenna-symbolic";
+                      icon-name: "radio-wave-symbolic";
                       tooltip-text: _("Start Radio");
+                      width-request: 44;
 
                       styles [
                         "circular",
@@ -129,6 +141,7 @@ template $TimbreArtistPage: Adw.NavigationPage {
                     Button button_subscribe {
                       icon-name: "non-starred-symbolic";
                       tooltip-text: _("Subscribe");
+                      width-request: 44;
 
                       styles [
                         "circular",
@@ -198,6 +211,7 @@ template $TimbreArtistPage: Adw.NavigationPage {
 
       styles [
         "flat",
+        "header-gradient",
       ]
 
       [start]

@@ -137,7 +137,7 @@ picture.image-placeholder {
 /* like button */
 
 .liked-button {
-    color: @accent_color;
+    color: @accent_bg_color;
 }
 
 .disliked-button {
@@ -259,21 +259,23 @@ picture.image-placeholder {
 }
 
 /* artist banner */
-
-.banner-top-rounded {
-    border-radius: 12px 12px 0 0;
-}
-
 .banner-scrim {
     background: linear-gradient(
         to bottom,
         transparent 0%,
-        alpha(var(--window-bg-color), 0.05) 15%,
-        alpha(var(--window-bg-color), 0.2) 35%,
-        alpha(var(--window-bg-color), 0.5) 60%,
-        alpha(var(--window-bg-color), 0.8) 82%,
+        alpha(var(--window-bg-color), 0.7) 60%,
         var(--window-bg-color) 100%
     );
+}
+
+.header-gradient {
+    background-image: linear-gradient(
+        to bottom,
+        alpha(var(--window-bg-color), 0.8) 0%,
+        transparent 100%
+    );
+    background-color: transparent;
+    box-shadow: none;
 }
 
 /* fullscreen player */
@@ -293,4 +295,9 @@ picture.image-placeholder {
 
 .track_row {
     padding: 6px;
+}
+
+.title-bigger {
+    font-weight: 700;
+    font-size: 2.35rem;
 }

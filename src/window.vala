@@ -284,8 +284,17 @@ namespace Timbre {
             }
             var page = new Timbre.CollectionPage (
                 this.player, id, type_name, title, subtitle, cover);
-            page.play_collection.connect ((tracks, start_index) => {
-                this.queue.play_list (tracks, start_index);
+            page.play_collection.connect ((tracks, start_index, shuffle) => {
+                if (tracks.length == 0) return;
+
+                if (shuffle) {
+                    int random_index = Random.int_range (0, tracks.length);
+
+                    this.queue.play_list (tracks, random_index);
+                    this.queue.set_shuffle (true);
+                } else {
+                    this.queue.play_list (tracks, start_index);
+                }
             });
 
             this.root_nav.push (page);
@@ -310,19 +319,14 @@ namespace Timbre {
 
             page.play_songs_requested.connect ((tracks, start_index, shuffle) => {
                 if (tracks.length == 0) return;
+
                 if (shuffle) {
-                    var shuffled = new GenericArray<Track> ();
-                    for (int i = 0; i < tracks.length; i++) shuffled.add (tracks.get (i));
-                    for (int i = shuffled.length - 1; i > 0; i--) {
-                        int j = Random.int_range (0, i + 1);
-                        var tmp = shuffled.get (i);
-                        shuffled.set (i, shuffled.get (j));
-                        shuffled.set (j, tmp);
-                    }
-                    this.queue.play_list (shuffled, 0);
+                    int random_index = Random.int_range (0, tracks.length);
+
+                    this.queue.play_list (tracks, random_index);
+                    this.queue.set_shuffle (true);
                 } else {
-                    int idx = start_index < 0 ? 0 : start_index;
-                    this.queue.play_list (tracks, idx);
+                    this.queue.play_list (tracks, start_index);
                 }
             });
 

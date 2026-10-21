@@ -4,10 +4,218 @@ using Adw 1;
 template $TimbreCollectionPage: Adw.NavigationPage {
   title: _("Details");
 
-  Adw.ToolbarView {
-    [top]
+  Overlay page_overlay {
+    ScrolledWindow scroll {
+      hscrollbar-policy: never;
+      overlay-scrolling: true;
+      vexpand: true;
+
+      Box page_box {
+        orientation: vertical;
+
+        Overlay header_overlay {
+          hexpand: true;
+          height-request: 400;
+
+          Picture image_cover {
+            content-fit: cover;
+            can-shrink: true;
+            hexpand: true;
+            vexpand: true;
+            halign: fill;
+            valign: fill;
+
+            styles [
+              "banner-top-rounded",
+            ]
+          }
+
+          [overlay]
+          Box banner_scrim {
+            hexpand: true;
+            vexpand: true;
+
+            styles [
+              "banner-scrim",
+            ]
+          }
+
+          [overlay]
+          Adw.Clamp header_clamp {
+            maximum-size: 1280;
+            tightening-threshold: 600;
+            valign: end;
+
+            Box info_box {
+              orientation: vertical;
+              spacing: 4;
+              margin-start: 28;
+              margin-end: 28;
+              margin-bottom: 24;
+
+              Label label_title {
+                halign: start;
+                xalign: 0;
+                wrap: true;
+                wrap-mode: word_char;
+
+                styles [
+                  "title-bigger",
+                ]
+              }
+
+              Label label_subtitle {
+                halign: start;
+                xalign: 0;
+
+                styles [
+                  "title-4",
+                  "dim-label",
+                ]
+              }
+
+              Label label_info {
+                halign: start;
+                xalign: 0;
+                margin-top: 4;
+
+                styles [
+                  "dim-label",
+                ]
+              }
+
+              Box actions {
+                orientation: horizontal;
+                spacing: 12;
+                margin-top: 8;
+                valign: center;
+
+                Button button_play_all {
+                  child: Box {
+                    Image {
+                      icon-name: "media-playback-start-symbolic";
+                      pixel-size: 16;
+                      margin-end: 8;
+                    }
+
+                    Label {
+                      label: _("Play All");
+                    }
+                  };
+
+                  styles [
+                    "suggested-action",
+                    "pill",
+                  ]
+                }
+
+                Button button_play_shuffle {
+                  icon-name: "media-playlist-shuffle-symbolic";
+                  tooltip-text: _("Shuffle");
+                  width-request: 44;
+
+                  styles [
+                    "circular",
+                    "collection-button",
+                  ]
+                }
+
+                Button button_play_radio {
+                  icon-name: "radio-wave-symbolic";
+                  tooltip-text: _("Start Radio");
+                  width-request: 44;
+
+                  styles [
+                    "circular",
+                    "collection-button",
+                  ]
+                }
+
+                Button button_library {
+                  icon-name: "non-starred-symbolic";
+                  tooltip-text: _("Save to Library");
+                  width-request: 44;
+
+                  styles [
+                    "circular",
+                    "collection-button",
+                  ]
+                }
+              }
+
+              Box description_box {
+                orientation: vertical;
+                spacing: 4;
+                margin-top: 12;
+
+                Label label_description {
+                  halign: start;
+                  xalign: 0;
+                  wrap: true;
+                  wrap-mode: word_char;
+
+                  styles [
+                    "body",
+                  ]
+                }
+
+                Label label_read_more {
+                  halign: start;
+                  use-markup: true;
+
+                  styles [
+                    "caption",
+                  ]
+                }
+              }
+            }
+          }
+        }
+
+        Adw.Clamp {
+          maximum-size: 1280;
+          tightening-threshold: 600;
+
+          Box content_box {
+            orientation: vertical;
+            margin-top: 12;
+            margin-bottom: 24;
+            margin-start: 24;
+            margin-end: 24;
+
+            ListBox tracks_list {
+              selection-mode: none;
+              visible: false;
+
+              styles [
+                "boxed-list",
+              ]
+            }
+          }
+        }
+      }
+    }
+
+    [overlay]
+    Box loading_box {
+      halign: center;
+      valign: center;
+
+      Adw.Spinner {
+        width-request: 32;
+        height-request: 32;
+      }
+    }
+
+    [overlay]
     Adw.HeaderBar header_bar {
+      valign: start;
       show-back-button: false;
+
+      styles [
+        "flat",
+        "header-gradient",
+      ]
 
       [start]
       Button button_back_custom {
@@ -16,92 +224,5 @@ template $TimbreCollectionPage: Adw.NavigationPage {
         action-name: "navigation.pop";
       }
     }
-
-    content: ScrolledWindow {
-      hscrollbar-policy: never;
-      overlay-scrolling: true;
-
-      Adw.Clamp {
-        maximum-size: 1280;
-
-        Box {
-          orientation: vertical;
-          spacing: 24;
-          margin-top: 24;
-          margin-bottom: 32;
-          margin-start: 24;
-          margin-end: 24;
-
-          Box {
-            orientation: horizontal;
-            spacing: 20;
-
-            Picture image_cover {
-              width-request: 160;
-              height-request: 160;
-              can-shrink: false;
-
-              styles [
-                "card",
-              ]
-            }
-
-            Box {
-              orientation: vertical;
-              valign: center;
-              spacing: 6;
-              hexpand: true;
-
-              Label label_title {
-                halign: start;
-                wrap: true;
-                xalign: 0;
-
-                styles [
-                  "title-1",
-                ]
-              }
-
-              Label label_subtitle {
-                halign: start;
-                wrap: true;
-                xalign: 0;
-
-                styles [
-                  "dim-label",
-                  "title-4",
-                ]
-              }
-
-              Button button_play_all {
-                halign: start;
-                margin-top: 12;
-                icon-name: "media-playback-start-symbolic";
-                label: _("Play All");
-
-                styles [
-                  "suggested-action",
-                  "pill",
-                ]
-              }
-            }
-          }
-
-          Gtk.Spinner spinner_loading {
-            spinning: true;
-            visible: true;
-          }
-
-          ListBox tracks_list {
-            selection-mode: none;
-            visible: false;
-
-            styles [
-              "boxed-list",
-            ]
-          }
-        }
-      }
-    };
   }
 }

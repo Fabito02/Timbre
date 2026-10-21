@@ -375,7 +375,7 @@ namespace Timbre {
             string? banner = d.banner_url ?? d.thumb_url;
             if (banner != null && banner.length > 0) {
                 if (this.banner_binding == null) {
-                    this.banner_binding = new Timbre.Utils.ImageBinding (this.banner_picture, 720);
+                    this.banner_binding = new Timbre.Utils.ImageBinding (this.banner_picture, 1024);
                 }
                 this.banner_binding.load (banner);
             }
@@ -698,14 +698,13 @@ namespace Timbre {
             var tracks = new GenericArray<Track> ();
             for (int i = 0; i < songs.results.length; i++)
                 tracks.add (songs.results.get (i));
-            this.play_songs_requested (tracks, shuffle ? -1 : 0, shuffle);
+            this.play_songs_requested (tracks, 0, shuffle);
         }
 
         private void on_radio_clicked () {
             if (this.data == null || this.data.songs == null) return;
             if (this.data.songs.results.length == 0) return;
-            var first = this.data.songs.results.get (0);
-            string vid = first.id;
+            string vid = this.data.songs.results.get (Random.int_range (0, this.data.songs.results.length)).id;
 
             this.player.get_radio (vid, (json, error) => {
                 GLib.Idle.add (() => {

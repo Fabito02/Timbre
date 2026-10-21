@@ -236,10 +236,9 @@ fn parse_playlist_header(response: &Value) -> Option<PlaylistDetails> {
         privacy,
         ..PlaylistDetails::default()
     };
-    details.description = runs_text(array_at(
-        header,
-        "/description/musicDescriptionShelfRenderer/description/runs",
-    ));
+    details.description = owned_at(header, "/description/runs/0/text")
+        .or_else(|| owned_at(header, "/description/musicDescriptionShelfRenderer/description/runs/0/text"))
+        .unwrap_or_default();
     details.title = runs_text(array_at(header, "/title/runs"));
     details.thumbnails = thumbnails_at(
         header,
@@ -299,10 +298,11 @@ pub async fn get_album(api: &dyn Browse, browse_id: &str) -> Result<PlaylistDeta
         header,
         "/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails",
     );
-    details.description = runs_text(array_at(
-        header,
-        "/description/musicDescriptionShelfRenderer/description/runs",
-    ));
+    
+    details.description = owned_at(header, "/description/runs/0/text")
+        .or_else(|| owned_at(header, "/description/musicDescriptionShelfRenderer/description/runs/0/text"))
+        .unwrap_or_default();
+    
     let subtitle = array_at(header, "/subtitle/runs");
     details.year = parse_song_runs(subtitle.get(2..).unwrap_or(&[])).year;
     details.author = parse_artists_runs(array_at(header, "/straplineTextOne/runs"));
