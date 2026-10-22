@@ -372,3 +372,9 @@ window.cover-bg-active .banner-scrim {
     font-weight: 500;
     font-size: 1.15rem;
 }
+
+.switcher-bar-mobile actionbar > revealer > box {
+    background: none;
+    background-color: transparent;
+    border: none;
+}

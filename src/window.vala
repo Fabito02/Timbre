@@ -12,6 +12,10 @@ namespace Timbre {
         private uint search_debounce_id = 0;
         private string cookies_path;
 
+        private GLib.GenericSet<string> pending_blurs = new GLib.GenericSet<string> (str_hash, str_equal);
+        private Gtk.CssProvider dynamic_bg_css = new Gtk.CssProvider ();
+        private string? current_blur_path = null;
+
         private bool slider_locked = false;
         private uint slider_unlock_id = 0;
         private double pending_seek_target = -1.0;
@@ -82,6 +86,23 @@ namespace Timbre {
 
         public Window (Timbre.Application app) {
             Object (application : app);
+
+            Gtk.StyleContext.add_provider_for_display (
+                                                       Gdk.Display.get_default (),
+                                                       this.dynamic_bg_css,
+                                                       Gtk.STYLE_PROVIDER_PRIORITY_USER + 1
+            );
+
+            var sm = Adw.StyleManager.get_default ();
+            this.dynamic_bg_css.prefers_color_scheme = sm.dark
+                ? Gtk.InterfaceColorScheme.DARK
+                : Gtk.InterfaceColorScheme.LIGHT;
+
+            sm.notify["dark"].connect (() => {
+                this.dynamic_bg_css.prefers_color_scheme = sm.dark
+                    ? Gtk.InterfaceColorScheme.DARK
+                    : Gtk.InterfaceColorScheme.LIGHT;
+            });
 
             this.close_request.connect (() => {
                 if (this.is_playing) {
@@ -721,6 +742,8 @@ namespace Timbre {
 
             bool need_metadata_fetch = need_like_fetch || need_duration_fetch;
 
+            this.apply_blurred_background_async (track.thumb);
+
             string track_id = track.id;
             this.player.play_track_id (track_id, duration, (success, error) => {
                 Idle.add (() => {
@@ -1079,6 +1102,77 @@ namespace Timbre {
                 debug ("parse_radio_tracks: %s", e.message);
             }
             return tracks;
+        }
+
+        public void apply_blurred_background_async (string cover_url) {
+            if (cover_url == null || cover_url.strip ().length == 0)return;
+            if (this.pending_blurs.contains (cover_url))return;
+            this.pending_blurs.add (cover_url);
+
+            new GLib.Thread<void*> ("blur-worker", () => {
+                string? path = null;
+
+                string local_path = Timbre.Utils.ImageLoader.get_default ().get_disk_path (cover_url, 512);
+
+                if (GLib.FileUtils.test (local_path, GLib.FileTest.EXISTS)) {
+                    path = Timbre.BlurCache.blur_image_to_cache_from_file (local_path, 42);
+                }
+
+                Idle.add (() => {
+                    this.pending_blurs.remove (cover_url);
+                    if (path != null) {
+                        this.current_blur_path = path;
+                        this.update_background_css ();
+                    }
+                    return Source.REMOVE;
+                });
+                return null;
+            });
+        }
+
+        private void update_background_css () {
+            if (this.current_blur_path == null)return;
+
+            this.add_css_class ("cover-bg-active");
+
+            string css = """
+                window.cover-bg-active,
+                window.cover-bg-active.background,
+                window.cover-bg-active bottom-sheet sheet {
+                    background-color: transparent;
+                    background-size: cover;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    window.cover-bg-active,
+                    window.cover-bg-active.background,
+                    window.cover-bg-active bottom-sheet sheet {
+                        background-image: linear-gradient(
+                            rgba(0, 0, 0, 0.5),
+                            rgba(0, 0, 0, 0.5)
+                        ), url("file://%s");
+                    }
+                }
+
+                @media (prefers-color-scheme: light) {
+                    window.cover-bg-active,
+                    window.cover-bg-active.background,
+                    window.cover-bg-active bottom-sheet sheet {
+                        background-image: linear-gradient(
+                            rgba(255, 255, 255, 0.5),
+                            rgba(255, 255, 255, 0.5)
+                        ), url("file://%s");
+                    }
+                }
+            """.printf (this.current_blur_path, this.current_blur_path);
+
+            try {
+                this.dynamic_bg_css.load_from_data (css.data);
+            } catch (Error e) {
+                warning ("CSS load: %s", e.message);
+            }
         }
 
         [GtkCallback]

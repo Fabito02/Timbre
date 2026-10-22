@@ -186,7 +186,7 @@ namespace Timbre.Utils {
         ) {
             if (cancel != null && cancel.is_cancelled ())return null;
 
-            int effective_scale = scale_factor < 1 ? 1 : scale_factor;
+            int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
 
             string upgraded = get_high_res_url (url, target_size, effective_scale);
 
@@ -279,9 +279,9 @@ namespace Timbre.Utils {
             }
         }
 
-        public static string get_high_res_url (string url, int target_size, int scale_factor = 1) {
+        public static string get_high_res_url (string url, int target_size, int min = 512, int scale_factor = 1) {
             int real_pixels = target_size * scale_factor;
-            int min_res = int.max (real_pixels, 512);
+            int min_res = int.max (real_pixels, min);
 
             if (url.contains ("googleusercontent.com") || url.contains ("ggpht.com")) {
                 try {
@@ -378,6 +378,12 @@ namespace Timbre.Utils {
                 tmp_file.move (dest, GLib.FileCopyFlags.OVERWRITE, null, null);
             } catch (Error e) {
             }
+        }
+
+        public string get_disk_path (string url, int target_size, int scale_factor = 1) {
+            int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
+            string upgraded = get_high_res_url (url, target_size, 512, effective_scale);
+            return this.disk_path (upgraded);
         }
     }
 }
