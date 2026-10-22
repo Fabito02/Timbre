@@ -8,6 +8,7 @@ widgets_blueprints = files(
 )
 
 widgets_sources = files(
+  'banner_fade_wrapper.vala',
   'home_speed_tile.vala',
   'home_speed_tile_card.vala',
   'horizontal_scroll_box.vala',

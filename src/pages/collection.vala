@@ -3,7 +3,7 @@ namespace Timbre {
     public class CollectionPage : Adw.NavigationPage {
         [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
 
-        [GtkChild] private unowned Gtk.Picture image_cover;
+        [GtkChild] private unowned Timbre.BannerFadeWrapper banner_fade_wrapper;
         [GtkChild] private unowned Gtk.Label label_title;
         [GtkChild] private unowned Gtk.Label label_subtitle;
         [GtkChild] private unowned Gtk.Label label_info;
@@ -16,6 +16,8 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Label label_description;
         [GtkChild] private unowned Gtk.Label label_read_more;
 
+        private unowned Gtk.Picture image_cover;
+
         private unowned Timbre.Player player;
         private string collection_id;
         private string audio_playlist_id = null;
@@ -24,6 +26,7 @@ namespace Timbre {
 
         private Timbre.Utils.ImageBinding header_binding;
         private ulong row_activated_id = 0;
+        private ulong root_handler_id = 0;
 
         private bool released = false;
 
@@ -53,6 +56,21 @@ namespace Timbre {
 
             this.thumb_album_url = cover_url;
 
+            var pic = this.banner_fade_wrapper.get_first_child ();
+            if (pic != null) {
+                this.image_cover = (Gtk.Picture) pic;
+                this.image_cover.notify["paintable"].connect (() => {
+                    GLib.Idle.add (() => {
+                        if (!this.released) {
+                            this.banner_fade_wrapper.queue_draw ();
+                        }
+                        return GLib.Source.REMOVE;
+                    });
+                });
+            }
+
+            this.banner_fade_wrapper.map.connect (this.on_banner_map);
+
             this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1024);
             this.header_binding.load (cover_url);
 
@@ -81,8 +99,33 @@ namespace Timbre {
             this.load_collection_tracks ();
         }
 
+        private void on_banner_map () {
+            var root = this.get_root ();
+            if (root == null)return;
+
+            this.update_fade_state (root);
+
+            if (this.root_handler_id == 0) {
+                this.root_handler_id = root.notify["css-classes"].connect (() => {
+                    this.update_fade_state (root);
+                });
+            }
+        }
+
+        private void update_fade_state (Gtk.Widget root) {
+            if (this.released)return;
+            bool active = "cover-bg-active" in root.get_css_classes ();
+            this.banner_fade_wrapper.fade_active = active;
+        }
+
         protected override void unroot () {
             this.released = true;
+
+            if (this.root_handler_id != 0) {
+                var root = this.get_root ();
+                if (root != null)root.disconnect (this.root_handler_id);
+                this.root_handler_id = 0;
+            }
 
             if (this.row_activated_id != 0) {
                 this.tracks_list.disconnect (this.row_activated_id);
@@ -338,8 +381,7 @@ namespace Timbre {
             for (int i = 0; i < this.tracks.length; i++) {
                 var track = this.tracks.get (i);
                 if (is_album)track.thumb = this.thumb_album_url;
-                var index = is_album ? i : -1;
-                this.tracks_list.append (new Timbre.TrackRow (this.player, track, index));
+                this.tracks_list.append (new Timbre.TrackRow (this.player, track));
             }
         }
 

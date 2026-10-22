@@ -17,17 +17,24 @@ template $TimbreCollectionPage: Adw.NavigationPage {
           hexpand: true;
           height-request: 400;
 
-          Picture image_cover {
-            content-fit: cover;
-            can-shrink: true;
+          $TimbreBannerFadeWrapper banner_fade_wrapper {
             hexpand: true;
             vexpand: true;
             halign: fill;
             valign: fill;
 
-            styles [
-              "banner-top-rounded",
-            ]
+            Picture image_cover {
+              content-fit: cover;
+              can-shrink: true;
+              hexpand: true;
+              vexpand: true;
+              halign: fill;
+              valign: fill;
+
+              styles [
+                "banner-top-rounded",
+              ]
+            }
           }
 
           [overlay]

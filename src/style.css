@@ -99,7 +99,7 @@ button.no-hover:hover {
 
 .row-cover-img {
     border-radius: 10px;
-    background-color: #00000030;
+    background-color: #00000050;
 }
 
 .songs-list {
@@ -113,7 +113,7 @@ button.no-hover:hover {
 
 .card-cover-img {
     border-radius: 16px;
-    background-color: #00000030;
+    background-color: #00000050;
 }
 
 .search-bar {
@@ -191,7 +191,7 @@ picture.image-placeholder {
 .home-speed-cover,
 .cover-bar-img {
     border-radius: 10px;
-    background-color: #00000030;
+    background-color: #00000050;
 }
 
 .home-speed-title {
@@ -209,7 +209,7 @@ button.home-speed-tile-card {
     padding: 0;
     color: #ffffff;
     border-radius: 12px;
-    background-color: #00000030;
+    background-color: #00000050;
     background-image: none;
     box-shadow: none;
     border: none;
@@ -313,27 +313,26 @@ button.home-speed-tile-card:focus-visible {
     }
 }
 
-/* artist banner */
 .banner-scrim {
     background: linear-gradient(
         to bottom,
         transparent 0%,
         transparent 35%,
-        alpha(var(--window-bg-color), 0.2) 55%,
-        alpha(var(--window-bg-color), 0.6) 75%,
-        alpha(var(--window-bg-color), 0.85) 85%,
-        var(--window-bg-color) 95%
+        alpha(@window_bg_color, 0.2) 55%,
+        alpha(@window_bg_color, 0.6) 75%,
+        alpha(@window_bg_color, 0.85) 85%,
+        @window_bg_color 95%
     );
 }
 
 .header-gradient {
     background-image: linear-gradient(
         to bottom,
-        alpha(var(--window-bg-color), 0.54) 0%,
-        alpha(var(--window-bg-color), 0.44) 20%,
-        alpha(var(--window-bg-color), 0.3) 45%,
-        alpha(var(--window-bg-color), 0.14) 70%,
-        alpha(var(--window-bg-color), 0.05) 88%,
+        alpha(@window_bg_color, 0.54) 0%,
+        alpha(@window_bg_color, 0.44) 20%,
+        alpha(@window_bg_color, 0.3) 45%,
+        alpha(@window_bg_color, 0.14) 70%,
+        alpha(@window_bg_color, 0.05) 88%,
         transparent 100%
     );
     background-color: transparent;
