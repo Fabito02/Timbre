@@ -5,6 +5,12 @@ namespace Timbre {
 
     public delegate void DoneCallback (bool success, char* error);
 
+    [CCode (cname = "TimbreUtils")]
+    public class BlurCache : GLib.Object {
+        [CCode (cname = "timbre_blur_image_from_file")]
+        public static unowned string? blur_image_to_cache_from_file (string image_path, uint radius);
+    }
+
     [Compact]
     [CCode (cname = "TimbrePlayerHandle", free_function = "timbre_player_free")]
     public class Player {

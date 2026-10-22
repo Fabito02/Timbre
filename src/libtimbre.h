@@ -20,8 +20,6 @@ void timbre_string_free(char *ptr);
 
 void timbre_set_log_level(int level);
 
-void timbre_set_log_level(int level);
-
 void timbre_set_locale(const char *hl, const char *gl);
 
 bool timbre_player_play_file(TimbrePlayerHandle *h, const char *path);
@@ -153,6 +151,8 @@ bool timbre_player_record_play_start(TimbrePlayerHandle *h,
 void timbre_player_record_play_tick(TimbrePlayerHandle *h, const char *track_id,
                                     double position_secs);
 void timbre_player_record_play_end(TimbrePlayerHandle *h, const char *track_id);
+
+char *timbre_blur_image_from_file(const char *image_url, uint32_t radius);
 
 #ifdef __cplusplus
 }

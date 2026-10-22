@@ -325,6 +325,11 @@ button.home-speed-tile-card:focus-visible {
     );
 }
 
+window.cover-bg-active .banner-scrim {
+    background: none;
+    background-color: transparent;
+}
+
 .header-gradient {
     background-image: linear-gradient(
         to bottom,

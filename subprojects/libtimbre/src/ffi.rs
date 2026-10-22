@@ -15,6 +15,7 @@ use crate::context::TimbreContext;
 use crate::net::media::{HttpAuth, LikeStatus, StreamInfo, VideoId};
 use crate::net::stream::StreamResolver;
 use crate::net::{artist, explore, history, home, library, playlists, search};
+use crate::utils::blur_and_cache_from_file;
 
 static TRACING_READY: AtomicBool = AtomicBool::new(false);
 
@@ -1248,5 +1249,27 @@ pub unsafe extern "C" fn timbre_audio_rebuild_sink(handle: *mut TimbrePlayerHand
 pub unsafe extern "C" fn timbre_player_set_active(handle: *mut TimbrePlayerHandle, active: bool) {
     if let Some(h) = handle.as_ref() {
         h.player.set_active(active);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timbre_blur_image_from_file(
+    image_path: *const std::os::raw::c_char,
+    radius: u32,
+) -> *mut std::os::raw::c_char {
+    if image_path.is_null() {
+        return std::ptr::null_mut();
+    }
+    let path_str = match std::ffi::CStr::from_ptr(image_path).to_str() {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    match blur_and_cache_from_file(path_str, radius) {
+        Ok(path) => match std::ffi::CString::new(path) {
+            Ok(c) => c.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        Err(_) => std::ptr::null_mut(),
     }
 }
