@@ -44,11 +44,31 @@ template $TimbreWindow: Adw.ApplicationWindow {
   title: "Timbre";
 
   Adw.Breakpoint {
-    condition ("max-width: 700sp")
+    condition ("max-width: 1020sp")
+
+    setters {
+      split_view.collapsed: true;
+    }
+  }
+
+  Adw.Breakpoint {
+    condition ("max-width: 920sp")
 
     setters {
       header_bar.title-widget: null;
       switcher_bar.reveal: true;
+      split_view.collapsed: true;
+    }
+  }
+
+  Adw.Breakpoint {
+    condition ("max-width: 680sp")
+
+    setters {
+      header_bar.title-widget: null;
+      switcher_bar.reveal: true;
+      split_view.collapsed: true;
+      fullscreen_sheet.can-open: true;
     }
   }
 
@@ -159,6 +179,267 @@ template $TimbreWindow: Adw.ApplicationWindow {
     content: Adw.BottomSheet fullscreen_sheet {
       full-width: true;
       vexpand: true;
+      show-drag-handle: true;
+      can-open: false;
+
+      bottom-bar: Box {
+        orientation: vertical;
+
+        Revealer bottom_bar_revealer {
+          reveal-child: false;
+          transition-type: slide_up;
+          transition-duration: 300;
+
+          Box {
+            orientation: vertical;
+
+            Scale scale_progress {
+              hexpand: true;
+              orientation: horizontal;
+
+              styles [
+                "playback-bar",
+              ]
+
+              value-changed => $on_seek_changed();
+
+              adjustment: Adjustment adjustment_progress {
+                lower: 0.0;
+                upper: 0.1;
+                value: 0.0;
+              };
+            }
+
+            Box {
+              orientation: horizontal;
+              margin-top: 10;
+              margin-bottom: 10;
+              margin-start: 10;
+              margin-end: 10;
+
+              Box {
+                orientation: horizontal;
+                spacing: 12;
+                valign: center;
+
+                Overlay {
+                  Box {
+                    width-request: 48;
+                    height-request: 48;
+                  }
+
+                  [overlay]
+                  Picture image_cover {
+                    can-shrink: true;
+                    keep-aspect-ratio: false;
+                    content-fit: contain;
+                    halign: fill;
+                    valign: fill;
+
+                    styles [
+                      "cover-bar-img",
+                    ]
+                  }
+                }
+
+                Box {
+                  orientation: vertical;
+                  valign: center;
+                  spacing: 2;
+
+                  Label label_current_title {
+                    label: _("No track selected");
+                    xalign: 0.0;
+                    ellipsize: end;
+
+                    styles [
+                      "heading",
+                    ]
+                  }
+
+                  Label label_current_artist {
+                    label: _("Artist");
+                    xalign: 0.0;
+                    ellipsize: end;
+
+                    styles [
+                      "caption",
+                      "dim-label",
+                    ]
+                  }
+                }
+              }
+
+              Button empty_space {
+                hexpand: true;
+                vexpand: true;
+                has-frame: false;
+
+                styles [
+                  "no-hover",
+                ]
+
+                clicked => $open_fullscreen_clicked();
+              }
+
+              Box time_or_live_box {
+                orientation: horizontal;
+                spacing: 16;
+                valign: center;
+
+                Box live_widget {
+                  orientation: horizontal;
+                  halign: end;
+                  valign: center;
+
+                  styles [
+                    "live-overlay",
+                  ]
+
+                  Image {
+                    icon-name: "radio-wave-symbolic";
+                    pixel-size: 14;
+                    margin-end: 4;
+
+                    styles [
+                      "live-overlay-icon",
+                    ]
+                  }
+
+                  Label {
+                    label: _("Live");
+                  }
+                }
+
+                Box time_labels {
+                  orientation: horizontal;
+                  valign: center;
+
+                  Label label_time_current {
+                    label: "0:00";
+
+                    styles [
+                      "numeric",
+                      "caption",
+                    ]
+                  }
+
+                  Label {
+                    label: " / ";
+
+                    styles [
+                      "caption",
+                      "dim-label",
+                    ]
+                  }
+
+                  Label label_time_total {
+                    label: "0:00";
+
+                    styles [
+                      "numeric",
+                      "caption",
+                      "dim-label",
+                    ]
+                  }
+                }
+
+                Box {
+                  orientation: horizontal;
+                  spacing: 8;
+                  valign: center;
+
+                  Button button_prev {
+                    icon-name: "media-skip-backward-symbolic";
+                    tooltip-text: _("Previous");
+
+                    styles [
+                      "circular",
+                      "flat",
+                    ]
+
+                    clicked => $on_prev_clicked();
+                  }
+
+                  Button button_play_pause {
+                    icon-name: "media-playback-start-symbolic";
+                    tooltip-text: _("Play/Pause");
+
+                    styles [
+                      "suggested-action",
+                      "pill",
+                      "play-btn",
+                    ]
+
+                    clicked => $on_play_pause_clicked();
+                  }
+
+                  Button button_next {
+                    icon-name: "media-skip-forward-symbolic";
+                    tooltip-text: _("Next");
+
+                    styles [
+                      "circular",
+                      "flat",
+                    ]
+
+                    clicked => $on_next_clicked();
+                  }
+                }
+
+                Box {
+                  orientation: horizontal;
+                  spacing: 4;
+                  valign: center;
+
+                  Button {
+                    icon-name: "audio-volume-high-symbolic";
+
+                    styles [
+                      "flat",
+                      "circular",
+                    ]
+                  }
+
+                  ToggleButton button_toggle_queue {
+                    icon-name: "music-queue-symbolic";
+                    tooltip-text: _("Playback queue");
+
+                    styles [
+                      "flat",
+                      "circular",
+                    ]
+                  }
+
+                  Box like_slot {
+                    halign: center;
+                    valign: center;
+                  }
+
+                  Button button_open_fullscreen {
+                    icon-name: "view-fullscreen-symbolic";
+                    tooltip-text: _("Open full-screen view");
+
+                    styles [
+                      "flat",
+                      "circular",
+                    ]
+
+                    clicked => $open_fullscreen_clicked();
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        [bottom]
+        Adw.ViewSwitcherBar switcher_bar {
+          styles [
+            "switcher-bar-mobile",
+          ]
+        }
+      };
 
       sheet: Adw.ToolbarView fullscreen_sheet_content {
         hexpand: true;
@@ -224,261 +505,6 @@ template $TimbreWindow: Adw.ApplicationWindow {
       };
 
       content: Adw.ToolbarView {
-        [bottom]
-        Box {
-          orientation: vertical;
-
-          Revealer bottom_bar_revealer {
-            reveal-child: false;
-            transition-type: fade_slide_up;
-            transition-duration: 300;
-
-            Box {
-              orientation: vertical;
-
-              Scale scale_progress {
-                hexpand: true;
-                orientation: horizontal;
-
-                styles [
-                  "playback-bar",
-                ]
-
-                value-changed => $on_seek_changed();
-
-                adjustment: Adjustment adjustment_progress {
-                  lower: 0.0;
-                  upper: 0.1;
-                  value: 0.0;
-                };
-              }
-
-              Box {
-                orientation: horizontal;
-                margin-top: 10;
-                margin-bottom: 10;
-                margin-start: 10;
-                margin-end: 10;
-
-                Box {
-                  orientation: horizontal;
-                  spacing: 12;
-                  valign: center;
-
-                  Overlay {
-                    Box {
-                      width-request: 48;
-                      height-request: 48;
-                    }
-
-                    [overlay]
-                    Picture image_cover {
-                      can-shrink: true;
-                      keep-aspect-ratio: false;
-                      content-fit: contain;
-                      halign: fill;
-                      valign: fill;
-
-                      styles [
-                        "cover-bar-img",
-                      ]
-                    }
-                  }
-
-                  Box {
-                    orientation: vertical;
-                    valign: center;
-                    spacing: 2;
-
-                    Label label_current_title {
-                      label: _("No track selected");
-                      xalign: 0.0;
-                      ellipsize: end;
-
-                      styles [
-                        "heading",
-                      ]
-                    }
-
-                    Label label_current_artist {
-                      label: _("Artist");
-                      xalign: 0.0;
-                      ellipsize: end;
-
-                      styles [
-                        "caption",
-                        "dim-label",
-                      ]
-                    }
-                  }
-                }
-
-                Button empty_space {
-                  hexpand: true;
-                  vexpand: true;
-                  has-frame: false;
-
-                  styles [
-                    "no-hover",
-                  ]
-
-                  clicked => $open_fullscreen_clicked();
-                }
-
-                Box time_or_live_box {
-                  orientation: horizontal;
-                  spacing: 16;
-                  valign: center;
-
-                  Box live_widget {
-                    orientation: horizontal;
-                    halign: end;
-                    valign: center;
-
-                    styles [
-                      "live-overlay",
-                    ]
-
-                    Image {
-                      icon-name: "radio-wave-symbolic";
-                      pixel-size: 14;
-                      margin-end: 4;
-
-                      styles [
-                        "live-overlay-icon",
-                      ]
-                    }
-
-                    Label {
-                      label: _("Live");
-                    }
-                  }
-
-                  Box time_labels {
-                    orientation: horizontal;
-                    valign: center;
-
-                    Label label_time_current {
-                      label: "0:00";
-
-                      styles [
-                        "numeric",
-                        "caption",
-                      ]
-                    }
-
-                    Label {
-                      label: " / ";
-
-                      styles [
-                        "caption",
-                        "dim-label",
-                      ]
-                    }
-
-                    Label label_time_total {
-                      label: "0:00";
-
-                      styles [
-                        "numeric",
-                        "caption",
-                        "dim-label",
-                      ]
-                    }
-                  }
-
-                  Box {
-                    orientation: horizontal;
-                    spacing: 8;
-                    valign: center;
-
-                    Button button_prev {
-                      icon-name: "media-skip-backward-symbolic";
-                      tooltip-text: _("Previous");
-
-                      styles [
-                        "circular",
-                        "flat",
-                      ]
-
-                      clicked => $on_prev_clicked();
-                    }
-
-                    Button button_play_pause {
-                      icon-name: "media-playback-start-symbolic";
-                      tooltip-text: _("Play/Pause");
-
-                      styles [
-                        "suggested-action",
-                        "pill",
-                        "play-btn",
-                      ]
-
-                      clicked => $on_play_pause_clicked();
-                    }
-
-                    Button button_next {
-                      icon-name: "media-skip-forward-symbolic";
-                      tooltip-text: _("Next");
-
-                      styles [
-                        "circular",
-                        "flat",
-                      ]
-
-                      clicked => $on_next_clicked();
-                    }
-                  }
-
-                  Box {
-                    orientation: horizontal;
-                    spacing: 4;
-                    valign: center;
-
-                    Button {
-                      icon-name: "audio-volume-high-symbolic";
-
-                      styles [
-                        "flat",
-                        "circular",
-                      ]
-                    }
-
-                    ToggleButton button_toggle_queue {
-                      icon-name: "music-queue-symbolic";
-                      tooltip-text: _("Playback queue");
-
-                      styles [
-                        "flat",
-                        "circular",
-                      ]
-                    }
-
-                    Box like_slot {
-                      halign: center;
-                      valign: center;
-                    }
-
-                    Button button_open_fullscreen {
-                      icon-name: "view-fullscreen-symbolic";
-                      tooltip-text: _("Open full-screen view");
-
-                      styles [
-                        "flat",
-                        "circular",
-                      ]
-
-                      clicked => $open_fullscreen_clicked();
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          Adw.ViewSwitcherBar switcher_bar {}
-        }
-
         content: Adw.NavigationView root_nav {
           Adw.NavigationPage {
             title: "Timbre";
