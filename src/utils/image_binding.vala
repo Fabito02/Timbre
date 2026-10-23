@@ -54,6 +54,10 @@ namespace Timbre.Utils {
         public void load (string? url) {
             if (url == null) {
                 this.current_url = null;
+                if (this.cancellable != null) {
+                    this.cancellable.cancel ();
+                    this.cancellable = null;
+                }
                 var pic = this.picture;
                 if (pic != null) {
                     pic.set_paintable (null);

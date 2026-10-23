@@ -226,7 +226,6 @@ namespace Timbre {
 
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/artist.ui")]
     public class ArtistPage : Adw.NavigationPage {
-        [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
 
         [GtkChild] private unowned Adw.ViewStack stack;
         [GtkChild] private unowned Timbre.BannerFadeWrapper banner_fade_wrapper;
@@ -263,6 +262,15 @@ namespace Timbre {
         private ulong root_handler_id = 0;
         private unowned Gtk.Picture banner_picture;
 
+        private ulong banner_map_id = 0;
+        private ulong play_click_id = 0;
+        private ulong shuffle_click_id = 0;
+        private ulong radio_click_id = 0;
+        private ulong subscribe_click_id = 0;
+        private ulong read_more_id = 0;
+        private ulong banner_paintable_ctor_id = 0;
+        private ulong banner_paintable_pop_id = 0;
+
         private int song_limit = 5;
         private const int SONG_STEP = 20;
         private const int CARD_LIMIT = 10;
@@ -279,7 +287,7 @@ namespace Timbre {
             if (pic != null) {
                 this.banner_picture = (Gtk.Picture) pic;
 
-                this.banner_picture.notify["paintable"].connect (() => {
+                this.banner_paintable_ctor_id = this.banner_picture.notify["paintable"].connect (() => {
                     this.banner_fade_wrapper.queue_draw ();
                 });
             }
@@ -288,12 +296,12 @@ namespace Timbre {
                 this.label_name.label = initial_name;
             }
 
-            this.button_play.clicked.connect (() => this.on_play_clicked (false));
-            this.button_shuffle.clicked.connect (() => this.on_play_clicked (true));
-            this.button_radio.clicked.connect (this.on_radio_clicked);
-            this.button_subscribe.clicked.connect (this.on_subscribe_clicked);
+            this.play_click_id = this.button_play.clicked.connect (() => this.on_play_clicked (false));
+            this.shuffle_click_id = this.button_shuffle.clicked.connect (() => this.on_play_clicked (true));
+            this.radio_click_id = this.button_radio.clicked.connect (this.on_radio_clicked);
+            this.subscribe_click_id = this.button_subscribe.clicked.connect (this.on_subscribe_clicked);
 
-            this.label_read_more.activate_link.connect (() => {
+            this.read_more_id = this.label_read_more.activate_link.connect (() => {
                 GLib.Idle.add (() => {
                     if (this.released)return GLib.Source.REMOVE;
                     this.toggle_description ();
@@ -302,7 +310,7 @@ namespace Timbre {
                 return true;
             });
 
-            this.banner_fade_wrapper.map.connect (this.on_banner_map);
+            this.banner_map_id = this.banner_fade_wrapper.map.connect (this.on_banner_map);
 
             this.load ();
         }
@@ -333,6 +341,39 @@ namespace Timbre {
                 var root = this.get_root ();
                 if (root != null)root.disconnect (this.root_handler_id);
                 this.root_handler_id = 0;
+            }
+
+            if (this.banner_map_id != 0) {
+                this.banner_fade_wrapper.disconnect (this.banner_map_id);
+                this.banner_map_id = 0;
+            }
+            if (this.play_click_id != 0) {
+                this.button_play.disconnect (this.play_click_id);
+                this.play_click_id = 0;
+            }
+            if (this.shuffle_click_id != 0) {
+                this.button_shuffle.disconnect (this.shuffle_click_id);
+                this.shuffle_click_id = 0;
+            }
+            if (this.radio_click_id != 0) {
+                this.button_radio.disconnect (this.radio_click_id);
+                this.radio_click_id = 0;
+            }
+            if (this.subscribe_click_id != 0) {
+                this.button_subscribe.disconnect (this.subscribe_click_id);
+                this.subscribe_click_id = 0;
+            }
+            if (this.read_more_id != 0) {
+                this.label_read_more.disconnect (this.read_more_id);
+                this.read_more_id = 0;
+            }
+            if (this.banner_paintable_ctor_id != 0) {
+                this.banner_picture.disconnect (this.banner_paintable_ctor_id);
+                this.banner_paintable_ctor_id = 0;
+            }
+            if (this.banner_paintable_pop_id != 0) {
+                this.banner_picture.disconnect (this.banner_paintable_pop_id);
+                this.banner_paintable_pop_id = 0;
             }
 
             if (this.banner_binding != null) {
@@ -390,9 +431,9 @@ namespace Timbre {
             string? banner = d.banner_url ?? d.thumb_url;
             if (banner != null && banner.length > 0) {
                 if (this.banner_binding == null && this.banner_picture != null) {
-                    this.banner_binding = new Timbre.Utils.ImageBinding (this.banner_picture, 1024);
+                    this.banner_binding = new Timbre.Utils.ImageBinding (this.banner_picture, 1600);
 
-                    this.banner_picture.notify["paintable"].connect (() => {
+                    this.banner_paintable_pop_id = this.banner_picture.notify["paintable"].connect (() => {
                         GLib.Idle.add (() => {
                             if (!this.released) {
                                 this.banner_fade_wrapper.queue_draw ();

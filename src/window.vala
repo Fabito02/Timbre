@@ -15,7 +15,9 @@ namespace Timbre {
         private const double BG_DARKNESS_DARK = 0.35;
         private const double BG_DARKNESS_LIGHT = 0.15;
         private const double BG_MIN_ALPHA_DARK = 0.25;
-        private const int MAX_BLUR_TEXTURES = 4;
+        private const int MAX_BLUR_TEXTURES = 2;
+
+        private uint nav_trim_id = 0;
 
         private GLib.GenericSet<string> pending_blurs = new GLib.GenericSet<string> (str_hash, str_equal);
         private string? pending_blur_url = null;
@@ -192,7 +194,7 @@ namespace Timbre {
             ((Gtk.Widget) this).add_controller (key_ctrl);
 
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
-            this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 512);
+            this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 384);
 
             this.bar_like_btn = new Timbre.LikeButton (this.player);
             this.like_slot.append (this.bar_like_btn);
@@ -417,12 +419,32 @@ namespace Timbre {
             });
         }
 
+        private void schedule_nav_trim () {
+            if (this.nav_trim_id != 0) {
+                GLib.Source.remove (this.nav_trim_id);
+                this.nav_trim_id = 0;
+            }
+
+            this.nav_trim_id = GLib.Timeout.add (500, () => {
+                this.nav_trim_id = 0;
+
+                Timbre.Utils.ImageLoader.get_default ().trim_now ();
+
+                this.blur_texture_cache.remove_all ();
+                this.blur_texture_order = new GLib.GenericArray<string> ();
+
+                Timbre.Utils.trim_memory ();
+
+                return GLib.Source.REMOVE;
+            });
+        }
+
         private void setup_navigation () {
             this.root_nav.pushed.connect (() => {
-                Timbre.Utils.trim_memory ();
+                this.schedule_nav_trim ();
             });
             this.root_nav.popped.connect (() => {
-                Timbre.Utils.trim_memory ();
+                this.schedule_nav_trim ();
             });
 
             this.button_toggle_queue.toggled.connect (() => {

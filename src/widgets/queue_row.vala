@@ -14,7 +14,7 @@ namespace Timbre {
         public signal void item_moved (int from_index, int to_index);
 
         public QueueRow () {
-            Object (orientation: Gtk.Orientation.HORIZONTAL, spacing: 8);
+            Object (orientation : Gtk.Orientation.HORIZONTAL, spacing: 8);
 
             unowned var self = this;
 
@@ -82,10 +82,10 @@ namespace Timbre {
         }
 
         private void show_context_menu (double x, double y) {
-            if (this.current_item == null) return;
+            if (this.current_item == null)return;
 
             var win = this.get_root () as Timbre.Window;
-            if (win == null) return;
+            if (win == null)return;
 
             unowned var self = this;
             var track = this.current_item.track;
@@ -93,8 +93,8 @@ namespace Timbre {
 
             var section1 = new GLib.Menu ();
             section1.append ("Start Radio", "widget.radio");
-            section1.append ("Play Next",  "widget.add_next");
-            section1.append ("Add to Queue",   "widget.add_queue");
+            section1.append ("Play Next", "widget.add_next");
+            section1.append ("Add to Queue", "widget.add_queue");
             menu.append_section (null, section1);
 
             var section2 = new GLib.Menu ();
@@ -161,10 +161,12 @@ namespace Timbre {
             popover.set_parent (this);
             popover.insert_action_group ("widget", actions);
 
-            unowned Gtk.Popover popover_ref = popover;
+            weak Gtk.Popover popover_weak = popover;
             popover.closed.connect (() => {
                 GLib.Idle.add (() => {
-                    popover_ref.unparent ();
+                    if (popover_weak != null && popover_weak.get_parent () != null) {
+                        popover_weak.unparent ();
+                    }
                     return GLib.Source.REMOVE;
                 });
             });
@@ -180,53 +182,53 @@ namespace Timbre {
         }
 
         private void handle_action (string action_name) {
-            if (this.current_item == null) return;
+            if (this.current_item == null)return;
 
             var win = this.get_root () as Timbre.Window;
-            if (win == null) return;
+            if (win == null)return;
 
             var track = this.current_item.track;
 
             switch (action_name) {
-                case "radio":
-                    win.play_radio (track.id, false);
-                    break;
-                case "add_next":
-                    var tracks = new GenericArray<Timbre.Track> ();
-                    tracks.add (track);
-                    win.play_next (tracks);
-                    break;
-                case "add_queue":
-                    var tracks = new GenericArray<Timbre.Track> ();
-                    tracks.add (track);
-                    win.add_to_queue (tracks);
-                    break;
-                case "go_album":
-                    if (track.album != null && track.album.id != null) {
-                        win.open_collection_from_row (track.album.id, "Album",
-                                                      track.album.name,
-                                                      track.artists_text (),
-                                                      track.thumb);
+            case "radio":
+                win.play_radio (track.id, false);
+                break;
+            case "add_next":
+                var tracks = new GenericArray<Timbre.Track> ();
+                tracks.add (track);
+                win.play_next (tracks);
+                break;
+            case "add_queue":
+                var tracks = new GenericArray<Timbre.Track> ();
+                tracks.add (track);
+                win.add_to_queue (tracks);
+                break;
+            case "go_album":
+                if (track.album != null && track.album.id != null) {
+                    win.open_collection_from_row (track.album.id, "Album",
+                                                  track.album.name,
+                                                  track.artists_text (),
+                                                  track.thumb);
+                }
+                break;
+            case "go_artist":
+                if (track.artists.length > 0) {
+                    var first_artist = track.artists.get (0);
+                    if (first_artist.id != null) {
+                        win.open_artist_from_row (first_artist.id, first_artist.name);
                     }
-                    break;
-                case "go_artist":
-                    if (track.artists.length > 0) {
-                        var first_artist = track.artists.get (0);
-                        if (first_artist.id != null) {
-                            win.open_artist_from_row (first_artist.id, first_artist.name);
-                        }
-                    }
-                    break;
-                case "download":
-                    GLib.message ("Download clicado");
-                    break;
-                case "add_playlist":
-                    GLib.message ("Adicionar à playlist clicado");
-                    break;
-                case "copy_link":
-                    var clipboard = Gdk.Display.get_default ().get_clipboard ();
-                    clipboard.set_text ("https://music.youtube.com/watch?v=" + track.id);
-                    break;
+                }
+                break;
+            case "download":
+                GLib.message ("Download");
+                break;
+            case "add_playlist":
+                GLib.message ("Added to playlist");
+                break;
+            case "copy_link":
+                var clipboard = Gdk.Display.get_default ().get_clipboard ();
+                clipboard.set_text ("https://music.youtube.com/watch?v=" + track.id);
+                break;
             }
         }
 
@@ -235,7 +237,7 @@ namespace Timbre {
             drag_source.actions = Gdk.DragAction.MOVE;
 
             drag_source.prepare.connect ((x, y) => {
-                if (this.current_item == null) return null;
+                if (this.current_item == null)return null;
                 var val = Value (typeof (string));
                 val.set_string (this.current_item.index.to_string ());
                 return new Gdk.ContentProvider.for_value (val);
@@ -251,11 +253,11 @@ namespace Timbre {
             var drop_target = new Gtk.DropTarget (typeof (string), Gdk.DragAction.MOVE);
             drop_target.drop.connect ((val, x, y) => {
                 string? str_val = val.get_string ();
-                if (str_val == null || this.current_item == null) return false;
+                if (str_val == null || this.current_item == null)return false;
 
                 int from_index = int.parse (str_val);
                 int to_index = this.current_item.index;
-                if (from_index == to_index) return false;
+                if (from_index == to_index)return false;
 
                 this.item_moved (from_index, to_index);
                 return true;
@@ -265,7 +267,7 @@ namespace Timbre {
         }
 
         public void unbind () {
-            if (this.torn_down && this.current_item == null) return;
+            if (this.torn_down && this.current_item == null)return;
 
             var item = this.current_item;
             if (item != null) {
@@ -282,7 +284,7 @@ namespace Timbre {
         }
 
         public void bind (Timbre.QueueItem queue_item) {
-            if (this.torn_down) return;
+            if (this.torn_down)return;
             this.unbind ();
 
             this.current_item = queue_item;
@@ -292,19 +294,19 @@ namespace Timbre {
             this.update_state ();
 
             this.notify_playing_id = queue_item.notify["is-playing"].connect (() => {
-                if (this.torn_down) return;
+                if (this.torn_down)return;
                 this.update_state ();
             });
             this.notify_index_id = queue_item.notify["index"].connect (() => {
-                if (this.torn_down) return;
+                if (this.torn_down)return;
                 this.update_state ();
             });
         }
 
         private void update_state () {
-            if (this.torn_down) return;
+            if (this.torn_down)return;
             var item = this.current_item;
-            if (item == null) return;
+            if (item == null)return;
 
             if (item.is_playing) {
                 this.stack.visible_child_name = "playing";

@@ -9,9 +9,31 @@ namespace Timbre.Utils {
             return instance;
         }
 
+        private const int LRU_MAX_ITEMS = 256;
+        private const int64 LRU_MAX_BYTES = 24 * 1024 * 1024;
+        private const int64 LRU_TTL_US = 2 * 60 * 1000 * 1000LL;
+        private const int LRU_MAX_PIXELS = 256 * 256;
+
+        private class CacheEntry : Object {
+            public Gdk.Texture texture;
+            public int64 bytes;
+            public int64 last_used_us;
+
+            public CacheEntry (Gdk.Texture tex) {
+                this.texture = tex;
+                this.bytes = (int64) tex.get_width () * tex.get_height () * 4;
+                this.last_used_us = GLib.get_monotonic_time ();
+            }
+        }
+
         private Soup.Session session;
         private string disk_cache_dir;
         private string? auth_cookie = null;
+
+        private GLib.HashTable<string, CacheEntry> lru =
+            new GLib.HashTable<string, CacheEntry> (str_hash, str_equal);
+        private GLib.GenericArray<string> lru_order = new GLib.GenericArray<string> ();
+        private int64 lru_total_bytes = 0;
 
         private ImageLoader () {
             this.session = (Soup.Session) GLib.Object.new (
@@ -31,6 +53,71 @@ namespace Timbre.Utils {
             this.auth_cookie = cookie;
         }
 
+        public void trim_now () {
+            this.lru.remove_all ();
+            this.lru_order = new GLib.GenericArray<string> ();
+            this.lru_total_bytes = 0;
+        }
+
+        private static string cache_key (string url, int size, int scale) {
+            return "%s@%d@%d".printf (url, size, scale);
+        }
+
+        private Gdk.Texture? lru_lookup (string key) {
+            var e = this.lru.lookup (key);
+            if (e == null)return null;
+
+            int64 now = GLib.get_monotonic_time ();
+            if (now - e.last_used_us > LRU_TTL_US) {
+                this.lru_evict_key (key);
+                return null;
+            }
+            e.last_used_us = now;
+
+            for (int i = 0; i < this.lru_order.length; i++) {
+                if (this.lru_order.get (i) == key) {
+                    this.lru_order.remove_index (i);
+                    break;
+                }
+            }
+            this.lru_order.add (key);
+            return e.texture;
+        }
+
+        private void lru_put (string key, Gdk.Texture tex) {
+            int pixels = tex.get_width () * tex.get_height ();
+            if (pixels > LRU_MAX_PIXELS)return;
+
+            if (this.lru.contains (key)) {
+                this.lru_evict_key (key);
+            }
+            var e = new CacheEntry (tex);
+            this.lru.insert (key, e);
+            this.lru_order.add (key);
+            this.lru_total_bytes += e.bytes;
+
+            while (this.lru_order.length > LRU_MAX_ITEMS
+                   || this.lru_total_bytes > LRU_MAX_BYTES) {
+                if (this.lru_order.length == 0)break;
+                string oldest = this.lru_order.get (0);
+                this.lru_evict_key (oldest);
+            }
+        }
+
+        private void lru_evict_key (string key) {
+            var e = this.lru.lookup (key);
+            if (e != null) {
+                this.lru_total_bytes -= e.bytes;
+                this.lru.remove (key);
+            }
+            for (int i = 0; i < this.lru_order.length; i++) {
+                if (this.lru_order.get (i) == key) {
+                    this.lru_order.remove_index (i);
+                    break;
+                }
+            }
+        }
+
         public async Gdk.Texture? load_texture_async (
                                                       string url, Gdk.Display display, int target_size,
                                                       int scale_factor = 1, GLib.Cancellable ? cancel = null
@@ -38,8 +125,14 @@ namespace Timbre.Utils {
             if (cancel != null && cancel.is_cancelled ())return null;
 
             int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
-            string upgraded = get_high_res_url (url, target_size, effective_scale);
+            string key = cache_key (url, target_size, effective_scale);
 
+            var cached = this.lru_lookup (key);
+            if (cached != null) {
+                return cached;
+            }
+
+            string upgraded = get_high_res_url (url, target_size, effective_scale);
             var candidates = build_candidates (upgraded, url);
 
             foreach (var candidate in candidates) {
@@ -47,6 +140,7 @@ namespace Timbre.Utils {
                 var tex = yield this.fetch_one_async (candidate, target_size, effective_scale, cancel);
 
                 if (tex != null) {
+                    this.lru_put (key, tex);
                     return tex;
                 }
             }

@@ -141,10 +141,12 @@ namespace Timbre {
             popover.set_parent (this);
             popover.insert_action_group ("widget", actions);
 
-            unowned Gtk.Popover popover_ref = popover;
+            weak Gtk.Popover popover_weak = popover;
             popover.closed.connect (() => {
                 GLib.Idle.add (() => {
-                    popover_ref.unparent ();
+                    if (popover_weak != null && popover_weak.get_parent () != null) {
+                        popover_weak.unparent ();
+                    }
                     return GLib.Source.REMOVE;
                 });
             });
@@ -194,10 +196,10 @@ namespace Timbre {
                 }
                 break;
             case "download":
-                GLib.message ("Download clicado");
+                GLib.message ("Download");
                 break;
             case "add_playlist":
-                GLib.message ("Adicionar à playlist clicado");
+                GLib.message ("Added to playlist");
                 break;
             case "copy_link":
                 var clipboard = Gdk.Display.get_default ().get_clipboard ();

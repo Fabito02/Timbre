@@ -25,6 +25,8 @@ namespace Timbre {
         private Timbre.Utils.ImageBinding cover_binding;
         private Timbre.LikeButton? like_btn = null;
         private bool released = false;
+        private ulong secondary_click_id = 0;
+        private ulong long_press_id = 0;
 
         public TrackRow.empty () {
             Object ();
@@ -60,11 +62,11 @@ namespace Timbre {
         private void setup_gestures () {
             unowned var self = this;
 
-            this.secondary_click.released.connect ((n_press, x, y) => {
+            this.secondary_click_id = this.secondary_click.released.connect ((n_press, x, y) => {
                 self.show_context_menu (x, y);
             });
 
-            this.long_press_gesture.pressed.connect ((x, y) => {
+            this.long_press_id = this.long_press_gesture.pressed.connect ((x, y) => {
                 self.show_context_menu (x, y);
             });
         }
@@ -147,10 +149,12 @@ namespace Timbre {
 
             popover.insert_action_group ("widget", actions);
 
-            unowned Gtk.Popover popover_ref = popover;
+            weak Gtk.Popover popover_weak = popover;
             popover.closed.connect (() => {
                 GLib.Idle.add (() => {
-                    popover_ref.unparent ();
+                    if (popover_weak != null && popover_weak.get_parent () != null) {
+                        popover_weak.unparent ();
+                    }
                     return GLib.Source.REMOVE;
                 });
             });
@@ -200,10 +204,10 @@ namespace Timbre {
                 }
                 break;
             case "download":
-                GLib.message ("Download clicado");
+                GLib.message ("Download");
                 break;
             case "add_playlist":
-                GLib.message ("Adicionar à playlist clicado");
+                GLib.message ("Added to playlist");
                 break;
             case "copy_link":
                 var clipboard = Gdk.Display.get_default ().get_clipboard ();
@@ -244,6 +248,15 @@ namespace Timbre {
             if (this.released)return;
             this.released = true;
 
+            if (this.secondary_click_id != 0) {
+                this.secondary_click.disconnect (this.secondary_click_id);
+                this.secondary_click_id = 0;
+            }
+            if (this.long_press_id != 0) {
+                this.long_press_gesture.disconnect (this.long_press_id);
+                this.long_press_id = 0;
+            }
+
             if (this.like_btn != null) {
                 var btn = this.like_btn;
                 this.like_btn = null;
@@ -263,10 +276,6 @@ namespace Timbre {
             }
 
             this.media_item = null;
-        }
-
-        ~TrackRow () {
-            // GLib.debug ("TrackRow successfully destroyed");
         }
 
         public override void dispose () {

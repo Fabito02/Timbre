@@ -27,18 +27,18 @@ namespace Timbre {
         }
 
         public void clear () {
-            if (this.released) return;
+            if (this.released)return;
             this.clear_results ();
         }
 
         public void show_loading () {
-            if (this.released) return;
+            if (this.released)return;
             this.clear_results ();
             this.stack.visible_child_name = "loading";
         }
 
         public void set_results_json (string json_data) {
-            if (this.released) return;
+            if (this.released)return;
             this.clear_results ();
 
             var parser = new Json.Parser ();
@@ -70,9 +70,9 @@ namespace Timbre {
             if (obj.has_member ("items") && !obj.get_null_member ("items")) {
                 var arr = obj.get_array_member ("items");
                 foreach (unowned Json.Node node in arr.get_elements ()) {
-                    if (node.get_node_type () != Json.NodeType.OBJECT) continue;
+                    if (node.get_node_type () != Json.NodeType.OBJECT)continue;
                     var s = this.parse_item (node.get_object ());
-                    if (s != null) all.add (s);
+                    if (s != null)all.add (s);
                 }
             }
 
@@ -90,14 +90,14 @@ namespace Timbre {
 
             foreach (var it in all) {
                 switch (it.kind) {
-                    case ItemKind.SONG:     songs.add (it); break;
-                    case ItemKind.ARTIST:   artists.add (it); break;
-                    case ItemKind.PLAYLIST: playlists.add (it); break;
-                    case ItemKind.ALBUM:    albums.add (it); break;
-                    case ItemKind.VIDEO:
-                        if (it.item_type == "Episode") episodes.add (it);
-                        else videos.add (it);
-                        break;
+                case ItemKind.SONG : songs.add (it); break;
+                case ItemKind.ARTIST : artists.add (it); break;
+                case ItemKind.PLAYLIST : playlists.add (it); break;
+                case ItemKind.ALBUM:    albums.add (it); break;
+                case ItemKind.VIDEO:
+                    if (it.item_type == "Episode")episodes.add (it);
+                    else videos.add (it);
+                    break;
                 }
             }
 
@@ -133,16 +133,16 @@ namespace Timbre {
 
             if (albums.length > 0 || videos.length > 0 || episodes.length > 0) {
                 var p = this.make_tab (group, _("Other results"), "tape-symbolic", "others");
-                if (albums.length > 0)   this.add_section (p, _("Albums"), albums, false);
-                if (videos.length > 0)   this.add_section (p, _("Videos"), videos, false);
-                if (episodes.length > 0) this.add_section (p, _("More results"), episodes, false);
+                if (albums.length > 0)this.add_section (p, _("Albums"), albums, false);
+                if (videos.length > 0)this.add_section (p, _("Videos"), videos, false);
+                if (episodes.length > 0)this.add_section (p, _("More results"), episodes, false);
             }
 
             group.notify["active-name"].connect ((obj, pspec) => {
-                if (this.released) return;
-                string? name = group.active_name;
-                if (name == null || name.length == 0) return;
-                if (this.results_stack.get_child_by_name (name) == null) return;
+                if (this.released)return;
+                string? name = ((Adw.ToggleGroup) obj).active_name;
+                if (name == null || name.length == 0)return;
+                if (this.results_stack.get_child_by_name (name) == null)return;
                 this.results_stack.visible_child_name = name;
             });
 
@@ -156,15 +156,15 @@ namespace Timbre {
 
         private static LikeStatus parse_like_status (string s) {
             switch (s) {
-                case "Like":    return LikeStatus.LIKE;
-                case "Dislike": return LikeStatus.DISLIKE;
-                default:        return LikeStatus.INDIFFERENT;
+            case "Like":    return LikeStatus.LIKE;
+            case "Dislike": return LikeStatus.DISLIKE;
+            default:        return LikeStatus.INDIFFERENT;
             }
         }
 
-        private MediaItem? parse_item (Json.Object obj) {
+        private MediaItem ? parse_item (Json.Object obj) {
             string id = this.json_str (obj, "id");
-            if (id.length == 0) return null;
+            if (id.length == 0)return null;
 
             var item = new MediaItem ();
             item.id = id;
@@ -183,7 +183,7 @@ namespace Timbre {
                 var artists_node = obj.get_member ("artists");
                 if (artists_node.get_node_type () == Json.NodeType.ARRAY) {
                     foreach (unowned Json.Node a in artists_node.get_array ().get_elements ()) {
-                        if (a.get_node_type () != Json.NodeType.OBJECT) continue;
+                        if (a.get_node_type () != Json.NodeType.OBJECT)continue;
                         var ao = a.get_object ();
                         var p = new Person ();
                         if (ao.has_member ("name") && !ao.get_null_member ("name"))
@@ -199,18 +199,18 @@ namespace Timbre {
         }
 
         private string json_str (Json.Object obj, string key) {
-            if (!obj.has_member (key)) return "";
-            if (obj.get_null_member (key)) return "";
+            if (!obj.has_member (key))return "";
+            if (obj.get_null_member (key))return "";
             return obj.get_string_member (key);
         }
 
         private int json_int (Json.Object obj, string key) {
-            if (!obj.has_member (key) || obj.get_null_member (key)) return 0;
+            if (!obj.has_member (key) || obj.get_null_member (key))return 0;
             return (int) obj.get_int_member (key);
         }
 
         private bool json_bool (Json.Object obj, string key) {
-            if (!obj.has_member (key) || obj.get_null_member (key)) return false;
+            if (!obj.has_member (key) || obj.get_null_member (key))return false;
             return obj.get_boolean_member (key);
         }
 
@@ -236,7 +236,7 @@ namespace Timbre {
 
         private void add_section (Gtk.Box parent, string title,
                                   GenericArray<MediaItem> items, bool is_top) {
-            if (items.length == 0) return;
+            if (items.length == 0)return;
 
             var section = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
 
@@ -258,9 +258,9 @@ namespace Timbre {
 
             var items_ref = items;
             list.row_activated.connect ((row) => {
-                if (this.released) return;
+                if (this.released)return;
                 int idx = row.get_index ();
-                if (idx < 0 || idx >= items_ref.length) return;
+                if (idx < 0 || idx >= items_ref.length)return;
                 var it = items_ref.get (idx);
 
                 if (it.kind.is_playable ())
@@ -318,7 +318,6 @@ namespace Timbre {
                 }
 
                 lb.remove_all ();
-
             }
         }
 

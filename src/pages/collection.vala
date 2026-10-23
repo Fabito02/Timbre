@@ -1,7 +1,6 @@
 namespace Timbre {
     [GtkTemplate (ui = "/io/github/fabito02/Timbre/pages/collection.ui")]
     public class CollectionPage : Adw.NavigationPage {
-        [CCode (cname = "g_object_run_dispose", cheader_filename = "glib-object.h")]
 
         [GtkChild] private unowned Timbre.BannerFadeWrapper banner_fade_wrapper;
         [GtkChild] private unowned Gtk.Label label_title;
@@ -28,7 +27,15 @@ namespace Timbre {
         private ulong row_activated_id = 0;
         private ulong root_handler_id = 0;
 
+        private ulong banner_map_id = 0;
+        private ulong play_all_click_id = 0;
+        private ulong shuffle_click_id = 0;
+        private ulong radio_click_id = 0;
+        private ulong read_more_id = 0;
+        private ulong cover_paintable_id = 0;
+
         private bool released = false;
+        private bool disposed_once = false;
 
         private bool description_expanded = false;
         private string description_full = "";
@@ -59,7 +66,7 @@ namespace Timbre {
             var pic = this.banner_fade_wrapper.get_first_child ();
             if (pic != null) {
                 this.image_cover = (Gtk.Picture) pic;
-                this.image_cover.notify["paintable"].connect (() => {
+                this.cover_paintable_id = this.image_cover.notify["paintable"].connect (() => {
                     GLib.Idle.add (() => {
                         if (!this.released) {
                             this.banner_fade_wrapper.queue_draw ();
@@ -69,14 +76,14 @@ namespace Timbre {
                 });
             }
 
-            this.banner_fade_wrapper.map.connect (this.on_banner_map);
+            this.banner_map_id = this.banner_fade_wrapper.map.connect (this.on_banner_map);
 
-            this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1024);
+            this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1600);
             this.header_binding.load (cover_url);
 
-            this.button_play_all.clicked.connect (this.on_play_all_clicked);
-            this.button_play_shuffle.clicked.connect (this.on_play_shuffle_clicked);
-            this.button_play_radio.clicked.connect (this.on_radio_clicked);
+            this.play_all_click_id = this.button_play_all.clicked.connect (this.on_play_all_clicked);
+            this.shuffle_click_id = this.button_play_shuffle.clicked.connect (this.on_play_shuffle_clicked);
+            this.radio_click_id = this.button_play_radio.clicked.connect (this.on_radio_clicked);
 
             this.row_activated_id = this.tracks_list.row_activated.connect ((row) => {
                 int index = row.get_index ();
@@ -85,7 +92,7 @@ namespace Timbre {
                 }
             });
 
-            this.label_read_more.activate_link.connect (() => {
+            this.read_more_id = this.label_read_more.activate_link.connect (() => {
                 GLib.Idle.add (() => {
                     this.toggle_description ();
                     return GLib.Source.REMOVE;
@@ -119,6 +126,19 @@ namespace Timbre {
         }
 
         protected override void unroot () {
+            this.cleanup ();
+            base.unroot ();
+        }
+
+        public override void dispose () {
+            if (!this.disposed_once) {
+                this.disposed_once = true;
+                this.cleanup ();
+            }
+            base.dispose ();
+        }
+
+        private void cleanup () {
             this.released = true;
 
             if (this.root_handler_id != 0) {
@@ -126,7 +146,30 @@ namespace Timbre {
                 if (root != null)root.disconnect (this.root_handler_id);
                 this.root_handler_id = 0;
             }
-
+            if (this.banner_map_id != 0) {
+                this.banner_fade_wrapper.disconnect (this.banner_map_id);
+                this.banner_map_id = 0;
+            }
+            if (this.play_all_click_id != 0) {
+                this.button_play_all.disconnect (this.play_all_click_id);
+                this.play_all_click_id = 0;
+            }
+            if (this.shuffle_click_id != 0) {
+                this.button_play_shuffle.disconnect (this.shuffle_click_id);
+                this.shuffle_click_id = 0;
+            }
+            if (this.radio_click_id != 0) {
+                this.button_play_radio.disconnect (this.radio_click_id);
+                this.radio_click_id = 0;
+            }
+            if (this.read_more_id != 0) {
+                this.label_read_more.disconnect (this.read_more_id);
+                this.read_more_id = 0;
+            }
+            if (this.cover_paintable_id != 0) {
+                this.image_cover.disconnect (this.cover_paintable_id);
+                this.cover_paintable_id = 0;
+            }
             if (this.row_activated_id != 0) {
                 this.tracks_list.disconnect (this.row_activated_id);
                 this.row_activated_id = 0;
@@ -140,8 +183,6 @@ namespace Timbre {
                 this.header_binding.dispose ();
                 this.header_binding = null;
             }
-
-            base.unroot ();
         }
 
         private void clear_rows () {
