@@ -422,7 +422,8 @@ namespace Timbre {
             for (int i = 0; i < this.tracks.length; i++) {
                 var track = this.tracks.get (i);
                 if (is_album)track.thumb = this.thumb_album_url;
-                this.tracks_list.append (new Timbre.TrackRow (this.player, track));
+                var index = is_album ? i : -1;
+                this.tracks_list.append (new Timbre.TrackRow (this.player, track, index));
             }
         }
 
