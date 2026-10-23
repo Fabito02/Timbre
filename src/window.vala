@@ -12,9 +12,26 @@ namespace Timbre {
         private uint search_debounce_id = 0;
         private string cookies_path;
 
+        private const double BG_DARKNESS_DARK = 0.35;
+        private const double BG_DARKNESS_LIGHT = 0.15;
+        private const double BG_MIN_ALPHA_DARK = 0.25;
+        private const int MAX_BLUR_TEXTURES = 4;
+
         private GLib.GenericSet<string> pending_blurs = new GLib.GenericSet<string> (str_hash, str_equal);
+        private string? pending_blur_url = null;
+        private string? blur_processing_url = null;
+        private string? blur_queued_url = null;
+        private GLib.Cancellable? blur_cancel = null;
+
+        private GLib.HashTable<string, Gdk.Texture> blur_texture_cache =
+            new GLib.HashTable<string, Gdk.Texture> (str_hash, str_equal);
+        private GLib.GenericArray<string> blur_texture_order = new GLib.GenericArray<string> ();
+
         private Gtk.CssProvider dynamic_bg_css = new Gtk.CssProvider ();
         private string? current_blur_path = null;
+        private string? last_css_blur_path = null;
+        private double current_blur_median = 0.0;
+        private double current_blur_p2 = 0.0;
 
         private bool slider_locked = false;
         private uint slider_unlock_id = 0;
@@ -62,7 +79,7 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Revealer bottom_bar_revealer;
 
         [GtkChild] private unowned Adw.BottomSheet fullscreen_sheet;
-        [GtkChild] private unowned Adw.ToolbarView fullscreen_sheet_content;
+        [GtkChild] private unowned Gtk.Overlay fs_sheet_overlay;
 
         [GtkChild] private unowned Adw.ViewSwitcher switcher;
         [GtkChild] private unowned Adw.ViewSwitcherBar switcher_bar;
@@ -70,6 +87,9 @@ namespace Timbre {
 
         [GtkChild] private unowned Timbre.SearchPage search_page;
         [GtkChild] private unowned Timbre.HomePage home_page;
+
+        [GtkChild] private unowned Gtk.Picture bg_picture;
+        [GtkChild] private unowned Gtk.Picture fs_bg_picture;
 
         private Gtk.SingleSelection queue_selection;
         private Timbre.Utils.ImageBinding cover_binding;
@@ -102,14 +122,40 @@ namespace Timbre {
                 this.dynamic_bg_css.prefers_color_scheme = sm.dark
                     ? Gtk.InterfaceColorScheme.DARK
                     : Gtk.InterfaceColorScheme.LIGHT;
+
+                this.last_css_blur_path = null;
+                if (this.current_blur_path != null) {
+                    this.update_background_css ();
+                }
             });
 
             this.close_request.connect (() => {
+                if (this.blur_cancel != null) {
+                    this.blur_cancel.cancel ();
+                    this.blur_cancel = null;
+                }
+                if (this.pending_blur_url != null) {
+                    this.pending_blurs.remove (this.pending_blur_url);
+                    this.pending_blur_url = null;
+                }
+                this.blur_queued_url = null;
+
                 if (this.is_playing) {
+                    this.bg_picture.set_paintable (null);
+                    this.fs_bg_picture.set_paintable (null);
+                    this.last_css_blur_path = null;
+                    this.dynamic_bg_css.load_from_string ("");
+                    this.remove_css_class ("cover-bg-active");
                     this.hide ();
                     return true;
                 }
                 return false;
+            });
+
+            this.map.connect (() => {
+                if (this.current_blur_path != null) {
+                    this.update_background_css ();
+                }
             });
 
             this.player = app.get_player ();
@@ -163,11 +209,14 @@ namespace Timbre {
                     if (this.pending_track != null) {
                         this.cover_fullscreen_binding.load (this.pending_track.thumb);
                     }
+                    if (this.current_blur_path != null) {
+                        this.update_background_css ();
+                    }
                 } else {
                     this.bottom_bar_revealer.reveal_child = true;
 
                     GLib.Idle.add (() => {
-                        this.fullscreen_sheet_content.height_request = -1;
+                        this.fs_sheet_overlay.height_request = -1;
                         return GLib.Source.REMOVE;
                     });
                 }
@@ -201,7 +250,7 @@ namespace Timbre {
                         this.button_repeat.remove_css_class ("flat");
                         this.button_repeat.tooltip_text = _("Repeat: all");
                         break;
-                    case Timbre.QueueManager.RepeatMode.ONE:
+                    case Timbre.QueueManager.RepeatMode.ONE :
                         this.button_repeat.icon_name = "song-repeat-symbolic";
                         this.button_repeat.add_css_class ("accent");
                         this.button_repeat.remove_css_class ("flat");
@@ -237,7 +286,7 @@ namespace Timbre {
             base.size_allocate (width, height, baseline);
 
             if (this.fullscreen_sheet.open) {
-                this.fullscreen_sheet_content.height_request = height;
+                this.fs_sheet_overlay.height_request = height;
             }
         }
 
@@ -370,11 +419,9 @@ namespace Timbre {
 
         private void setup_navigation () {
             this.root_nav.pushed.connect (() => {
-                Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                 Timbre.Utils.trim_memory ();
             });
             this.root_nav.popped.connect (() => {
-                Timbre.Utils.ImageLoader.get_default ().shrink_to (4);
                 Timbre.Utils.trim_memory ();
             });
 
@@ -434,7 +481,7 @@ namespace Timbre {
                 this.cover_fullscreen_binding.load (this.pending_track.thumb);
             }
 
-            this.fullscreen_sheet_content.height_request = this.get_height ();
+            this.fs_sheet_overlay.height_request = this.get_height ();
             this.fullscreen_sheet.open = true;
         }
 
@@ -524,6 +571,25 @@ namespace Timbre {
                 this.adjustment_progress.value = 0.0;
                 this.cover_binding.load (null);
                 this.cover_fullscreen_binding.load (null);
+
+                if (this.blur_cancel != null) {
+                    this.blur_cancel.cancel ();
+                    this.blur_cancel = null;
+                }
+                if (this.pending_blur_url != null) {
+                    this.pending_blurs.remove (this.pending_blur_url);
+                    this.pending_blur_url = null;
+                }
+                this.blur_queued_url = null;
+                this.bg_picture.set_paintable (null);
+                this.fs_bg_picture.set_paintable (null);
+                this.blur_texture_cache.remove_all ();
+                this.blur_texture_order = new GLib.GenericArray<string> ();
+                this.current_blur_path = null;
+                this.last_css_blur_path = null;
+                this.current_blur_median = 0.0;
+                this.current_blur_p2 = 0.0;
+                this.remove_css_class ("cover-bg-active");
 
                 this.current_track_id = "";
                 this.like_fetch_gen++;
@@ -741,8 +807,7 @@ namespace Timbre {
             }
 
             bool need_metadata_fetch = need_like_fetch || need_duration_fetch;
-
-            this.apply_blurred_background_async (track.thumb);
+            this.apply_blurred_background_async.begin (track.thumb);
 
             string track_id = track.id;
             this.player.play_track_id (track_id, duration, (success, error) => {
@@ -1104,75 +1169,179 @@ namespace Timbre {
             return tracks;
         }
 
-        public void apply_blurred_background_async (string cover_url) {
+        private Gdk.Texture? get_blur_texture (string path) {
+            var cached = this.blur_texture_cache.lookup (path);
+            if (cached != null)return cached;
+
+            try {
+                var file = GLib.File.new_for_path (path);
+                var tex = Gdk.Texture.from_file (file);
+
+                while (this.blur_texture_order.length >= MAX_BLUR_TEXTURES) {
+                    string oldest = this.blur_texture_order.get (0);
+                    this.blur_texture_order.remove_index (0);
+                    this.blur_texture_cache.remove (oldest);
+                }
+
+                this.blur_texture_cache.insert (path, tex);
+                this.blur_texture_order.add (path);
+                return tex;
+            } catch (Error e) {
+                warning ("blur texture: %s", e.message);
+                return null;
+            }
+        }
+
+        private void finish_blur_job (string cover_url) {
+            this.pending_blurs.remove (cover_url);
+            if (this.pending_blur_url == cover_url)this.pending_blur_url = null;
+            if (this.blur_processing_url == cover_url)this.blur_processing_url = null;
+            if (this.blur_processing_url == null)this.blur_cancel = null;
+
+            if (this.blur_queued_url != null) {
+                string next = this.blur_queued_url;
+                this.blur_queued_url = null;
+                this.apply_blurred_background_async.begin (next);
+            }
+        }
+
+        public async void apply_blurred_background_async (string cover_url) {
             if (cover_url == null || cover_url.strip ().length == 0)return;
             if (this.pending_blurs.contains (cover_url))return;
+
+            if (this.blur_processing_url != null) {
+                this.blur_queued_url = cover_url;
+                return;
+            }
+
+            if (this.blur_cancel != null) {
+                this.blur_cancel.cancel ();
+                this.blur_cancel = null;
+            }
+
+            var cancel = new GLib.Cancellable ();
+            this.blur_cancel = cancel;
+            this.blur_processing_url = cover_url;
+            this.pending_blur_url = cover_url;
             this.pending_blurs.add (cover_url);
 
+            var loader = Timbre.Utils.ImageLoader.get_default ();
+            int blur_size = 120;
+
+            bool ok = yield loader.ensure_downloaded_async (cover_url, blur_size, 1, cancel);
+
+            if (!ok || cancel.is_cancelled ()) {
+                this.finish_blur_job (cover_url);
+                return;
+            }
+
+            string? local_path = loader.find_cached_path (cover_url, blur_size);
+            if (local_path == null || cancel.is_cancelled ()) {
+                this.finish_blur_job (cover_url);
+                return;
+            }
+
+            string base_path = local_path;
+
             new GLib.Thread<void*> ("blur-worker", () => {
-                string? path = null;
+                if (cancel.is_cancelled ()) {
+                    Idle.add (() => {
+                        this.finish_blur_job (cover_url);
+                        return Source.REMOVE;
+                    });
+                    return null;
+                }
 
-                string local_path = Timbre.Utils.ImageLoader.get_default ().get_disk_path (cover_url, 512);
+                string? blur_path = Timbre.BlurCache.blur_image_to_cache_from_file (base_path, 40);
 
-                if (GLib.FileUtils.test (local_path, GLib.FileTest.EXISTS)) {
-                    path = Timbre.BlurCache.blur_image_to_cache_from_file (local_path, 42);
+                double median = 0.0;
+                double p2 = 0.0;
+                bool stats_ok = false;
+                if (blur_path != null && !cancel.is_cancelled ()) {
+                    stats_ok = loader.measure_stats (blur_path, out median, out p2);
                 }
 
                 Idle.add (() => {
-                    this.pending_blurs.remove (cover_url);
-                    if (path != null) {
-                        this.current_blur_path = path;
-                        this.update_background_css ();
-                    }
+                    bool was_cancelled = cancel.is_cancelled ();
+                    this.finish_blur_job (cover_url);
+
+                    if (was_cancelled)return Source.REMOVE;
+                    if (blur_path == null || !stats_ok)return Source.REMOVE;
+
+                    this.current_blur_path = blur_path;
+                    this.current_blur_median = median;
+                    this.current_blur_p2 = p2;
+                    this.last_css_blur_path = null;
+                    this.update_background_css ();
                     return Source.REMOVE;
                 });
                 return null;
             });
         }
 
-        private void update_background_css () {
-            if (this.current_blur_path == null)return;
+        private static string css_alpha (double a) {
+            int milli = (int) (a.clamp (0.0, 1.0) * 1000.0 + 0.5);
+            return "%d.%03d".printf (milli / 1000, milli % 1000);
+        }
 
+        private static double overlay_alpha (double median, double p2, bool dark) {
+            double raw;
+            if (dark) {
+                if (median <= 0.025)raw = 0.0;
+                else {
+                    double gain = GLib.Math.pow (0.025 / median, 1.0 / 2.4);
+                    raw = 1.0 - gain;
+                }
+                double result = raw + (1.0 - raw) * BG_DARKNESS_DARK;
+                result = Math.fmax (result, BG_MIN_ALPHA_DARK);
+                return result.clamp (0.0, 0.95);
+            } else {
+                if (p2 >= 0.35)raw = 0.0;
+                else raw = (0.35 - p2) / (1.0 - p2);
+                double result = raw + (1.0 - raw) * BG_DARKNESS_LIGHT;
+                return result.clamp (0.0, 0.95);
+            }
+        }
+
+        private void update_background_css () {
+            if (this.current_blur_path != null
+                && this.current_blur_path == this.last_css_blur_path) {
+                return;
+            }
+
+            if (this.current_blur_path == null) {
+                this.last_css_blur_path = null;
+                this.remove_css_class ("cover-bg-active");
+                string empty_css = """
+                    .bg-tint { background-color: transparent; }
+                """;
+                this.dynamic_bg_css.load_from_string (empty_css);
+                return;
+            }
+
+            var tex = this.get_blur_texture (this.current_blur_path);
+            if (tex == null) {
+                return;
+            }
+
+            this.last_css_blur_path = this.current_blur_path;
             this.add_css_class ("cover-bg-active");
 
+            this.bg_picture.set_paintable (tex);
+            this.fs_bg_picture.set_paintable (tex);
+
+            bool dark = Adw.StyleManager.get_default ().dark;
+            double a = overlay_alpha (this.current_blur_median, this.current_blur_p2, dark);
+            string a_str = css_alpha (a);
+            string tint = dark ? "black" : "white";
+
             string css = """
-                window.cover-bg-active,
-                window.cover-bg-active.background,
-                window.cover-bg-active bottom-sheet sheet {
-                    background-color: transparent;
-                    background-size: cover;
-                    background-position: center;
-                    background-repeat: no-repeat;
+                window.cover-bg-active .bg-tint {
+                    background-color: alpha(%s, %s);
                 }
+            """.printf (tint, a_str);
 
-                @media (prefers-color-scheme: dark) {
-                    window.cover-bg-active,
-                    window.cover-bg-active.background,
-                    window.cover-bg-active bottom-sheet sheet {
-                        background-image: linear-gradient(
-                            rgba(0, 0, 0, 0.5),
-                            rgba(0, 0, 0, 0.5)
-                        ), url("file://%s");
-                    }
-                }
-
-                @media (prefers-color-scheme: light) {
-                    window.cover-bg-active,
-                    window.cover-bg-active.background,
-                    window.cover-bg-active bottom-sheet sheet {
-                        background-image: linear-gradient(
-                            rgba(255, 255, 255, 0.5),
-                            rgba(255, 255, 255, 0.5)
-                        ), url("file://%s");
-                    }
-                }
-            """.printf (this.current_blur_path, this.current_blur_path);
-
-            try {
-                this.dynamic_bg_css.load_from_data (css.data);
-            } catch (Error e) {
-                warning ("CSS load: %s", e.message);
-            }
+            this.dynamic_bg_css.load_from_string (css);
         }
 
         [GtkCallback]

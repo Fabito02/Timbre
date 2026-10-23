@@ -1,14 +1,4 @@
 namespace Timbre.Utils {
-    private class CacheEntry : Object {
-        public Gdk.Texture texture;
-        public int64 last_access_usec;
-
-        public CacheEntry (Gdk.Texture tex, int64 ts) {
-            this.texture = tex;
-            this.last_access_usec = ts;
-        }
-    }
-
     public class ImageLoader : Object {
         private static ImageLoader? instance;
 
@@ -19,25 +9,18 @@ namespace Timbre.Utils {
             return instance;
         }
 
-        private const int MAX_TEXTURE_CACHE = 8;
-        private const int64 HARD_MEMORY_LIMIT = 16 * 1024 * 1024;
-        private int64 current_cache_bytes = 0;
-        private const int64 SOFT_TTL_USEC = 10 * 1000 * 1000; // 10s
-        private const int TRIM_INTERVAL_SEC = 15;
-
-        private GLib.HashTable<string, CacheEntry> cache;
-        private uint trim_timer_id = 0;
-
         private Soup.Session session;
         private string disk_cache_dir;
         private string? auth_cookie = null;
 
         private ImageLoader () {
-            this.cache = new GLib.HashTable<string, CacheEntry> (str_hash, str_equal);
-
-            this.session = new Soup.Session ();
-            this.session.user_agent = "Mozilla/5.0 (X11; Linux x86_64) Timbre/0.1";
-            this.session.timeout = 12;
+            this.session = (Soup.Session) GLib.Object.new (
+                                                           typeof (Soup.Session),
+                                                           "user-agent", "Mozilla/5.0 (X11; Linux x86_64) Timbre/0.1",
+                                                           "timeout", 12,
+                                                           "max-conns", 4,
+                                                           "max-conns-per-host", 2
+            );
 
             this.disk_cache_dir = GLib.Path.build_filename (
                                                             GLib.Environment.get_user_cache_dir (), "timbre", "thumbs");
@@ -48,173 +31,67 @@ namespace Timbre.Utils {
             this.auth_cookie = cookie;
         }
 
-        public Gdk.Texture? lookup (string key) {
-            var entry = this.cache.lookup (key);
-            if (entry == null)return null;
-            entry.last_access_usec = GLib.get_monotonic_time ();
-            return entry.texture;
-        }
-
-        private int64 texture_bytes (Gdk.Texture tex) {
-            int w = tex.get_width ();
-            int h = tex.get_height ();
-            return (int64) w * h * 4;
-        }
-
-        private void evict_oldest () {
-            string? oldest_key = null;
-            int64 oldest_ts = int64.MAX;
-
-            var iter = GLib.HashTableIter<string, CacheEntry> (this.cache);
-            string key;
-            CacheEntry entry;
-            while (iter.next (out key, out entry)) {
-                if (entry.last_access_usec < oldest_ts) {
-                    oldest_ts = entry.last_access_usec;
-                    oldest_key = key;
-                }
-            }
-
-            if (oldest_key != null) {
-                var old = this.cache.lookup (oldest_key);
-                if (old != null) {
-                    this.current_cache_bytes -= texture_bytes (old.texture);
-                }
-                this.cache.remove (oldest_key);
-            }
-        }
-
-        private void store (string key, Gdk.Texture tex) {
-            int64 now = GLib.get_monotonic_time ();
-            int64 bytes = texture_bytes (tex);
-
-            if (this.cache.contains (key)) {
-                var old = this.cache.lookup (key);
-                if (old != null) {
-                    this.current_cache_bytes -= texture_bytes (old.texture);
-                }
-                this.cache.replace (key, new CacheEntry (tex, now));
-                this.current_cache_bytes += bytes;
-                return;
-            }
-
-            while ((this.current_cache_bytes + bytes > HARD_MEMORY_LIMIT
-                    || this.cache.size () >= MAX_TEXTURE_CACHE)
-                   && this.cache.size () > 0) {
-                this.evict_oldest ();
-            }
-
-            this.cache.insert (key, new CacheEntry (tex, now));
-            this.current_cache_bytes += bytes;
-            this.schedule_trim ();
-        }
-
-        public void forget (string url, int target_size, int scale) {
-            string upgraded = get_high_res_url (url, target_size, scale);
-            string key = "%s@%dx%d".printf (upgraded, target_size, scale);
-            if (this.cache.contains (key)) {
-                var old = this.cache.lookup (key);
-                if (old != null) {
-                    this.current_cache_bytes -= texture_bytes (old.texture);
-                }
-                this.cache.remove (key);
-            }
-        }
-
-        private void schedule_trim () {
-            if (this.trim_timer_id != 0)return;
-            this.trim_timer_id = GLib.Timeout.add_seconds (TRIM_INTERVAL_SEC, () => {
-                this.trim_timer_id = 0;
-                this.trim_now ();
-                return GLib.Source.REMOVE;
-            });
-        }
-
-        private void trim_now () {
-            if (this.cache.size () == 0)return;
-
-            int64 now = GLib.get_monotonic_time ();
-            var to_remove = new GLib.GenericArray<string> ();
-
-            var iter = GLib.HashTableIter<string, CacheEntry> (this.cache);
-            string key;
-            CacheEntry entry;
-            while (iter.next (out key, out entry)) {
-                if (now - entry.last_access_usec > SOFT_TTL_USEC) {
-                    to_remove.add (key);
-                }
-            }
-
-            for (int i = 0; i < to_remove.length; i++) {
-                var k = to_remove.get (i);
-                var old = this.cache.lookup (k);
-                if (old != null) {
-                    this.current_cache_bytes -= texture_bytes (old.texture);
-                }
-                this.cache.remove (k);
-            }
-
-            if (this.cache.size () > 0) {
-                this.schedule_trim ();
-            }
-        }
-
-        public void shrink_to (int target) {
-            while (this.cache.size () > target) {
-                int before = (int) this.cache.size ();
-                this.evict_oldest ();
-                if ((int) this.cache.size () == before) {
-                    break;
-                }
-            }
-        }
-
-        public int cache_size () {
-            return (int) this.cache.size ();
-        }
-
-        public int64 cache_bytes () {
-            return this.current_cache_bytes;
-        }
-
         public async Gdk.Texture? load_texture_async (
-                                                      string url,
-                                                      Gdk.Display display,
-                                                      int target_size,
-                                                      int scale_factor = 1,
-                                                      GLib.Cancellable ? cancel = null
+                                                      string url, Gdk.Display display, int target_size,
+                                                      int scale_factor = 1, GLib.Cancellable ? cancel = null
         ) {
             if (cancel != null && cancel.is_cancelled ())return null;
 
             int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
-
             string upgraded = get_high_res_url (url, target_size, effective_scale);
-
-            string key = "%s@%dx%d".printf (upgraded, target_size, effective_scale);
-
-            var cached = this.lookup (key);
-            if (cached != null)return cached;
 
             var candidates = build_candidates (upgraded, url);
 
             foreach (var candidate in candidates) {
                 if (cancel != null && cancel.is_cancelled ())return null;
-
                 var tex = yield this.fetch_one_async (candidate, target_size, effective_scale, cancel);
 
                 if (tex != null) {
-                    this.store (key, tex);
                     return tex;
                 }
             }
             return null;
         }
 
+        public async bool ensure_downloaded_async (string url, int target_size, int scale_factor = 1,
+                                                   GLib.Cancellable? cancel = null) {
+            if (cancel != null && cancel.is_cancelled ())return false;
+
+            int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
+            string upgraded = get_high_res_url (url, target_size, effective_scale);
+            string primary = this.disk_path (upgraded);
+
+            if (GLib.FileUtils.test (primary, GLib.FileTest.EXISTS))return true;
+
+            foreach (var candidate in build_candidates (upgraded, url)) {
+                if (cancel != null && cancel.is_cancelled ())return false;
+                var tex = yield this.fetch_one_async (candidate, target_size, effective_scale, cancel);
+
+                if (tex != null)return true;
+            }
+            return false;
+        }
+
+        public string ? find_cached_path (string url, int target_size, int scale_factor = 1) {
+            int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
+            string upgraded = get_high_res_url (url, target_size, effective_scale);
+
+            string primary = this.disk_path (upgraded);
+            if (GLib.FileUtils.test (primary, GLib.FileTest.EXISTS))return primary;
+
+            foreach (var candidate in build_candidates (upgraded, url)) {
+                string p = this.disk_path (candidate);
+                if (GLib.FileUtils.test (p, GLib.FileTest.EXISTS))return p;
+            }
+            return null;
+        }
+
+        public string disk_path_for (string name) {
+            return GLib.Path.build_filename (this.disk_cache_dir, name);
+        }
+
         private async Gdk.Texture? fetch_one_async (
-                                                    string url,
-                                                    int target_size,
-                                                    int scale_factor,
-                                                    GLib.Cancellable ? cancel
+                                                    string url, int target_size, int scale_factor, GLib.Cancellable ? cancel
         ) {
             try {
                 GLib.Bytes? blob = null;
@@ -247,21 +124,16 @@ namespace Timbre.Utils {
                 if (original == null)return null;
 
                 int th = target_size * scale_factor;
-
                 int w = original.get_width ();
                 int h = original.get_height ();
                 if (w <= 0 || h <= 0)return null;
 
                 Gdk.Pixbuf final_pixbuf = original;
-
                 if (h > th) {
                     double s = (double) th / (double) h;
                     int nh = th;
                     int nw = int.max (1, (int) (w * s));
-
-                    var scaled = original.scale_simple (
-                                                        nw, nh, Gdk.InterpType.BILINEAR);
-
+                    var scaled = original.scale_simple (nw, nh, Gdk.InterpType.BILINEAR);
                     if (scaled == null)return null;
                     final_pixbuf = scaled;
                 }
@@ -279,17 +151,90 @@ namespace Timbre.Utils {
             }
         }
 
-        public static string get_high_res_url (string url, int target_size, int min = 512, int scale_factor = 1) {
+        private static void sort_samples (double[] arr, int lo, int hi) {
+            if (lo >= hi)return;
+            double pivot = arr[(lo + hi) / 2];
+            int i = lo, j = hi;
+            while (i <= j) {
+                while (arr[i] < pivot)i++;
+                while (arr[j] > pivot)j--;
+                if (i <= j) {
+                    double t = arr[i];
+                    arr[i] = arr[j];
+                    arr[j] = t;
+                    i++;
+                    j--;
+                }
+            }
+            sort_samples (arr, lo, j);
+            sort_samples (arr, i, hi);
+        }
+
+        public bool measure_stats (string path, out double median, out double p2) {
+            median = 0.0;
+            p2 = 0.0;
+            try {
+                Gdk.Pixbuf pixbuf = new Gdk.Pixbuf.from_file (path);
+
+                int w = pixbuf.get_width ();
+                int h = pixbuf.get_height ();
+                if (w <= 0 || h <= 0)return false;
+
+                int rs = pixbuf.get_rowstride ();
+                int nc = pixbuf.get_n_channels ();
+                unowned uint8[] data = pixbuf.get_pixels ();
+
+                int step = int.max (1, int.max (w, h) / 100);
+                int sx = (w + step - 1) / step;
+                int sy = (h + step - 1) / step;
+                var samples = new double[sx * sy];
+                int idx = 0;
+
+                for (int y = 0; y < h; y += step) {
+                    for (int x = 0; x < w; x += step) {
+                        int i = y * rs + x * nc;
+                        double r = data[i] / 255.0;
+                        double g = data[i + 1] / 255.0;
+                        double b = data[i + 2] / 255.0;
+                        r = r <= 0.04045 ? r / 12.92 : GLib.Math.pow ((r + 0.055) / 1.055, 2.4);
+                        g = g <= 0.04045 ? g / 12.92 : GLib.Math.pow ((g + 0.055) / 1.055, 2.4);
+                        b = b <= 0.04045 ? b / 12.92 : GLib.Math.pow ((b + 0.055) / 1.055, 2.4);
+                        samples[idx++] = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                    }
+                }
+
+                if (idx == 0)return false;
+
+                sort_samples (samples, 0, idx - 1);
+
+                median = samples[idx / 2];
+                p2 = samples[int.max (0, (int) (idx * 0.02))];
+                return true;
+            } catch (Error e) {
+                debug ("measure_stats: %s", e.message);
+                return false;
+            }
+        }
+
+        private static int snap_to_step (int target) {
+            int[] steps = { 60, 120, 226, 320, 544, 640, 800, 960, 1280, 1600, 1920, 2560, 4096 };
+            foreach (var s in steps) {
+                if (s >= target)return s;
+            }
+            return 4096;
+        }
+
+        public static string get_high_res_url (string url, int target_size, int scale_factor = 1) {
             int real_pixels = target_size * scale_factor;
-            int min_res = int.max (real_pixels, min);
 
             if (url.contains ("googleusercontent.com") || url.contains ("ggpht.com")) {
+                int snapped = snap_to_step (real_pixels);
                 try {
                     var r1 = new GLib.Regex ("([-=])w\\d+-h\\d+");
-                    string res1 = r1.replace (url, -1, 0, "\\1w%d-h%d".printf (min_res, min_res));
+                    string res1 = r1.replace (url, -1, 0, "\\1w%d-h%d".printf (snapped, snapped));
 
                     var r2 = new GLib.Regex ("([-=])s\\d+");
-                    string res2 = r2.replace (res1, -1, 0, "\\1s%d".printf (min_res));
+                    string res2 = r2.replace (res1, -1, 0, "\\1s%d".printf (snapped));
 
                     return res2;
                 } catch (Error e) {
@@ -298,10 +243,17 @@ namespace Timbre.Utils {
             }
 
             if (url.contains ("i.ytimg.com/vi/")) {
+                string qual;
+                if (real_pixels <= 90)qual = "default";
+                else if (real_pixels <= 180)qual = "mqdefault";
+                else if (real_pixels <= 360)qual = "hqdefault";
+                else if (real_pixels <= 480)qual = "sddefault";
+                else qual = "maxresdefault";
+
                 int last_slash = url.last_index_of_char ('/');
                 if (last_slash > 0) {
                     string base_path = url.substring (0, last_slash + 1);
-                    return base_path + "maxresdefault.jpg";
+                    return base_path + qual + ".jpg";
                 }
             }
 
@@ -369,20 +321,17 @@ namespace Timbre.Utils {
             try {
                 string path = this.disk_path (url);
                 string tmp = path + ".tmp";
-
                 var tmp_file = GLib.File.new_for_path (tmp);
                 tmp_file.replace_contents (blob.get_data (), null, false,
                                            GLib.FileCreateFlags.NONE, null, null);
-
                 var dest = GLib.File.new_for_path (path);
                 tmp_file.move (dest, GLib.FileCopyFlags.OVERWRITE, null, null);
-            } catch (Error e) {
-            }
+            } catch (Error e) {}
         }
 
         public string get_disk_path (string url, int target_size, int scale_factor = 1) {
             int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
-            string upgraded = get_high_res_url (url, target_size, 512, effective_scale);
+            string upgraded = get_high_res_url (url, target_size, effective_scale);
             return this.disk_path (upgraded);
         }
     }

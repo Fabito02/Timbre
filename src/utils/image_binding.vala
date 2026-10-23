@@ -90,17 +90,6 @@ namespace Timbre.Utils {
                 return;
             }
 
-            int scale = pic.get_scale_factor ();
-            string upgraded = ImageLoader.get_high_res_url (url, this.target_size);
-            string key = "%s@%dx%d".printf (upgraded, this.target_size, scale);
-
-            var cached = ImageLoader.get_default ().lookup (key);
-            if (cached != null) {
-                pic.paintable = cached;
-                this.loaded = true;
-                return;
-            }
-
             this.apply_placeholder ();
             this.try_hook ();
             this.start_fetch (url);
@@ -294,13 +283,6 @@ namespace Timbre.Utils {
                 var pic = this.picture;
                 if (pic == null)return GLib.Source.REMOVE;
 
-                var url = this.current_url;
-                if (url != null) {
-                    ImageLoader.get_default ().forget (
-                                                       url, this.target_size, pic.get_scale_factor ()
-                    );
-                }
-
                 pic.set_paintable (null);
                 this.apply_placeholder ();
                 this.loaded = false;
@@ -369,11 +351,7 @@ namespace Timbre.Utils {
                                                                  url, display, target, scale, cancel,
                                                                  (obj, res) => {
                 Gdk.Texture? tex = null;
-                try {
-                    tex = ImageLoader.get_default ().load_texture_async.end (res);
-                } catch (GLib.Error e) {
-                    // Trata erros de cancelamento ou falhas de rede sem crashar
-                }
+                tex = ImageLoader.get_default ().load_texture_async.end (res);
 
                 if (this.cancellable == cancel) {
                     this.cancellable = null;

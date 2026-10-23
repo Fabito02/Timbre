@@ -12,14 +12,21 @@ namespace Timbre {
             }
         }
 
-        public double fade_start { get; set; default = 0.55; }
+        private double _fade_start = 0.35;
+        public double fade_start {
+            get { return _fade_start; }
+            set {
+                var v = value.clamp (0.0, 1.0);
+                if (_fade_start != v) {
+                    _fade_start = v;
+                    this.queue_draw ();
+                }
+            }
+        }
 
-        public BannerFadeWrapper (double start = 0.55) {
-            Object (
-                    orientation: Gtk.Orientation.VERTICAL,
-                    fade_start: start.clamp (0.0, 1.0)
-            );
-
+        public BannerFadeWrapper (double start = 0.35) {
+            Object (orientation: Gtk.Orientation.VERTICAL);
+            this._fade_start = start.clamp (0.0, 1.0);
             this.set_overflow (Gtk.Overflow.HIDDEN);
         }
 
@@ -37,17 +44,18 @@ namespace Timbre {
                 return;
             }
 
-            var opaque = Gdk.RGBA () { red = 0, green = 0, blue = 0, alpha = 1.0f };
-            var clear = Gdk.RGBA () { red = 0, green = 0, blue = 0, alpha = 0.0f };
-
             var bounds = Graphene.Rect ().init (0, 0, w, h);
             var start_pt = Graphene.Point ().init (0, 0);
             var end_pt = Graphene.Point ().init (0, h);
 
             Gsk.ColorStop[] stops = {
-                Gsk.ColorStop () { offset = 0.0f, color = opaque },
-                Gsk.ColorStop () { offset = (float) fade_start, color = opaque },
-                Gsk.ColorStop () { offset = 1.0f, color = clear }
+                { 0.00f, mask_color (1.00f) },
+                { 0.35f, mask_color (1.00f) },
+                { 0.55f, mask_color (0.80f) },
+                { 0.75f, mask_color (0.40f) },
+                { 0.85f, mask_color (0.15f) },
+                { 0.95f, mask_color (0.00f) },
+                { 1.00f, mask_color (0.00f) }
             };
 
             snapshot.push_mask (Gsk.MaskMode.ALPHA);
@@ -60,6 +68,15 @@ namespace Timbre {
             }
 
             snapshot.pop ();
+        }
+
+        private static Gdk.RGBA mask_color (float alpha) {
+            return Gdk.RGBA () {
+                       red = 1.0f,
+                       green = 1.0f,
+                       blue = 1.0f,
+                       alpha = alpha
+            };
         }
     }
 }

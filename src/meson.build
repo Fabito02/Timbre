@@ -80,6 +80,7 @@ timbre_deps = [
   dependency('libsoup-3.0'),
   dependency('json-glib-1.0'),
   dependency('webkitgtk-6.0'),
+  meson.get_compiler('c').find_library('m', required: false),
 ]
 
 executable(

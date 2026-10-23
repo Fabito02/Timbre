@@ -1,3 +1,5 @@
+@define-color blur_sidebar_bg alpha(@sidebar_bg_color, 0.16);
+
 /* theme selector */
 
 themeselector {
@@ -377,4 +379,70 @@ window.cover-bg-active .banner-scrim {
     background: none;
     background-color: transparent;
     border: none;
+}
+
+window.cover-bg-active toolbarview,
+window.cover-bg-active overlaysplitview,
+window.cover-bg-active navigation-view,
+window.cover-bg-active stack,
+window.cover-bg-active listview > row,
+window.cover-bg-active gridview.queue-list > child,
+window.cover-bg-active gridview.playlist-view > child,
+window.cover-bg-active listbox > row {
+    background: none;
+    background-color: transparent;
+}
+
+window.cover-bg-active .sidebar-pane {
+    background: none;
+    background-color: @blur_sidebar_bg;
+}
+
+window.cover-bg-active headerbar {
+    background: none;
+    background-color: transparent;
+    box-shadow: none;
+    border: none;
+}
+
+window.cover-bg-active .sidebar,
+window.cover-bg-active .lyrics-split > .sidebar-pane {
+    background: none;
+    background-color: transparent;
+}
+
+window.cover-bg-active bottom-sheet sheet,
+window.cover-bg-active fullscreen_sheet_content {
+    background: none;
+    background-color: transparent;
+}
+
+window.cover-bg-active bottom-sheet .player-drawer,
+window.cover-bg-active bottom-sheet .queue-panel,
+window.cover-bg-active bottom-sheet .player-bar,
+window.cover-bg-active .sheet-bottom-bar actionbar > revealer > box {
+    background: none;
+    background-color: transparent;
+}
+
+window.cover-bg-active .songs-list,
+window.cover-bg-active .card.home-speed-tile {
+    background-color: alpha(currentColor, 0.1);
+}
+
+window.cover-bg-active .home-speed-tile:hover {
+    background-color: alpha(currentColor, 0.18);
+}
+
+window.cover-bg-active .home-speed-tile:active {
+    background-color: alpha(currentColor, 0.25);
+}
+
+window.cover-bg-active listview > row:hover .queue-row,
+window.cover-bg-active gridview.queue-list > child:hover .queue-row {
+    background-color: alpha(currentColor, 0.1);
+}
+
+window.cover-bg-active toggle:checked {
+    background-color: @toggle_checked_bg;
 }
