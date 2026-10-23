@@ -15,7 +15,6 @@ namespace Timbre {
         private const double BG_DARKNESS_DARK = 0.35;
         private const double BG_DARKNESS_LIGHT = 0.15;
         private const double BG_MIN_ALPHA_DARK = 0.25;
-        private const int MAX_BLUR_TEXTURES = 2;
 
         private uint nav_trim_id = 0;
 
@@ -1199,7 +1198,7 @@ namespace Timbre {
                 var file = GLib.File.new_for_path (path);
                 var tex = Gdk.Texture.from_file (file);
 
-                while (this.blur_texture_order.length >= MAX_BLUR_TEXTURES) {
+                while (this.blur_texture_order.length >= 1) {
                     string oldest = this.blur_texture_order.get (0);
                     this.blur_texture_order.remove_index (0);
                     this.blur_texture_cache.remove (oldest);
