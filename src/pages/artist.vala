@@ -241,6 +241,9 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Label label_description;
         [GtkChild] private unowned Gtk.Label label_read_more;
         [GtkChild] private unowned Gtk.Box sections_box;
+        [GtkChild] private unowned Adw.HeaderBar header_bar;
+
+        [GtkChild] private unowned Gtk.ScrolledWindow scroll;
 
         public signal void track_selected (MediaItem item);
         public signal void collection_selected (MediaItem item);
@@ -270,6 +273,10 @@ namespace Timbre {
         private ulong read_more_id = 0;
         private ulong banner_paintable_ctor_id = 0;
         private ulong banner_paintable_pop_id = 0;
+        private ulong cover_paintable_id = 0;
+        private ulong scroll_handler_id = 0;
+
+        private string current_contrast_class = "";
 
         private int song_limit = 5;
         private const int SONG_STEP = 20;
@@ -288,7 +295,18 @@ namespace Timbre {
                 this.banner_picture = (Gtk.Picture) pic;
 
                 this.banner_paintable_ctor_id = this.banner_picture.notify["paintable"].connect (() => {
-                    this.banner_fade_wrapper.queue_draw ();
+                    var paintable = this.banner_picture.paintable;
+                    if (paintable == null || !(paintable is Gdk.Texture))return;
+
+                    var texture = (Gdk.Texture) paintable;
+
+                    GLib.Idle.add (() => {
+                        if (!this.released) {
+                            this.banner_fade_wrapper.queue_draw ();
+                            this.update_header_contrast (texture);
+                        }
+                        return GLib.Source.REMOVE;
+                    });
                 });
             }
 
@@ -312,6 +330,10 @@ namespace Timbre {
 
             this.banner_map_id = this.banner_fade_wrapper.map.connect (this.on_banner_map);
 
+            this.scroll_handler_id = this.scroll.get_vadjustment ().value_changed.connect (() => {
+                this.apply_contrast_class_if_at_top ();
+            });
+
             this.load ();
         }
 
@@ -325,6 +347,48 @@ namespace Timbre {
                 this.root_handler_id = root.notify["css-classes"].connect (() => {
                     this.update_fade_state (root);
                 });
+            }
+        }
+
+        private void update_header_contrast (Gdk.Texture texture) {
+            if (this.released)return;
+
+            size_t stride;
+            var bytes = new Gdk.TextureDownloader (texture).download_bytes (out stride);
+            if (bytes == null)return;
+
+            var data = bytes.get_data ();
+            if (data == null || data.length == 0)return;
+
+            double r = 0, g = 0, b = 0;
+            int count = 0;
+            for (int i = 0; i < data.length; i += 16) {
+                r += data[i];
+                g += data[i + 1];
+                b += data[i + 2];
+                count++;
+            }
+
+            if (count == 0)return;
+
+            double lum = (0.2126 * (r / count) + 0.7152 * (g / count) + 0.0722 * (b / count)) / 255.0;
+
+            this.current_contrast_class = (lum > 0.7) ? "light_background" : "dark_background";
+
+            this.apply_contrast_class_if_at_top ();
+        }
+
+        private void apply_contrast_class_if_at_top () {
+            if (this.current_contrast_class == "")return;
+
+            var adj = this.scroll.get_vadjustment ();
+            bool at_top = adj.get_value () <= 0.0;
+
+            this.header_bar.remove_css_class ("dark_background");
+            this.header_bar.remove_css_class ("light_background");
+
+            if (at_top) {
+                this.header_bar.add_css_class (this.current_contrast_class);
             }
         }
 
@@ -374,6 +438,10 @@ namespace Timbre {
             if (this.banner_paintable_pop_id != 0) {
                 this.banner_picture.disconnect (this.banner_paintable_pop_id);
                 this.banner_paintable_pop_id = 0;
+            }
+            if (this.scroll_handler_id != 0) {
+                this.scroll.get_vadjustment ().disconnect (this.scroll_handler_id);
+                this.scroll_handler_id = 0;
             }
 
             if (this.banner_binding != null) {
