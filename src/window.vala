@@ -50,9 +50,14 @@ namespace Timbre {
         private int64 last_tick_us = 0;
 
         [GtkChild] private unowned Gtk.Adjustment adjustment_progress;
+        [GtkChild] private unowned Gtk.Adjustment adjustment_progress_fullscreen;
         [GtkChild] private unowned Gtk.Label label_time_current;
+        [GtkChild] private unowned Gtk.Label label_time_current_fullscreen;
         [GtkChild] private unowned Gtk.Label label_time_total;
+        [GtkChild] private unowned Gtk.Label label_time_total_fullscreen;
         [GtkChild] private unowned Gtk.Button button_play_pause;
+        [GtkChild] private unowned Gtk.Button button_play_pause_fullscreen;
+        [GtkChild] private unowned Gtk.Button button_next_fullscreen;
         [GtkChild] private unowned Gtk.Button button_next;
 
         [GtkChild] private unowned Adw.OverlaySplitView split_view;
@@ -65,11 +70,16 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.ToggleButton button_shuffle;
 
         [GtkChild] private unowned Gtk.Label label_current_title;
+        [GtkChild] private unowned Gtk.Label label_current_title_fullscreen;
         [GtkChild] private unowned Gtk.Label label_current_artist;
+        [GtkChild] private unowned Gtk.Label label_current_artist_fullscreen;
         [GtkChild] private unowned Gtk.Picture image_cover;
         [GtkChild] private unowned Gtk.Picture image_fullscreen;
         [GtkChild] private unowned Gtk.Box like_slot;
+        [GtkChild] private unowned Gtk.Box like_slot_fullscreen;
         [GtkChild] private unowned Gtk.Box live_widget;
+        [GtkChild] private unowned Gtk.Box live_widget_fullscreen;
+        [GtkChild] private unowned Gtk.Box time_labels_fullscreen;
         [GtkChild] private unowned Gtk.Box time_labels;
 
         [GtkChild] private unowned Adw.NavigationView root_nav;
@@ -96,6 +106,7 @@ namespace Timbre {
         private Timbre.Utils.ImageBinding cover_binding;
         private Timbre.Utils.ImageBinding cover_fullscreen_binding;
         private Timbre.LikeButton? bar_like_btn = null;
+        private Timbre.LikeButton? fullscreen_like_btn = null;
         public Timbre.Services.Mpris? mpris { get; private set; default = null; }
 
         private string previous_tab = "home";
@@ -193,10 +204,13 @@ namespace Timbre {
             ((Gtk.Widget) this).add_controller (key_ctrl);
 
             this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
-            this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 384);
+            this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 380);
 
             this.bar_like_btn = new Timbre.LikeButton (this.player);
+            this.fullscreen_like_btn = new Timbre.LikeButton (this.player);
+
             this.like_slot.append (this.bar_like_btn);
+            this.like_slot_fullscreen.append (this.fullscreen_like_btn);
 
             this.setup_navigation ();
             this.setup_queue_view ();
@@ -204,6 +218,15 @@ namespace Timbre {
             this.setup_switcher ();
             this.update_nav_buttons ();
             this.setup_mpris ();
+
+            this.adjustment_progress_fullscreen.value_changed.connect (() => {
+                if (this.slider_locked)return;
+                this.adjustment_progress.value = this.adjustment_progress_fullscreen.value;
+            });
+
+            this.adjustment_progress.notify["upper"].connect (() => {
+                this.adjustment_progress_fullscreen.upper = this.adjustment_progress.upper;
+            });
 
             this.fullscreen_sheet.notify["open"].connect (() => {
                 if (this.fullscreen_sheet.open) {
@@ -293,7 +316,8 @@ namespace Timbre {
 
         public void open_preferences () {
             var settings_win = new Timbre.SettingsWindow (
-                                                          this.player, this.cookies_path, this.home_page);
+                                                          this.player, this.cookies_path, this.home_page
+            );
             settings_win.present (this);
         }
 
@@ -336,7 +360,7 @@ namespace Timbre {
 
         private static string kind_to_lower (ItemKind kind) {
             switch (kind) {
-            case ItemKind.SONG:     return "song";
+            case ItemKind.SONG : return "song";
             case ItemKind.VIDEO:    return "video";
             case ItemKind.ALBUM:    return "album";
             case ItemKind.ARTIST:   return "artist";
@@ -354,7 +378,8 @@ namespace Timbre {
                 return;
             }
             var page = new Timbre.CollectionPage (
-                                                  this.player, id, type_name, title, subtitle, cover);
+                                                  this.player, id, type_name, title, subtitle, cover
+            );
             page.play_collection.connect ((tracks, start_index, shuffle) => {
                 if (tracks.length == 0)return;
 
@@ -403,7 +428,8 @@ namespace Timbre {
 
             page.show_all_requested.connect ((browse_id, params_json, title, seed) => {
                 var sp = new Timbre.SectionPage (
-                                                 this.player, browse_id, params_json, title, seed);
+                                                 this.player, browse_id, params_json, title, seed
+                );
 
                 sp.track_selected.connect ((item) => {
                     this.queue.play_single (item.to_track ());
@@ -470,7 +496,8 @@ namespace Timbre {
 
             this.home_page.show_all_requested.connect ((browse_id, params_json, title, seed) => {
                 var page = new Timbre.SectionPage (
-                                                   this.player, browse_id, params_json, title, seed);
+                                                   this.player, browse_id, params_json, title, seed
+                );
 
                 page.track_selected.connect ((item) => {
                     this.queue.play_single (item.to_track ());
@@ -585,11 +612,20 @@ namespace Timbre {
                     this.slider_unlock_id = 0;
                 }
                 this.button_play_pause.icon_name = "media-playback-start-symbolic";
+                this.button_play_pause_fullscreen.icon_name = "media-playback-start-symbolic";
                 this.label_current_title.label = "No track selected";
-                this.label_current_artist.label = "Artista";
+                this.label_current_title_fullscreen.label = "No track selected";
+                this.label_current_artist.label = "Artist";
+                this.label_current_artist_fullscreen.label = "Artist";
+                this.label_time_current_fullscreen.label = "0:00";
                 this.label_time_current.label = "0:00";
+                this.label_time_total_fullscreen.label = "0:00";
                 this.label_time_total.label = "0:00";
-                this.adjustment_progress.value = 0.0;
+
+                this.set_slider_silently (0.0);
+                this.adjustment_progress.upper = 0.0;
+                this.adjustment_progress_fullscreen.upper = 0.0;
+
                 this.cover_binding.load (null);
                 this.cover_fullscreen_binding.load (null);
 
@@ -614,8 +650,9 @@ namespace Timbre {
 
                 this.current_track_id = "";
                 this.like_fetch_gen++;
-                if (this.bar_like_btn != null) {
+                if (this.bar_like_btn != null || this.fullscreen_like_btn != null) {
                     this.bar_like_btn.set_target (null);
+                    this.fullscreen_like_btn.set_target (null);
                 }
             });
         }
@@ -698,6 +735,7 @@ namespace Timbre {
 
         private void update_nav_buttons () {
             this.button_next.sensitive = this.queue.has_next ();
+            this.button_next_fullscreen.sensitive = this.queue.has_next ();
         }
 
         private string format_time (double total_seconds) {
@@ -708,6 +746,7 @@ namespace Timbre {
         private void set_slider_silently (double value) {
             this.slider_locked = true;
             this.adjustment_progress.value = value;
+            this.adjustment_progress_fullscreen.value = value;
             this.slider_locked = false;
         }
 
@@ -727,6 +766,7 @@ namespace Timbre {
             }
             this.is_playing = false;
             this.button_play_pause.icon_name = "media-playback-start-symbolic";
+            this.button_play_pause_fullscreen.icon_name = "media-playback-start-symbolic";
             this.loading_track = true;
 
             if (track.duration_seconds == null || track.duration_seconds == 0) {
@@ -782,7 +822,9 @@ namespace Timbre {
                 : 0.0;
 
             this.label_current_title.label = track.title;
+            this.label_current_title_fullscreen.label = track.title;
             this.label_current_artist.label = track.artists_text ();
+            this.label_current_artist_fullscreen.label = track.artists_text ();
 
             this.cover_binding.load (track.thumb);
 
@@ -792,19 +834,29 @@ namespace Timbre {
 
             this.set_slider_silently (0.0);
             this.label_time_current.label = "0:00";
+            this.label_time_current_fullscreen.label = "0:00";
             if (duration > 0) {
+                this.label_time_total_fullscreen.label = this.format_time ((double) duration);
                 this.label_time_total.label = this.format_time ((double) duration);
                 this.adjustment_progress.upper = (double) duration;
+                this.adjustment_progress_fullscreen.upper = (double) duration;
+                this.live_widget_fullscreen.visible = track.is_live;
                 this.live_widget.visible = track.is_live;
+                this.time_labels_fullscreen.visible = !track.is_live;
                 this.time_labels.visible = !track.is_live;
             } else {
+                this.live_widget_fullscreen.visible = track.is_live;
                 this.live_widget.visible = track.is_live;
+                this.time_labels_fullscreen.visible = !track.is_live;
                 this.time_labels.visible = !track.is_live;
                 this.adjustment_progress.upper = 0.0;
+                this.adjustment_progress_fullscreen.upper = 0.0;
             }
 
             this.button_play_pause.sensitive = false;
+            this.button_play_pause_fullscreen.sensitive = false;
             this.is_playing = false;
+            this.button_play_pause_fullscreen.icon_name = "media-playback-start-symbolic";
             this.button_play_pause.icon_name = "media-playback-start-symbolic";
 
             this.current_track_id = track.id;
@@ -818,11 +870,13 @@ namespace Timbre {
             bool need_like_fetch = false;
             bool need_duration_fetch = (duration == 0);
 
-            if (this.bar_like_btn != null) {
+            if (this.bar_like_btn != null || this.fullscreen_like_btn != null) {
                 if (track.like_status != LikeStatus.INDIFFERENT) {
                     this.bar_like_btn.set_target (track.id, track.like_status);
+                    this.fullscreen_like_btn.set_target (track.id, track.like_status);
                 } else {
                     this.bar_like_btn.set_target (track.id, null);
+                    this.fullscreen_like_btn.set_target (track.id, null);
                     need_like_fetch = true;
                 }
             }
@@ -840,6 +894,7 @@ namespace Timbre {
                                                                                 track_id, success.to_string (), err_msg));
 
                     this.button_play_pause.sensitive = true;
+                    this.button_play_pause_fullscreen.sensitive = true;
 
                     if (!success) {
                         if (error != null) {
@@ -895,8 +950,9 @@ namespace Timbre {
                         return GLib.Source.REMOVE;
                     }
 
-                    if (this.bar_like_btn != null) {
+                    if (this.bar_like_btn != null || this.fullscreen_like_btn != null) {
                         this.bar_like_btn.set_target (track_id, info.status);
+                        this.fullscreen_like_btn.set_target (track_id, info.status);
                     }
 
                     if (info.duration > 0.0) {
@@ -904,8 +960,9 @@ namespace Timbre {
                         if (Math.fabs (this.adjustment_progress.upper
                                        - this.metadata_duration) > 0.5) {
                             this.adjustment_progress.upper = this.metadata_duration;
-                            this.label_time_total.label =
-                                this.format_time (this.metadata_duration);
+                            this.adjustment_progress_fullscreen.upper = this.metadata_duration;
+                            this.label_time_total.label = this.format_time (this.metadata_duration);
+                            this.label_time_total_fullscreen.label = this.format_time (this.metadata_duration);
                         }
                     }
                     return GLib.Source.REMOVE;
@@ -1039,6 +1096,9 @@ namespace Timbre {
                 this.button_play_pause.icon_name = this.is_playing
                     ? "media-playback-pause-symbolic"
                     : "media-playback-start-symbolic";
+                this.button_play_pause_fullscreen.icon_name = this.is_playing
+                    ? "media-playback-pause-symbolic"
+                    : "media-playback-start-symbolic";
 
                 if (backend_playing
                     && !this.play_recorded
@@ -1062,6 +1122,7 @@ namespace Timbre {
             double current_pos = this.player.get_position ();
             this.set_slider_silently (current_pos);
             this.label_time_current.label = format_time (current_pos);
+            this.label_time_current_fullscreen.label = format_time (current_pos);
 
             if (this.play_recorded && backend_playing && this.recorded_track_id.length > 0) {
                 int64 now_us = GLib.get_monotonic_time ();
@@ -1076,7 +1137,9 @@ namespace Timbre {
                 && Math.fabs (this.adjustment_progress.upper - effective) > 0.5) {
                 this.set_slider_silently (this.adjustment_progress.value);
                 this.adjustment_progress.upper = effective;
+                this.adjustment_progress_fullscreen.upper = effective;
                 this.label_time_total.label = format_time (effective);
+                this.label_time_total_fullscreen.label = format_time (effective);
             }
 
             return true;
@@ -1373,6 +1436,7 @@ namespace Timbre {
             double target_pos = this.adjustment_progress.value;
             int total_secs = (int) target_pos;
             this.label_time_current.label = "%d:%02d".printf (total_secs / 60, total_secs % 60);
+            this.label_time_current_fullscreen.label = "%d:%02d".printf (total_secs / 60, total_secs % 60);
 
             if (this.seek_debounce_id != 0)GLib.Source.remove (this.seek_debounce_id);
             this.seek_debounce_id = GLib.Timeout.add (250, () => {
@@ -1405,11 +1469,12 @@ namespace Timbre {
             if (state == 1) {
                 this.player.pause ();
                 this.is_playing = false;
+                this.button_play_pause_fullscreen.icon_name = "media-playback-start-symbolic";
                 this.button_play_pause.icon_name = "media-playback-start-symbolic";
             } else {
                 this.player.resume ();
                 this.is_playing = true;
-                this.button_play_pause.icon_name = "media-playback-pause-symbolic";
+                this.button_play_pause_fullscreen.icon_name = "media-playback-pause-symbolic";
             }
         }
 

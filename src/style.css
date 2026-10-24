@@ -91,6 +91,10 @@ scale.playback-bar:hover slider {
     opacity: 1;
 }
 
+scale.playback-bar-fullscreen highlight {
+    min-height: 8px;
+}
+
 button.no-hover:hover {
     background-color: transparent;
 }
@@ -420,4 +424,14 @@ headerbar.dark_background label {
 
 headerbar.dark_background button > image {
     color: white;
+}
+
+.title-fullscreen {
+    font-weight: 700;
+    font-size: 1.7rem;
+}
+
+.artist-fullscreen {
+    font-weight: 400;
+    font-size: 1.1rem;
 }
