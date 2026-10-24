@@ -537,13 +537,6 @@ pub async fn get_watch_playlist(
     };
     let token = owned_at(results, primary_key).or_else(|| owned_at(results, fallback_key));
 
-    tracing::debug!(
-        tracks_so_far = tracks.len(),
-        has_token = token.is_some(),
-        primary_key,
-        "get_watch_playlist: primeira página"
-    );
-
     let rest = Continuation::query(api, "next", body, token)
         .limit(limit.saturating_sub(tracks.len()))
         .pages(MAX_CONTINUATION_PAGES)
