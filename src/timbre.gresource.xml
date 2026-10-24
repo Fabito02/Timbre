@@ -91,5 +91,13 @@
             alias="icons/scalable/actions/media-playlist-consecutive-symbolic.svg"
             preprocess="xml-stripblanks"
         >../data/icons/hicolor/actions/media-playlist-consecutive-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/edit-clear-all-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/edit-clear-all-symbolic.svg</file>
+    <file
+            alias="icons/scalable/actions/sidebar-left-symbolic.svg"
+            preprocess="xml-stripblanks"
+        >../data/icons/hicolor/actions/sidebar-left-symbolic.svg</file>
   </gresource>
 </gresources>

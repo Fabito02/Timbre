@@ -169,17 +169,14 @@ template $TimbreWindow: Adw.ApplicationWindow {
             spacing: 8;
             valign: center;
 
-            MenuButton {
-              icon-name: "view-more-symbolic";
+            Button button_clear_queue {
+              icon-name: "edit-clear-all-symbolic";
+              tooltip-text: _("Clear Queue");
 
               styles [
                 "flat",
                 "circular",
               ]
-            }
-
-            Button button_clear_queue {
-              label: _("Clear");
             }
           }
         }
@@ -270,8 +267,8 @@ template $TimbreWindow: Adw.ApplicationWindow {
                 margin-end: 12;
 
                 ToggleButton fullscreen_button_toggle_queue {
-                  icon-name: "music-queue-symbolic";
-                  tooltip-text: _("Playback queue");
+                  icon-name: "sidebar-left-symbolic";
+                  tooltip-text: _("Open Queue");
 
                   styles [
                     "flat",
@@ -511,19 +508,9 @@ template $TimbreWindow: Adw.ApplicationWindow {
                       spacing: 4;
                       valign: center;
 
-                      Button {
-                        icon-name: "audio-volume-high-symbolic";
-                        tooltip-text: _("Mute");
-
-                        styles [
-                          "flat",
-                          "circular",
-                        ]
-                      }
-
                       ToggleButton button_toggle_queue {
-                        icon-name: "music-queue-symbolic";
-                        tooltip-text: _("Playback queue");
+                        icon-name: "sidebar-left-symbolic";
+                        tooltip-text: _("Open Queue");
 
                         styles [
                           "flat",

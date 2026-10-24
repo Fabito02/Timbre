@@ -432,26 +432,26 @@ window.cover-bg-active toggle:checked {
         alpha(@window_bg_color, 0.72) 0%,
         alpha(@window_bg_color, 0.58) 12%,
         alpha(@window_bg_color, 0.38) 28%,
-        alpha(@window_bg_color, 0.20) 48%,
+        alpha(@window_bg_color, 0.2) 48%,
         alpha(@window_bg_color, 0.08) 68%,
         alpha(@window_bg_color, 0.02) 85%,
         transparent 100%
     );
 }
 
-/* Texto anima suavemente */
 headerbar label {
     transition: color 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
-
-/* Ícones: sem transição de color, o delay vem do redesenho do SVG */
-headerbar button > image {
-    /* Nenhuma transition aqui */
+headerbar.light_background label {
+    color: RGB(0 0 6 / 80%);
+}
+headerbar.light_background button > image {
+    color: RGB(0 0 6 / 80%);
 }
 
-/* As cores */
-headerbar.light_background label { color: RGB(0 0 6 / 80%); }
-headerbar.light_background button > image { color: RGB(0 0 6 / 80%); }
-
-headerbar.dark_background label { color: white; }
-headerbar.dark_background button > image { color: white; }
+headerbar.dark_background label {
+    color: white;
+}
+headerbar.dark_background button > image {
+    color: white;
+}
