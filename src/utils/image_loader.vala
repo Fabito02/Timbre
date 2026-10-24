@@ -311,7 +311,7 @@ namespace Timbre.Utils {
         }
 
         private static int snap_to_step (int target) {
-            int[] steps = { 60, 120, 226, 320, 544, 640, 800, 960, 1280, 1600, 1920, 2560, 4096 };
+            int[] steps = { 60, 120, 144, 180, 226, 240, 302, 320, 360, 480, 512, 544, 640, 720, 800, 960, 1080, 1200, 1280, 1440, 1600, 1920, 2160, 2560, 3840, 4320 };
             foreach (var s in steps) {
                 if (s >= target)return s;
             }
