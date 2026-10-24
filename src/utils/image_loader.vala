@@ -14,6 +14,18 @@ namespace Timbre.Utils {
         private const int64 LRU_TTL_US = 2 * 60 * 1000 * 1000LL;
         private const int LRU_MAX_PIXELS = 256 * 256;
 
+        private static GLib.Regex? regex_wh = null;
+        private static GLib.Regex? regex_s = null;
+
+        static construct {
+            try {
+                regex_wh = new GLib.Regex ("([-=])w\\d+-h\\d+");
+                regex_s = new GLib.Regex ("([-=])s\\d+");
+            } catch (Error e) {
+                critical ("ImageLoader: Falha ao compilar expressões regulares: %s", e.message);
+            }
+        }
+
         private class CacheEntry : Object {
             public Gdk.Texture texture;
             public int64 bytes;
@@ -26,6 +38,19 @@ namespace Timbre.Utils {
             }
         }
 
+        private class Waiter : Object {
+            public SourceFunc cb;
+            public Waiter (owned SourceFunc cb) {
+                this.cb = (owned) cb;
+            }
+        }
+
+        private class InFlightRequest : Object {
+            public bool finished = false;
+            public Gdk.Texture? texture = null;
+            public GLib.List<Waiter> waiters = new GLib.List<Waiter> ();
+        }
+
         private Soup.Session session;
         private string disk_cache_dir;
         private string? auth_cookie = null;
@@ -34,6 +59,9 @@ namespace Timbre.Utils {
             new GLib.HashTable<string, CacheEntry> (str_hash, str_equal);
         private GLib.GenericArray<string> lru_order = new GLib.GenericArray<string> ();
         private int64 lru_total_bytes = 0;
+
+        private GLib.HashTable<string, InFlightRequest> in_flight =
+            new GLib.HashTable<string, InFlightRequest> (str_hash, str_equal);
 
         private ImageLoader () {
             this.session = (Soup.Session) GLib.Object.new (
@@ -45,7 +73,8 @@ namespace Timbre.Utils {
             );
 
             this.disk_cache_dir = GLib.Path.build_filename (
-                                                            GLib.Environment.get_user_cache_dir (), "timbre", "thumbs");
+                                                            GLib.Environment.get_user_cache_dir (), "timbre", "thumbs"
+            );
             GLib.DirUtils.create_with_parents (this.disk_cache_dir, 0755);
         }
 
@@ -125,26 +154,49 @@ namespace Timbre.Utils {
             if (cancel != null && cancel.is_cancelled ())return null;
 
             int effective_scale = scale_factor <= 1 ? 1 : scale_factor;
-            string key = cache_key (url, target_size, effective_scale);
+            string upgraded = get_high_res_url (url, target_size, effective_scale);
+            string key = cache_key (upgraded, target_size, effective_scale);
 
             var cached = this.lru_lookup (key);
             if (cached != null) {
                 return cached;
             }
 
-            string upgraded = get_high_res_url (url, target_size, effective_scale);
+            if (this.in_flight.contains (key)) {
+                var pending = this.in_flight.lookup (key);
+                if (!pending.finished) {
+                    pending.waiters.append (new Waiter (load_texture_async.callback));
+                    yield;
+                    return pending.texture;
+                }
+            }
+
+            var request = new InFlightRequest ();
+            this.in_flight.insert (key, request);
+
+            Gdk.Texture? result = null;
             var candidates = build_candidates (upgraded, url);
 
             foreach (var candidate in candidates) {
-                if (cancel != null && cancel.is_cancelled ())return null;
+                if (cancel != null && cancel.is_cancelled ())break;
                 var tex = yield this.fetch_one_async (candidate, target_size, effective_scale, cancel);
 
                 if (tex != null) {
                     this.lru_put (key, tex);
-                    return tex;
+                    result = tex;
+                    break;
                 }
             }
-            return null;
+
+            request.finished = true;
+            request.texture = result;
+            this.in_flight.remove (key);
+
+            foreach (var w in request.waiters) {
+                w.cb ();
+            }
+
+            return result;
         }
 
         public async bool ensure_downloaded_async (string url, int target_size, int scale_factor = 1,
@@ -155,7 +207,8 @@ namespace Timbre.Utils {
             string upgraded = get_high_res_url (url, target_size, effective_scale);
             string primary = this.disk_path (upgraded);
 
-            if (GLib.FileUtils.test (primary, GLib.FileTest.EXISTS))return true;
+            var file = GLib.File.new_for_path (primary);
+            if (file.query_exists ())return true;
 
             foreach (var candidate in build_candidates (upgraded, url)) {
                 if (cancel != null && cancel.is_cancelled ())return false;
@@ -171,11 +224,13 @@ namespace Timbre.Utils {
             string upgraded = get_high_res_url (url, target_size, effective_scale);
 
             string primary = this.disk_path (upgraded);
-            if (GLib.FileUtils.test (primary, GLib.FileTest.EXISTS))return primary;
+            var file = GLib.File.new_for_path (primary);
+            if (file.query_exists ())return primary;
 
             foreach (var candidate in build_candidates (upgraded, url)) {
                 string p = this.disk_path (candidate);
-                if (GLib.FileUtils.test (p, GLib.FileTest.EXISTS))return p;
+                var cand_file = GLib.File.new_for_path (p);
+                if (cand_file.query_exists ())return p;
             }
             return null;
         }
@@ -194,10 +249,12 @@ namespace Timbre.Utils {
                     string path = url.substring (7);
                     int q = path.index_of_char ('?');
                     if (q >= 0)path = path.substring (0, q);
-                    blob = this.read_file_bytes (path);
+                    blob = yield this.read_file_bytes_async (path, cancel);
+
                     if (blob == null)return null;
                 } else {
-                    blob = this.read_disk_cache (url);
+                    blob = yield this.read_disk_cache_async (url, cancel);
+
                     if (blob == null) {
                         var msg = new Soup.Message ("GET", url);
                         if (this.auth_cookie != null && needs_auth (url)) {
@@ -207,7 +264,7 @@ namespace Timbre.Utils {
 
                         if (msg.status_code != 200)return null;
 
-                        this.write_disk_cache (url, blob);
+                        yield this.write_disk_cache_async (url, blob, cancel);
                     }
                 }
 
@@ -247,8 +304,9 @@ namespace Timbre.Utils {
 
         private static void sort_samples (double[] arr, int lo, int hi) {
             if (lo >= hi)return;
-            double pivot = arr[(lo + hi) / 2];
+            double pivot = arr[lo + (hi - lo) / 2];
             int i = lo, j = hi;
+
             while (i <= j) {
                 while (arr[i] < pivot)i++;
                 while (arr[j] > pivot)j--;
@@ -260,8 +318,9 @@ namespace Timbre.Utils {
                     j--;
                 }
             }
-            sort_samples (arr, lo, j);
-            sort_samples (arr, i, hi);
+
+            if (lo < j)sort_samples (arr, lo, j);
+            if (i < hi)sort_samples (arr, i, hi);
         }
 
         public bool measure_stats (string path, out double median, out double p2) {
@@ -315,7 +374,7 @@ namespace Timbre.Utils {
             foreach (var s in steps) {
                 if (s >= target)return s;
             }
-            return 4096;
+            return steps[steps.length - 1];
         }
 
         public static string get_high_res_url (string url, int target_size, int scale_factor = 1) {
@@ -323,24 +382,21 @@ namespace Timbre.Utils {
 
             if (url.contains ("googleusercontent.com") || url.contains ("ggpht.com")) {
                 int snapped = snap_to_step (real_pixels);
-                try {
-                    var r1 = new GLib.Regex ("([-=])w\\d+-h\\d+");
-                    string res1 = r1.replace (url, -1, 0, "\\1w%d-h%d".printf (snapped, snapped));
-
-                    var r2 = new GLib.Regex ("([-=])s\\d+");
-                    string res2 = r2.replace (res1, -1, 0, "\\1s%d".printf (snapped));
-
-                    return res2;
-                } catch (Error e) {
-                    return url;
+                if (regex_wh != null && regex_s != null) {
+                    try {
+                        string res1 = regex_wh.replace (url, -1, 0, "\\1w%d-h%d".printf (snapped, snapped));
+                        string res2 = regex_s.replace (res1, -1, 0, "\\1s%d".printf (snapped));
+                        return res2;
+                    } catch (Error e) {
+                        return url;
+                    }
                 }
             }
 
             if (url.contains ("i.ytimg.com/vi/")) {
                 string qual;
-                if (real_pixels <= 90)qual = "default";
-                else if (real_pixels <= 180)qual = "mqdefault";
-                else if (real_pixels <= 360)qual = "hqdefault";
+                if (real_pixels <= 120)qual = "default";
+                else if (real_pixels <= 240)qual = "mqdefault";
                 else if (real_pixels <= 480)qual = "sddefault";
                 else qual = "maxresdefault";
 
@@ -390,13 +446,11 @@ namespace Timbre.Utils {
                    || url.contains ("ggpht.com");
         }
 
-        private GLib.Bytes? read_file_bytes (string path) {
+        private async GLib.Bytes? read_file_bytes_async (string path, GLib.Cancellable ? cancel) {
             try {
                 var file = GLib.File.new_for_path (path);
-                uint8[] bytes;
-                string etag;
-                if (!file.load_contents (null, out bytes, out etag))return null;
-                return new GLib.Bytes (bytes);
+                string? etag = null;
+                return yield file.load_bytes_async (cancel, out etag);
             } catch (Error e) {
                 return null;
             }
@@ -407,20 +461,24 @@ namespace Timbre.Utils {
             return GLib.Path.build_filename (this.disk_cache_dir, sum);
         }
 
-        private GLib.Bytes? read_disk_cache (string url) {
-            return this.read_file_bytes (this.disk_path (url));
+        private async GLib.Bytes? read_disk_cache_async (string url, GLib.Cancellable ? cancel) {
+            return yield this.read_file_bytes_async (this.disk_path (url), cancel);
         }
 
-        private void write_disk_cache (string url, GLib.Bytes blob) {
+        private async void write_disk_cache_async (string url, GLib.Bytes blob, GLib.Cancellable? cancel = null) {
             try {
                 string path = this.disk_path (url);
                 string tmp = path + ".tmp";
                 var tmp_file = GLib.File.new_for_path (tmp);
-                tmp_file.replace_contents (blob.get_data (), null, false,
-                                           GLib.FileCreateFlags.NONE, null, null);
+
+                string? new_etag = null;
+                yield tmp_file.replace_contents_bytes_async (blob, null, false, GLib.FileCreateFlags.NONE, cancel, out new_etag);
+
                 var dest = GLib.File.new_for_path (path);
                 tmp_file.move (dest, GLib.FileCopyFlags.OVERWRITE, null, null);
-            } catch (Error e) {}
+            } catch (Error e) {
+                debug ("write_disk_cache_async error: %s", e.message);
+            }
         }
 
         public string get_disk_path (string url, int target_size, int scale_factor = 1) {
