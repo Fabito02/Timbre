@@ -1,4 +1,10 @@
-@define-color blur_sidebar_bg alpha(@sidebar_bg_color, 0.16);
+@media (prefers-color-scheme: light) {
+    @define-color blur_sidebar_bg alpha(@window_fg_color, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+    @define-color blur_sidebar_bg alpha(@window_fg_color, 0.042);
+}
 
 /* theme selector */
 
@@ -361,47 +367,8 @@ window.cover-bg-active .banner-scrim {
     font-size: 1.15rem;
 }
 
-.switcher-bar-mobile actionbar > revealer > box {
-    background: none;
-    background-color: transparent;
-    border: none;
-}
-
-window.cover-bg-active toolbarview,
-window.cover-bg-active overlaysplitview,
-window.cover-bg-active navigation-view,
-window.cover-bg-active stack,
-window.cover-bg-active listview > row,
-window.cover-bg-active gridview.queue-list > child,
-window.cover-bg-active gridview.playlist-view > child,
-window.cover-bg-active listbox > row {
-    background: none;
-    background-color: transparent;
-}
-
 window.cover-bg-active .sidebar-pane {
-    background: none;
     background-color: @blur_sidebar_bg;
-}
-
-window.cover-bg-active .sidebar,
-window.cover-bg-active .lyrics-split > .sidebar-pane {
-    background: none;
-    background-color: transparent;
-}
-
-window.cover-bg-active bottom-sheet sheet,
-window.cover-bg-active fullscreen_sheet_content {
-    background: none;
-    background-color: transparent;
-}
-
-window.cover-bg-active bottom-sheet .player-drawer,
-window.cover-bg-active bottom-sheet .queue-panel,
-window.cover-bg-active bottom-sheet .player-bar,
-window.cover-bg-active .sheet-bottom-bar actionbar > revealer > box {
-    background: none;
-    background-color: transparent;
 }
 
 window.cover-bg-active .songs-list,
@@ -422,10 +389,6 @@ window.cover-bg-active gridview.queue-list > child:hover .queue-row {
     background-color: alpha(currentColor, 0.1);
 }
 
-window.cover-bg-active toggle:checked {
-    background-color: @toggle_checked_bg;
-}
-
 .header-gradient {
     background: linear-gradient(
         to bottom,
@@ -442,9 +405,11 @@ window.cover-bg-active toggle:checked {
 headerbar label {
     transition: color 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
+
 headerbar.light_background label {
     color: RGB(0 0 6 / 80%);
 }
+
 headerbar.light_background button > image {
     color: RGB(0 0 6 / 80%);
 }
@@ -452,6 +417,7 @@ headerbar.light_background button > image {
 headerbar.dark_background label {
     color: white;
 }
+
 headerbar.dark_background button > image {
     color: white;
 }
