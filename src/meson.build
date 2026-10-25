@@ -1,7 +1,7 @@
 fs = import('fs')
 gnome = import('gnome')
 
-cargo = find_program('cargo', required: true)
+cargo = find_program('cargo', '/usr/lib/sdk/rust-stable/bin/cargo', required: true)
 blueprint_compiler = find_program('blueprint-compiler', required: true)
 
 cargo_options = [
@@ -23,15 +23,17 @@ libtimbre_target = custom_target(
   output: 'libtimbre.so',
   command: [
     'sh',
-    '-c', '@0@ build @1@ && cp @2@/libtimbre.so @OUTPUT@'.format(cargo.full_path(), ' '.join(cargo_options), cargo_out_dir),
+    '-c', 'export PATH="/usr/lib/sdk/rust-stable/bin:$PATH" && @0@ build @1@ && cp @2@/libtimbre.so @OUTPUT@'.format(cargo.full_path(), ' '.join(cargo_options), cargo_out_dir),
   ],
+  install: true,
+  install_dir: get_option('libdir'),
 )
 
 libtimbre_dep = declare_dependency(
   sources: libtimbre_target,
   link_args: [
-    meson.current_build_dir() / 'libtimbre.so',
-    '-Wl,-rpath,' + meson.current_build_dir(),
+    '-L' + meson.current_build_dir(),
+    '-l:libtimbre.so',
   ],
   include_directories: include_directories('.'),
 )
@@ -90,4 +92,5 @@ executable(
   dependencies: timbre_deps,
   include_directories: config_inc,
   install: true,
+  install_rpath: get_option('libdir'),
 )

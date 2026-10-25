@@ -1,6 +1,6 @@
 namespace Timbre.Services {
 
-    [DBus (name = "org.mpris.MediaPlayer2")]
+    [DBus (name = "org.mpris.MediaPlayer2.io.github.fabito02.Timbre")]
     public interface MprisRoot : Object {
         public abstract void raise () throws GLib.DBusError, GLib.IOError;
         public abstract void quit () throws GLib.DBusError, GLib.IOError;
@@ -49,7 +49,7 @@ namespace Timbre.Services {
     }
 
     public class Mpris : Object, MprisRoot, MprisPlayer {
-        public const string BUS_NAME = "org.mpris.MediaPlayer2.Timbre";
+        public const string BUS_NAME = "org.mpris.MediaPlayer2.io.github.fabito02.Timbre";
         public const string OBJECT_PATH = "/org/mpris/MediaPlayer2";
         private const string IFACE_PLAYER = "org.mpris.MediaPlayer2.Player";
         private const string IFACE_PROPS  = "org.freedesktop.DBus.Properties";

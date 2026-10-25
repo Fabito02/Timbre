@@ -1,4 +1,6 @@
 _build/
+build-dir
+.flatpak-builder
 po
 subprojects/libtimbre/Cargo.lock
 subprojects/libtimbre/target
