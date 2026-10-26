@@ -273,7 +273,6 @@ namespace Timbre {
         private ulong read_more_id = 0;
         private ulong banner_paintable_ctor_id = 0;
         private ulong banner_paintable_pop_id = 0;
-        private ulong cover_paintable_id = 0;
         private ulong scroll_handler_id = 0;
 
         private string current_contrast_class = "";

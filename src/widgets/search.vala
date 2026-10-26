@@ -7,9 +7,6 @@ namespace Timbre {
         [GtkChild] private unowned Gtk.Box toggle_container;
         [GtkChild] private unowned Gtk.Stack results_stack;
 
-        [GtkChild] private unowned Adw.StatusPage main_page;
-        [GtkChild] private unowned Adw.StatusPage status_page;
-
         public signal void track_selected (MediaItem item);
         public signal void collection_selected (MediaItem item);
 
@@ -152,14 +149,6 @@ namespace Timbre {
             this.toggle_container.append (group);
 
             this.stack.visible_child_name = "results";
-        }
-
-        private static LikeStatus parse_like_status (string s) {
-            switch (s) {
-            case "Like":    return LikeStatus.LIKE;
-            case "Dislike": return LikeStatus.DISLIKE;
-            default:        return LikeStatus.INDIFFERENT;
-            }
         }
 
         private MediaItem ? parse_item (Json.Object obj) {

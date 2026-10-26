@@ -22,7 +22,7 @@ namespace Timbre.Utils {
                 regex_wh = new GLib.Regex ("([-=])w\\d+-h\\d+");
                 regex_s = new GLib.Regex ("([-=])s\\d+");
             } catch (Error e) {
-                critical ("ImageLoader: Falha ao compilar expressões regulares: %s", e.message);
+                critical ("ImageLoader: Failed to compile regular expressions: %s", e.message);
             }
         }
 

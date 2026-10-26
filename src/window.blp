@@ -249,8 +249,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
                   orientation: vertical;
                   width-request: 380;
 
-                  Box {
-                    orientation: vertical;
+                  Adw.Bin {
                     halign: center;
 
                     Overlay {
@@ -534,7 +533,7 @@ template $TimbreWindow: Adw.ApplicationWindow {
                     has-frame: false;
                     tooltip-text: _("Open Fullscreen View");
 
-                    child: Box {
+                    child: Adw.Bin {
                       Box {
                         orientation: horizontal;
                         spacing: 12;
