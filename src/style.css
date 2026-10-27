@@ -396,14 +396,18 @@ window.cover-bg-active gridview.queue-list > child:hover .queue-row {
 .header-gradient {
     background: linear-gradient(
         to bottom,
-        alpha(@window_bg_color, 0.72) 0%,
-        alpha(@window_bg_color, 0.58) 12%,
-        alpha(@window_bg_color, 0.38) 28%,
-        alpha(@window_bg_color, 0.2) 48%,
-        alpha(@window_bg_color, 0.08) 68%,
-        alpha(@window_bg_color, 0.02) 85%,
+        alpha(@window_bg_color, 0.8) 0%,
+        alpha(@window_bg_color, 0.72) 12%,
+        alpha(@window_bg_color, 0.6) 28%,
+        alpha(@window_bg_color, 0.45) 48%,
+        alpha(@window_bg_color, 0.25) 68%,
+        alpha(@window_bg_color, 0.08) 85%,
         transparent 100%
     );
+}
+
+headerbar {
+    transition: background 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 headerbar label {

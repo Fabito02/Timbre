@@ -381,13 +381,15 @@ namespace Timbre {
             if (this.current_contrast_class == "")return;
 
             var adj = this.scroll.get_vadjustment ();
-            bool at_top = adj.get_value () <= 0.0;
+            bool at_top = adj.get_value () <= 160;
 
             this.header_bar.remove_css_class ("dark_background");
             this.header_bar.remove_css_class ("light_background");
+            this.header_bar.add_css_class ("header-gradient");
 
             if (at_top) {
                 this.header_bar.add_css_class (this.current_contrast_class);
+                this.header_bar.remove_css_class ("header-gradient");
             }
         }
 
