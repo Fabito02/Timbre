@@ -13,7 +13,7 @@ namespace Timbre {
         private string cookies_path;
 
         private const double BG_DARKNESS_DARK = 0.35;
-        private const double BG_DARKNESS_LIGHT = 0.15;
+        private const double BG_DARKNESS_LIGHT = 0.10;
         private const double BG_MIN_ALPHA_DARK = 0.25;
 
         private uint nav_trim_id = 0;
@@ -1380,10 +1380,14 @@ namespace Timbre {
                 result = Math.fmax (result, BG_MIN_ALPHA_DARK);
                 return result.clamp (0.0, 0.95);
             } else {
-                if (p2 >= 0.35)raw = 0.0;
-                else raw = (0.35 - p2) / (1.0 - p2);
-                double result = raw + (1.0 - raw) * BG_DARKNESS_LIGHT;
-                return result.clamp (0.0, 0.95);
+                if (median >= 0.45) {
+                    raw = 0.0;
+                } else {
+                    double factor = (0.45 - median) / 0.45;
+                    raw = GLib.Math.pow (factor, 1.5);
+                }
+                double result = BG_DARKNESS_LIGHT + (raw * 0.60);
+                return result.clamp (0.14, 0.65);
             }
         }
 
