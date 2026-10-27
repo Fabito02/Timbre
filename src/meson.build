@@ -92,5 +92,6 @@ executable(
   dependencies: timbre_deps,
   include_directories: config_inc,
   install: true,
+  build_rpath: meson.current_build_dir(),
   install_rpath: get_option('libdir'),
 )
