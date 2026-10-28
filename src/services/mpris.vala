@@ -1,6 +1,6 @@
 namespace Timbre.Services {
 
-    [DBus (name = "org.mpris.MediaPlayer2.io.github.fabito02.Timbre")]
+    [DBus (name = "org.mpris.MediaPlayer2")]
     public interface MprisRoot : Object {
         public abstract void raise () throws GLib.DBusError, GLib.IOError;
         public abstract void quit () throws GLib.DBusError, GLib.IOError;
