@@ -1336,7 +1336,7 @@ namespace Timbre {
                     return null;
                 }
 
-                string? blur_path = Timbre.BlurCache.blur_image_to_cache_from_file (base_path, 40);
+                string? blur_path = Timbre.BlurCache.blur_image_to_cache_from_file (base_path, 36);
 
                 double median = 0.0;
                 double p2 = 0.0;

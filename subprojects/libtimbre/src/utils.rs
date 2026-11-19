@@ -1,4 +1,5 @@
-use image::{DynamicImage, GenericImageView, ImageFormat};
+use image::{GenericImageView, ImageEncoder};
+use image::codecs::webp::WebPEncoder;
 use libblur::{
     BlurImage, BlurImageMut, CLTParameters, FastBlurChannels, ThreadingPolicy, gaussian_box_blur,
 };
@@ -6,6 +7,8 @@ use std::fs;
 use std::time::Instant;
 
 use crate::context::Paths;
+
+const TARGET_SIZE: u32 = 1024;
 
 pub fn blur_and_cache_from_file(
     image_path: &str,
@@ -20,9 +23,10 @@ pub fn blur_and_cache_from_file(
     let mut hasher = DefaultHasher::new();
     image_path.hash(&mut hasher);
     radius.hash(&mut hasher);
+    hasher.write_u8(9);
     let hash = hasher.finish();
 
-    let path = cache_dir.join(format!("{:x}.jpg", hash));
+    let path = cache_dir.join(format!("{:x}.webp", hash));
     if path.exists() {
         return Ok(path.to_string_lossy().into_owned());
     }
@@ -34,12 +38,7 @@ pub fn blur_and_cache_from_file(
     let side = w.min(h);
     let img = img.crop_imm((w - side) / 2, (h - side) / 2, side, side);
 
-    let target_size = 1024;
-    let img = img.resize_exact(
-        target_size,
-        target_size,
-        image::imageops::FilterType::Triangle,
-    );
+    let img = img.resize_exact(TARGET_SIZE, TARGET_SIZE, image::imageops::FilterType::Lanczos3);
 
     let (width, height) = img.dimensions();
     let src_bytes = img.to_rgb8().into_raw();
@@ -65,9 +64,30 @@ pub fn blur_and_cache_from_file(
         "blur_and_cache: blurred from file"
     );
 
-    let out_img =
+    let mut out_img =
         image::RgbImage::from_raw(width, height, dst_bytes).ok_or("failed to rebuild image")?;
-    DynamicImage::ImageRgb8(out_img).save_with_format(&path, ImageFormat::Jpeg)?;
+
+    let mut rng_state = hash as u32;
+    for px in out_img.pixels_mut() {
+        for c in px.0.iter_mut() {
+            rng_state ^= rng_state << 13;
+            rng_state ^= rng_state >> 17;
+            rng_state ^= rng_state << 5;
+            let dither = (rng_state % 3) as i16 - 1;
+
+            *c = (*c as i16 + dither).clamp(0, 255) as u8;
+        }
+    }
+
+    let file = fs::File::create(&path)?;
+    let mut writer = std::io::BufWriter::new(file);
+    let encoder = WebPEncoder::new_lossless(&mut writer);
+    encoder.write_image(
+        out_img.as_raw(),
+        out_img.width(),
+        out_img.height(),
+        image::ExtendedColorType::Rgb8,
+    )?;
 
     Ok(path.to_string_lossy().into_owned())
 }
