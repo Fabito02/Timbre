@@ -9,18 +9,16 @@ use crate::net::media::{HttpAuth, StreamInfo, VideoId};
 use crate::net::stream::{BoxFuture, ResolveError, StreamResolver};
 
 const PLAYER_URL: &str = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
+const VISITOR_ID_URL: &str = "https://www.youtube.com/youtubei/v1/visitor_id?prettyPrint=false";
+
 const CLIENT_NAME: &str = "VISIONOS";
 const CLIENT_ID: &str = "101";
-const CLIENT_VERSION: &str = "0.1";
+const CLIENT_VERSION: &str = "1.02";
 const CLIENT_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
-const LANDING_URL: &str = "https://music.youtube.com/";
-const LANDING_USER_AGENT: &str =
-    "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0";
+
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const VISITOR_TTL: Duration = Duration::from_secs(6 * 3600);
 const PROBE_OFFSET: u64 = 200_000;
-
-const VISITOR_PATTERN: &str = r#""VISITOR_DATA":"([^"]+)""#;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Format {
@@ -128,12 +126,6 @@ fn player_body(video_id: &str, visitor: &str) -> Value {
     })
 }
 
-fn visitor_from_landing(html: &str) -> Option<String> {
-    static PATTERN: std::sync::LazyLock<Regex> =
-        std::sync::LazyLock::new(|| Regex::new(VISITOR_PATTERN).expect("static regex"));
-    PATTERN.captures(html).map(|c| c[1].to_owned())
-}
-
 pub struct PlayerEndpointResolver {
     http: reqwest::Client,
     fallback: Arc<dyn StreamResolver>,
@@ -166,18 +158,36 @@ impl PlayerEndpointResolver {
                 return Ok(visitor);
             }
         }
-        let html = self
+
+        let body = json!({
+            "context": { "client": {
+                "clientName": CLIENT_NAME,
+                "clientVersion": CLIENT_VERSION,
+                "hl": "en",
+                "gl": "US",
+            }}
+        });
+
+        let response = self
             .http
-            .get(LANDING_URL)
-            .header("User-Agent", LANDING_USER_AGENT)
-            .header("Cookie", "SOCS=CAI")
+            .post(VISITOR_ID_URL)
+            .header("User-Agent", CLIENT_USER_AGENT)
+            .header("X-YouTube-Client-Name", CLIENT_ID)
+            .header("X-YouTube-Client-Version", CLIENT_VERSION)
+            .json(&body)
             .send()
             .await
             .map_err(|e| e.to_string())?
-            .text()
+            .json::<Value>()
             .await
             .map_err(|e| e.to_string())?;
-        let visitor = visitor_from_landing(&html).ok_or("no visitor data on the landing page")?;
+
+        let visitor = response
+            .pointer("/responseContext/visitorData")
+            .and_then(Value::as_str)
+            .ok_or("no visitorData in visitor_id response")?
+            .to_owned();
+
         *self.visitor.lock().unwrap() = Some((visitor.clone(), Instant::now()));
         Ok(visitor)
     }
@@ -281,8 +291,7 @@ impl PlayerEndpointResolver {
         let response = self.call_player(video_id.as_str(), &visitor, auth).await?;
 
         if let Some(reason) = refusal(&response) {
-            // A stale visitor id reads as a bot.
-            if reason.contains("bot") {
+            if reason.contains("bot") || reason.contains("403") {
                 *self.visitor.lock().unwrap() = None;
             }
             return Err(reason);
