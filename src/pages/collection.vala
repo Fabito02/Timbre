@@ -92,7 +92,9 @@ namespace Timbre {
             this.banner_map_id = this.banner_fade_wrapper.map.connect (this.on_banner_map);
 
             this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1600);
-            this.header_binding.load (cover_url);
+            if (this.collection_id != "LM") {
+                this.header_binding.load (cover_url);
+            }
 
             this.play_all_click_id = this.button_play_all.clicked.connect (this.on_play_all_clicked);
             this.shuffle_click_id = this.button_play_shuffle.clicked.connect (this.on_play_shuffle_clicked);
@@ -296,6 +298,15 @@ namespace Timbre {
                 }
 
                 this.tracks = this.parse_tracks_json ((string) json_ptr);
+
+                if (this.collection_id == "LM") {
+                    var thumb = this.tracks.get (0).thumb;
+                    if (thumb != null && thumb.length > 0) {
+                        this.header_binding.dispose ();
+                        this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1600);
+                        this.header_binding.load (thumb);
+                    }
+                }
 
                 if (this.tracks.length > 0) {
                     this.header_overlay.visible = true;
