@@ -29,6 +29,7 @@ namespace Timbre {
         private GLib.GenericArray<string> blur_texture_order = new GLib.GenericArray<string> ();
 
         private Gtk.CssProvider dynamic_bg_css = new Gtk.CssProvider ();
+        private string? current_cover_path = null;
         private string? current_blur_path = null;
         private string? last_css_blur_path = null;
         private double current_blur_median = 0.0;
@@ -1352,6 +1353,7 @@ namespace Timbre {
                     if (was_cancelled)return Source.REMOVE;
                     if (blur_path == null || !stats_ok)return Source.REMOVE;
 
+                    this.current_cover_path = base_path;
                     this.current_blur_path = blur_path;
                     this.current_blur_median = median;
                     this.current_blur_p2 = p2;
@@ -1422,12 +1424,16 @@ namespace Timbre {
             double a = overlay_alpha (this.current_blur_median, this.current_blur_p2, dark);
             string a_str = css_alpha (a);
             string tint = dark ? "black" : "white";
+            string vibrantColor = Timbre.Utils.Colors.get_vibrant_color (this.current_cover_path);
 
             string css = """
+                @define-color accent_bg_color %s;
+                @define-color accent_color oklab(from %s min(l, 0.5) a b);
+
                 window.cover-bg-active .bg-tint {
                     background-color: alpha(%s, %s);
                 }
-            """.printf (tint, a_str);
+            """.printf (vibrantColor, vibrantColor, tint, a_str);
 
             this.dynamic_bg_css.load_from_string (css);
         }
