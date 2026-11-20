@@ -203,7 +203,7 @@ namespace Timbre {
             });
             ((Gtk.Widget) this).add_controller (key_ctrl);
 
-            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 48);
+            this.cover_binding = new Timbre.Utils.ImageBinding (this.image_cover, 52);
             this.cover_fullscreen_binding = new Timbre.Utils.ImageBinding (this.image_fullscreen, 380);
 
             this.bar_like_btn = new Timbre.LikeButton (this.player);
