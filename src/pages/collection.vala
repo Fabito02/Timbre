@@ -91,7 +91,7 @@ namespace Timbre {
 
             this.banner_map_id = this.banner_fade_wrapper.map.connect (this.on_banner_map);
 
-            this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1600);
+            this.header_binding = new Timbre.Utils.ImageBinding (this.image_cover, 1920);
             if (this.collection_id != "LM") {
                 this.header_binding.load (cover_url);
             }

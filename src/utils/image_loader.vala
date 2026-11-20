@@ -19,7 +19,7 @@ namespace Timbre.Utils {
 
         static construct {
             try {
-                regex_wh = new GLib.Regex ("([-=])w\\d+-h\\d+");
+                regex_wh = new GLib.Regex ("([-=])w(\\d+)-h(\\d+)");
                 regex_s = new GLib.Regex ("([-=])s\\d+");
             } catch (Error e) {
                 critical ("ImageLoader: Failed to compile regular expressions: %s", e.message);
@@ -280,13 +280,26 @@ namespace Timbre.Utils {
                 if (w <= 0 || h <= 0)return null;
 
                 Gdk.Pixbuf final_pixbuf = original;
-                if (h > th) {
-                    double s = (double) th / (double) h;
-                    int nh = th;
-                    int nw = int.max (1, (int) (w * s));
-                    var scaled = original.scale_simple (nw, nh, Gdk.InterpType.BILINEAR);
-                    if (scaled == null)return null;
-                    final_pixbuf = scaled;
+                bool is_video = url.contains ("i.ytimg.com/vi/");
+                if (is_video) {
+                    if (h > th) {
+                        double s = (double) th / (double) h;
+                        int nh = th;
+                        int nw = int.max (1, (int) GLib.Math.round (w * s));
+                        var scaled = original.scale_simple (nw, nh, Gdk.InterpType.BILINEAR);
+                        if (scaled == null)return null;
+                        final_pixbuf = scaled;
+                    }
+                } else {
+                    int max_dim = int.max (w, h);
+                    if (max_dim > th) {
+                        double s = (double) th / (double) max_dim;
+                        int nw = int.max (1, (int) GLib.Math.round (w * s));
+                        int nh = int.max (1, (int) GLib.Math.round (h * s));
+                        var scaled = original.scale_simple (nw, nh, Gdk.InterpType.BILINEAR);
+                        if (scaled == null)return null;
+                        final_pixbuf = scaled;
+                    }
                 }
 
                 return new Gdk.MemoryTexture (
@@ -384,7 +397,26 @@ namespace Timbre.Utils {
                 int snapped = snap_to_step (real_pixels);
                 if (regex_wh != null && regex_s != null) {
                     try {
-                        string res1 = regex_wh.replace (url, -1, 0, "\\1w%d-h%d".printf (snapped, snapped));
+                        string res1 = regex_wh.replace_eval (url, -1, 0, 0, (match_info, result) => {
+                            string prefix = match_info.fetch (1) ?? "=";
+                            int orig_w = int.parse (match_info.fetch (2) ?? "0");
+                            int orig_h = int.parse (match_info.fetch (3) ?? "0");
+
+                            int new_w = snapped;
+                            int new_h = snapped;
+                            if (orig_w > 0 && orig_h > 0 && orig_w != orig_h) {
+                                if (orig_w > orig_h) {
+                                    new_w = snapped;
+                                    new_h = int.max (1, (int) GLib.Math.round ((double) snapped * orig_h / orig_w));
+                                } else {
+                                    new_h = snapped;
+                                    new_w = int.max (1, (int) GLib.Math.round ((double) snapped * orig_w / orig_h));
+                                }
+                            }
+
+                            result.append ("%sw%d-h%d".printf (prefix, new_w, new_h));
+                            return false;
+                        });
                         string res2 = regex_s.replace (res1, -1, 0, "\\1s%d".printf (snapped));
                         return res2;
                     } catch (Error e) {
@@ -395,8 +427,9 @@ namespace Timbre.Utils {
 
             if (url.contains ("i.ytimg.com/vi/")) {
                 string qual;
-                if (real_pixels <= 120)qual = "default";
-                else if (real_pixels <= 240)qual = "mqdefault";
+                if (real_pixels <= 90)qual = "default";
+                else if (real_pixels <= 180)qual = "mqdefault";
+                else if (real_pixels <= 360)qual = "hqdefault";
                 else if (real_pixels <= 480)qual = "sddefault";
                 else qual = "maxresdefault";
 

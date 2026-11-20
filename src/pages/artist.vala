@@ -500,7 +500,7 @@ namespace Timbre {
             string? banner = d.banner_url ?? d.thumb_url;
             if (banner != null && banner.length > 0) {
                 if (this.banner_binding == null && this.banner_picture != null) {
-                    this.banner_binding = new Timbre.Utils.ImageBinding (this.banner_picture, 1600);
+                    this.banner_binding = new Timbre.Utils.ImageBinding (this.banner_picture, 1920);
 
                     this.banner_paintable_pop_id = this.banner_picture.notify["paintable"].connect (() => {
                         GLib.Idle.add (() => {
