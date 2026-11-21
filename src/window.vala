@@ -13,7 +13,7 @@ namespace Timbre {
         private string cookies_path;
 
         private const double BG_DARKNESS_DARK = 0.35;
-        private const double BG_DARKNESS_LIGHT = 0.10;
+        private const double BG_DARKNESS_LIGHT = 0.06;
         private const double BG_MIN_ALPHA_DARK = 0.25;
 
         private uint nav_trim_id = 0;
@@ -1311,7 +1311,7 @@ namespace Timbre {
             this.pending_blurs.add (cover_url);
 
             var loader = Timbre.Utils.ImageLoader.get_default ();
-            int blur_size = 120;
+            int blur_size = 240;
 
             bool ok = yield loader.ensure_downloaded_async (cover_url, blur_size, 1, cancel);
 
@@ -1337,7 +1337,7 @@ namespace Timbre {
                     return null;
                 }
 
-                string? blur_path = Timbre.BlurCache.blur_image_to_cache_from_file (base_path, 36);
+                string? blur_path = Timbre.BlurCache.blur_image_to_cache_from_file (base_path, 20);
 
                 double median = 0.0;
                 double p2 = 0.0;
@@ -1382,14 +1382,14 @@ namespace Timbre {
                 result = Math.fmax (result, BG_MIN_ALPHA_DARK);
                 return result.clamp (0.0, 0.95);
             } else {
-                if (median >= 0.45) {
+                if (median >= 0.55) {
                     raw = 0.0;
                 } else {
-                    double factor = (0.45 - median) / 0.45;
-                    raw = GLib.Math.pow (factor, 1.5);
+                    double factor = (0.55 - median) / 0.55;
+                    raw = GLib.Math.pow (factor, 1.35);
                 }
-                double result = BG_DARKNESS_LIGHT + (raw * 0.60);
-                return result.clamp (0.14, 0.65);
+                double result = 0.14 + (raw * 0.34);
+                return result.clamp (0.14, 0.48);
             }
         }
 
